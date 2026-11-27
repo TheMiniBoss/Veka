@@ -89,3 +89,18 @@ fn zstack_superpose() {
         s.rects_of("Rectangle")[0].center()
     );
 }
+
+#[test]
+fn spacer_laisse_la_place_au_texte() {
+    // Le Spacer passe après le texte : le texte tient sur une ligne s'il y a la place.
+    let titre = "Veka — fenêtre transparente";
+    let seul = layout(Text(titre), 2000.0, 400.0).rects_of("Text")[0];
+    let s = layout(
+        HStack![Text(titre), Spacer(), Rectangle().frame(46, 32)],
+        seul.width() + 46.0 + 40.0,
+        400.0,
+    );
+    let t = s.rects_of("Text")[0];
+    assert_eq!(t.height(), seul.height());
+    assert_eq!(s.rects_of("Rectangle")[0].max_x(), seul.width() + 86.0);
+}
