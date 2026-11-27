@@ -89,7 +89,9 @@ impl App {
     pub fn run(self) -> Result<(), AppError> {
         #[cfg(windows)]
         return self.run_on(veka_platform_windows::WindowsPlatform::new());
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        return self.run_on(veka_platform_macos::MacPlatform::new());
+        #[cfg(not(any(windows, target_os = "macos")))]
         Err(AppError::Platform(PlatformError::Unsupported(
             "pas encore de plateforme Veka pour ce système".into(),
         )))

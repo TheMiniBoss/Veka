@@ -31,6 +31,29 @@ swash = "0.2"
 bytemuck = { version = "1.25", features = ["derive"] }
 pollster = "1.0"
 raw-window-handle = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSString",
+    "NSGeometry",
+    "NSNotification",
+    "NSObject",
+    "NSThread",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSApplication",
+    "NSEvent",
+    "NSGraphics",
+    "NSGraphicsContext",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
