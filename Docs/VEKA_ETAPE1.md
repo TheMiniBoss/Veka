@@ -1,7 +1,7 @@
 # Veka — Étape 1 : document de conception
 
-> **Statut : choix 1, 3, 4, 5, 6 validés le 2026-11-27 ; choix 2 et 7 en discussion.** Aucun code n'est écrit avant
-> la validation complète. Voir §12.
+> **Statut : choix 1 à 7 validés le 2026-11-27** ; choix 8 et 9 proposés (issus de la discussion), à confirmer.
+> Voir §12. Le plan d'implémentation est dans [`VEKA_ETAPE1_PLAN.md`](VEKA_ETAPE1_PLAN.md).
 
 | | |
 |---|---|
@@ -88,7 +88,8 @@ la liste de dessin découpe le rendu en **segments** ; un effet qui lit l'arriè
                   ▼                              ▼
      ┌────────────────────────┐       ┌────────────────────────────┐
      │ Renderer (trait)       │       │ Platform (trait)           │
-     │  └ veka-render-wgpu    │       │  └ veka-platform-winit     │
+     │  └ veka-render-wgpu    │       │  └ veka-platform-windows   │
+     │                        │       │  └ veka-platform-macos     │
      │  └ (Unreal, Unity…)    │       │  └ (hôte Unreal, AzOS…)    │
      └────────────────────────┘       └────────────────────────────┘
                   ▲                              ▲
@@ -100,7 +101,8 @@ Trois règles :
 1. **Le cœur ne voit jamais l'OS.** Tout ce qui touche au système (fenêtres, entrées, horloge, presse-papier,
    polices du système plus tard) passe par le trait `Platform`. Pour AzOS, on écrit une autre implémentation
    de `Platform` ; le cœur ne change pas. C'est vérifié mécaniquement : les crates du cœur n'ont **aucune**
-   dépendance vers `winit`, `windows`, `objc2` ou `wgpu` (contrôle en CI, §11).
+   dépendance vers `windows`, `objc2` ou `wgpu` (contrôle en CI, §11). Le cœur compile aussi pour
+   WebAssembly (contrôle en CI) : un portage web ou Python reste possible sans rien réécrire.
 2. **Le cœur ne dessine pas.** Il produit une `DrawList` (données, `Send`), un renderer la dessine. Un renderer
    Unreal ou Unity lira la même liste.
 3. **L'hôte peut posséder la fenêtre.** Dans Unreal ou Unity, c'est le moteur qui a la fenêtre, la boucle et le GPU.
@@ -124,7 +126,8 @@ Veka/
 │  ├─ veka-text/                 Font, FontCollection, TextStyle, TextLayout (mise en forme + lignes)
 │  ├─ veka-ui/                   View, Element, Node, State, Environment, Layout, Stack, Text, Shape, Button
 │  ├─ veka-platform/             traits Platform / Window / événements (aucune implémentation)
-│  ├─ veka-platform-winit/       implémentation Windows + macOS
+│  ├─ veka-platform-windows/     implémentation native Win32 (crate `windows`)
+│  ├─ veka-platform-macos/       implémentation native AppKit (crates `objc2`)
 │  ├─ veka-render/               trait Renderer (aucune implémentation)
 │  ├─ veka-render-wgpu/          renderer wgpu (DX12 / Metal)
 │  ├─ veka-app/                  boucle d'application : Platform + UI + Renderer
@@ -144,7 +147,7 @@ Dépendances entre crates (une flèche = « dépend de ») :
 ```
 veka-ui → veka-text → veka-graphics → veka-foundation
 veka-render-wgpu → veka-render → veka-graphics
-veka-platform-winit → veka-platform → veka-foundation
+veka-platform-windows, veka-platform-macos → veka-platform → veka-foundation
 veka-app → veka-ui, veka-render, veka-platform
 veka-ffi → veka-app
 ```
@@ -153,52 +156,57 @@ veka-ffi → veka-app
 
 ## 5. Modèle déclaratif (veka-ui)
 
-### 5.1 L'exemple en Rust (cible)
+### 5.1 L'exemple en Rust (cible) — forme proche de SwiftUI (choix n° 8)
 
 ```rust
 use veka::prelude::*;
 
-struct Compteur;
+fn compteur() -> impl View {
+    let clics = State::new(0);
 
-impl View for Compteur {
-    fn body(&self, cx: &mut BuildContext) -> Element {
-        let clics = cx.state(|| 0u32);
-
-        VStack::new().spacing(16).children((
-            Text::new("Bonjour Veka").size(28.0),
-            HStack::new().spacing(12).children((
-                Shape::rounded_rect(12.0).fill(Color::rgb(0.25, 0.5, 1.0)).frame(80.0, 48.0),
-                Shape::capsule().fill(Color::rgb(1.0, 0.6, 0.2)).frame(96.0, 48.0),
-                Shape::circle().fill(Color::rgb(0.3, 0.8, 0.4)).frame(48.0, 48.0),
-            )),
-            Button::new(format!("Clics : {}", clics.get(cx)), move |cx| {
-                clics.update(cx, |n| *n += 1);
-            }),
-        ))
-        .padding(24)
-    }
+    VStack![spacing: 16;
+        Text("Bonjour Veka").font(Font::Title),
+        HStack![spacing: 12;
+            RoundedRectangle(12).fill(Color::Blue).frame(80, 48),
+            Capsule().fill(Color::Orange).frame(96, 48),
+            Circle().fill(Color::Green).frame(48, 48),
+        ],
+        Button(format!("Clics : {clics}"), move || clics += 1),
+    ]
+    .padding(24)
 }
 
-fn main() -> veka::Result<()> {
-    App::new().window(Window::new("Veka — Compteur").size(480, 320), Compteur).run()
+fn main() {
+    App::new().window("Veka — Compteur", compteur).run();
 }
 ```
+
+- Une vue est **une fonction** ; la forme `struct` + `impl View` reste disponible pour les cas avancés.
+- Noms de SwiftUI : `Text`, `VStack`, `Capsule`, `Button(titre, action)`.
+- **Pas de contexte à passer** : l'arbre vit sur un seul thread, Veka garde le contexte courant en interne
+  (`clics += 1`, `{clics}` dans `format!`).
+- Les piles sont des macros (`VStack![…]`) pour lister des enfants de types différents sans tuples.
+- Limites de Rust : `Font::Title` au lieu de `.title`, pas de paramètres nommés hors macro (`.spacing(16)` sinon),
+  pas de closure en fin d'appel. Une macro `veka! { … }` encore plus proche de SwiftUI est écartée pour l'instant
+  (moins bien comprise par l'éditeur) : c'est le rôle des fichiers `.vk`.
+- Règle : les `State::new(…)` d'une vue sont appelés **toujours dans le même ordre** (pas dans un `if`) ; c'est
+  ainsi que Veka retrouve le bon état. Vérifié en debug.
 
 ### 5.2 Les pièces
 
 | Type | Rôle |
 |---|---|
-| `trait View` | une vue composée : `fn body(&self, cx) -> Element`. Ré-évaluée quand son état change. |
+| `trait View` | une vue composée : une fonction `fn() -> impl View`, ou un type avec `fn body(&self) -> Element`. Ré-évaluée quand son état change. |
 | `Element` | description légère et clonable : un *primitive* (`Text`, `Shape`, `Stack`…) ou une `View`, + modifiers + enfants + id optionnel. |
 | `Node` | arbre **retenu** (arena, ids générationnels) : garde l'état, le layout calculé, le dernier `Element`. |
 | Reconciler | compare le nouvel `Element` à l'ancien `Node` par **type + position** (ou `.id()` explicite) ; ne touche que ce qui change. |
-| `State<T>` | **poignée** `Copy` vers une valeur stockée dans le `Node` de la vue. `get(cx)`, `set(cx, v)`, `update(cx, f)`. Un `set` marque la vue « à ré-évaluer » ; la ré-évaluation a lieu une fois, avant la prochaine image. |
+| `State<T>` | **poignée** `Copy` vers une valeur stockée dans le `Node` de la vue (retrouvée par ordre d'appel). `get()`, `set(v)`, `update(f)`, opérateurs (`+=`) et `Display`. Une écriture marque la vue « à ré-évaluer » ; la ré-évaluation a lieu une fois, avant la prochaine image. |
 | `Environment` | valeurs héritées par les enfants (police, taille, couleur du texte, échelle d'affichage…), surchargées par modifier. |
 | Modifiers | `.padding()`, `.frame()`, `.background()`, `.foreground()`, `.on_tap()`… Chaque modifier est une valeur d'un trait public `Modifier` (extensible, comme `FVekaModifier`). |
 
 `State<T>` est une poignée plutôt qu'un `Rc<RefCell<T>>` : pas de cycles, pas d'emprunts qui paniquent, et l'état
-reste dans l'arbre (il survit aux ré-évaluations et disparaît avec le nœud). Les closures d'action reçoivent un
-`ActionContext` qui donne accès à l'état.
+reste dans l'arbre (il survit aux ré-évaluations et disparaît avec le nœud). Pendant `body` et pendant une action,
+Veka installe le contexte courant (variable locale au thread) ; utiliser un `State` ailleurs est une erreur claire.
 
 ### 5.3 Layout
 
@@ -239,6 +247,23 @@ L'arbre de vues vit sur **un seul thread** (le thread principal à l'étape 1, i
 Ce qui en sort est fait pour le multithread : la `DrawList` est `Send` et le renderer peut la dessiner sur un
 autre thread ; la mise en page du texte est pure et parallélisable plus tard. Pas de thread de layout dédié
 (même conclusion que VekaUI §13).
+
+### 5.7 Rien n'est réservé au Rust : le schéma (choix n° 9)
+
+Le but de `.vk` est de **tout** pouvoir faire sans autre langage (leçon des feux d'artifice de VekaUI, écrits en
+C++ faute de `random`, `cos` et d'horloge dans le langage). Dès l'étape 1 :
+
+- chaque primitive, modifier et contrôle est déclaré dans un **registre de schéma** (nom, paramètres typés,
+  valeurs par défaut, enfants autorisés, doc), comme `FVekaSchema` ; une primitive ajoutée en Rust sans entrée
+  dans le schéma est refusée par un test ;
+- un `Element` se construit aussi **à partir de données** (nom + paramètres `Value`) : c'est le chemin que prendront
+  `.vk`, l'API C et les autres langages, et il est testé dès l'étape 1 (l'exemple compteur construit des deux façons
+  doit donner la même liste de dessin) ;
+- les closures Rust restent permises pour les utilisateurs Rust, mais aucun comportement de Veka n'en dépend.
+
+Prévu pour `.vk` (hors étape 1) : fonctions mathématiques, `random(seed)`, horloge `time`, `ForEach` sur des plages,
+fonctions utilisateur, vue `Canvas` qui remplit la liste de dessin. Les composants de Veka pourront ensuite être
+écrits en `.vk`. Restent en Rust : le moteur (layout, rendu, plateformes), les shaders, le lien avec l'hôte.
 
 ---
 
@@ -332,9 +357,21 @@ pub enum PlatformEvent {
 
 `PlatformWindow` expose `raw-window-handle` pour que le renderer crée sa surface sans connaître l'OS.
 
-Implémentation de l'étape 1 : **`veka-platform-winit`** (winit gère Win32 et AppKit) — choix n° 2. Elle tient en
-quelques centaines de lignes, et on pourra la remplacer par des backends natifs (Win32 / AppKit écrits à la
-main) le jour où winit nous limite (barre de titre transparente, vibrancy macOS, IME…), sans toucher au cœur.
+Implémentations de l'étape 1 : **natives**, écrites à la main (choix n° 2).
+
+| | Windows : `veka-platform-windows` | macOS : `veka-platform-macos` |
+|---|---|---|
+| Liaisons | crate `windows` (Microsoft) | crates `objc2`, `objc2-app-kit`, `objc2-foundation` |
+| Fenêtre | `RegisterClassExW` / `CreateWindowExW`, `WndProc` | `NSApplication`, `NSWindow`, `NSView` à nous (couche `CAMetalLayer`) |
+| Boucle | `GetMessageW` (bloque au repos → 0 % CPU) | `NSApplication.run` |
+| DPI | Per-Monitor V2, `WM_DPICHANGED` | `backingScaleFactor`, `viewDidChangeBackingProperties` |
+| Souris | `WM_MOUSEMOVE`, `WM_*BUTTON*`, `TrackMouseEvent` (sortie) | `mouseMoved:`, `mouseDown:`, `NSTrackingArea` |
+| Redessin | `InvalidateRect` → `WM_PAINT` | `setNeedsDisplay` → `drawRect:` / `displayLayer:` |
+| Surface wgpu | `raw-window-handle` (HWND) | `raw-window-handle` (NSView) |
+
+Ce que le natif apporte pour la suite, sans contournement : fenêtres personnalisées avec Snap Layouts (§8.4),
+fonds du système (Mica / Acrylic, vibrancy), menus natifs, défilement fin du trackpad, IME. Les deux crates
+n'exposent que le trait `Platform` : le cœur ne voit pas la différence.
 
 ### 8.2 Hôte piloté de l'extérieur
 
@@ -393,10 +430,13 @@ permettent à l'OS de garder ses comportements natifs : sur Windows, la platefor
 système pour la zone correspondante, ce qui garde les **dispositions d'ancrage** (Snap Layouts) de Windows 11 au
 survol ; sur macOS, plein écran et ancrage restent ceux du système.
 
-Limite de winit : il sait retirer les décorations, rendre la fenêtre transparente, la déplacer et la
-redimensionner depuis Veka, et masquer les boutons macOS ; il ne sait pas répondre au système sur les zones
-(Snap Layouts) ni régler les coins arrondis de Windows 11. Ces deux points passent par un petit ajout natif
-dans `veka-platform-winit` (Win32 / DWM via le handle de la fenêtre), sans toucher au cœur.
+Avec les plateformes natives, tout cela est direct : sur Windows, `WM_NCCALCSIZE` (pas de cadre système),
+`WM_NCHITTEST` (zones déplacer / bords / `HTMAXBUTTON` pour Snap Layouts), `DwmExtendFrameIntoClientArea` (ombre)
+et `DWMWA_WINDOW_CORNER_PREFERENCE` (coins arrondis) ; sur macOS, `NSWindowStyleMaskFullSizeContentView`,
+barre transparente, boutons « feux » masqués ou repositionnés, `performWindowDragWithEvent:`.
+
+**Calendrier (choix n° 7)** : à l'étape 1, `WindowDesc` a déjà le champ `chrome` et le trait `Platform` reçoit les
+régions ; seul `Chrome::System` est construit. `Chrome::Hidden` et `Chrome::Custom` viennent **juste après** l'étape 1.
 
 ## 9. Interface C (veka-ffi)
 
@@ -481,44 +521,39 @@ Compilation : `cmake` sur les deux OS (MSVC sous Windows, clang sous macOS), li�
 
 | Niveau | Quoi | Où |
 |---|---|---|
-| Unitaires | géométrie, SDF (dedans / dehors / bord), layout des Stacks, reconciler (état conservé, nœuds réutilisés), hit-test, bouton (survol / appui / clic hors forme) | Linux (ce conteneur) + CI |
+| Unitaires | géométrie, SDF (dedans / dehors / bord), layout des Stacks, reconciler (état conservé, nœuds réutilisés), hit-test, bouton (survol / appui / clic hors forme), schéma (Rust et données donnent la même liste) | Linux (ce conteneur) + CI |
 | Instantanés de liste de dessin | l'exemple compteur → `DrawList` sérialisée, comparée à une référence | Linux + CI, sans GPU |
-| Pureté du cœur | `cargo tree` : aucune dépendance système dans les crates du cœur | CI |
+| Pureté du cœur | `cargo tree` : aucune dépendance système dans les crates du cœur ; `cargo check --target wasm32-unknown-unknown` des crates du cœur | CI |
 | Rendu | image de l'exemple rendue hors écran par wgpu, comparée avec tolérance | CI Windows / macOS (adaptateur logiciel si pas de GPU) |
 | FFI | build CMake de `compteur.c` + lancement « une image » | CI Windows / macOS |
 | À l'œil | fenêtre réelle, clics, Retina / 150 % | PC Windows et Mac mini M2 |
 
 ---
 
-## 12. Choix à valider
+## 12. Choix
 
 | # | Question | Recommandation | Alternative |
 |---|---|---|---|
 | 1 | Organisation du code | **Workspace multi-crates** + façade `veka` (la séparation cœur / OS est garantie par les dépendances) | une seule crate avec des modules (plus simple, mais rien n'empêche le cœur d'appeler l'OS) |
-| 2 | Couche Platform de l'étape 1 | **winit** derrière le trait `Platform` (Windows + macOS tout de suite) | Win32 + AppKit écrits à la main dès maintenant (plus de contrôle, 3 à 4 fois plus de travail) |
+| 2 | Couche Platform de l'étape 1 | ~~winit derrière le trait `Platform`~~ → **décidé : natif** (Win32 + AppKit écrits à la main, §8.1) | winit (plus rapide à brancher, moins de contrôle) |
 | 3 | Texte | **Parley** (Linebender) pour shaping + mise en page, **swash** pour la rastérisation | cosmic-text (très utilisé aussi, API moins orientée texte riche) |
 | 4 | Police par défaut de l'étape 1 | **LT Flode Neue embarquée** (OFL, confirmé) | polices du système (Segoe UI / SF Pro) via `Platform` |
 | 5 | Rendu des formes | **SDF analytique maison** dans wgpu (même SDF que le hit-test et le futur verre, shaders entièrement à nous) | Vello (rendu 2D complet, mais modèle et shaders imposés, plus dur à porter vers Unreal / Unity) |
 | 6 | Modèle de l'API C | **Vue avec fonction `body` ré-appelée + état géré par Veka** (même modèle que Rust) | arbre impératif (créer / modifier / supprimer des widgets à la main) |
 | 7 | Fenêtres personnalisées | **API et régions prévues dans `Platform` dès l'étape 1**, `Chrome::Custom` construit **juste après** l'étape 1 (l'exemple compteur garde la barre système) | tout construire dans l'étape 1 |
+| 8 | Forme de l'API Rust | **proche de SwiftUI** : vues-fonctions, `State` sans contexte, `VStack![…]` (§5.1) | builders explicites avec `cx` |
+| 9 | `.vk` peut tout faire | **registre de schéma + construction par données dès l'étape 1** (§5.7) | schéma ajouté avec `.vk` |
 
-**Décidé (2026-11-27)** : 1, 3, 4 (LT Flode Neue, OFL), 5, 6 selon la recommandation.
-**En discussion** : 2 (Platform) et 7 (fenêtres personnalisées).
+**Décidé (2026-11-27)** : 1, 3, 4 (LT Flode Neue, OFL), 5, 6, 7 selon la recommandation ; 2 : **natif**.
+**À confirmer** : 8 et 9 (proposés pendant la discussion).
 
 Questions ouvertes :
 
 - **Machines de test** : un PC Windows et un **Mac mini M2** → essais à l'œil sur les deux, en plus de la CI.
-- **Licence de Veka** : pas encore choisie ; à décider avant toute diffusion, ça ne change pas le code.
+- **Licence de Veka** : choisie plus tard par TheMiniBoss (avant toute diffusion) ; dépôt privé en attendant.
 
 ---
 
-## 13. Découpage proposé (le plan détaillé suit la validation)
+## 13. Plan
 
-1. Workspace, CI Windows / macOS, contrôle de pureté du cœur.
-2. `veka-foundation` + `veka-graphics` (géométrie, SDF, `DrawList`) avec tests.
-3. `veka-text` (Parley, police embarquée, mesure).
-4. `veka-ui` : `Element`, `Node`, reconciler, `State`, layout `Stack`, `Text`, `Shape` ; instantanés de liste de dessin.
-5. `veka-platform` + `veka-platform-winit`, `veka-render` + `veka-render-wgpu`, `veka-app` : la fenêtre s'affiche.
-6. Événements, hit-test, `Button` : le compteur fonctionne en Rust.
-7. `veka-ffi` + `veka.h` + `examples/c/compteur.c` : le compteur fonctionne en C.
-8. Vérification sur Windows et macOS, captures, `Docs/CHANGELOG.md`.
+Le plan d'implémentation détaillé est dans [`VEKA_ETAPE1_PLAN.md`](VEKA_ETAPE1_PLAN.md).
