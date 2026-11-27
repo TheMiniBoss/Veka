@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
-use veka_foundation::Color;
+use veka_foundation::{Color, WindowControl};
 use veka_graphics::CornerRadii;
 use veka_text::Weight;
 
@@ -16,6 +16,7 @@ use crate::element::{Action, Element};
 use crate::env::Font;
 use crate::layout::{Alignment, Axis, DEFAULT_SPACER_MIN, DEFAULT_SPACING, Spacer, Stack};
 use crate::views;
+use crate::window;
 
 /// Une valeur de paramètre.
 #[derive(Clone, Debug)]
@@ -609,5 +610,72 @@ fn builtin_entries() -> Vec<Entry> {
                 one(c).wrap(views::TapGesture { action: a })
             },
         },
+        Entry {
+            name: "windowDragArea",
+            kind: Modifier,
+            children: One,
+            doc: "la zone déplace la fenêtre",
+            params: NO_PARAMS,
+            build: |_, c| one(c).window_drag_area(),
+        },
+        Entry {
+            name: "windowControl",
+            kind: Modifier,
+            children: One,
+            doc: "la vue devient un bouton de la fenêtre",
+            params: const { &[p("control", ValueType::Enum(CONTROLS), true, "bouton")] },
+            build: |p, c| one(c).window_control(control(p)),
+        },
+        Entry {
+            name: "WindowButton",
+            kind: Primitive,
+            children: None,
+            doc: "bouton de fenêtre dessiné par Veka",
+            params: const {
+                &[
+                    p("control", ValueType::Enum(CONTROLS), true, "bouton"),
+                    p(
+                        "style",
+                        ValueType::Enum(TITLE_STYLES),
+                        false,
+                        "style (celui du système par défaut)",
+                    ),
+                ]
+            },
+            build: |p, _| window::WindowButtonWith(control(p), title_style(p)),
+        },
+        Entry {
+            name: "TitleBar",
+            kind: Primitive,
+            children: None,
+            doc: "barre de titre prête à l'emploi",
+            params: const {
+                &[
+                    p("title", ValueType::String, true, "titre"),
+                    p(
+                        "style",
+                        ValueType::Enum(TITLE_STYLES),
+                        false,
+                        "style (celui du système par défaut)",
+                    ),
+                ]
+            },
+            build: |p, _| window::TitleBarWith(p.string("title").unwrap_or_default(), title_style(p)),
+        },
     ]
+}
+
+const CONTROLS: &[&str] = &["close", "minimize", "maximize", "fullscreen"];
+const TITLE_STYLES: &[&str] = &["windows", "mac"];
+
+fn control(p: &Params) -> WindowControl {
+    p.enumeration("control")
+        .and_then(WindowControl::from_name)
+        .unwrap_or(WindowControl::Close)
+}
+
+fn title_style(p: &Params) -> window::TitleBarStyle {
+    p.enumeration("style")
+        .and_then(window::TitleBarStyle::from_name)
+        .unwrap_or(window::TitleBarStyle::native())
 }

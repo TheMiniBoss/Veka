@@ -25,7 +25,7 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Chrome, Instant, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent,
-    PlatformWindow, Point, Result, Size, WindowDesc, WindowId, WindowRegion,
+    PlatformWindow, Point, Result, Size, WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
@@ -394,6 +394,23 @@ impl PlatformWindow for MacWindow {
 
     fn set_regions(&self, regions: &[WindowRegion]) {
         *self.data.regions.borrow_mut() = regions.to_vec();
+    }
+
+    fn info(&self) -> WindowInfo {
+        WindowInfo {
+            maximized: self.window.isZoomed(),
+            fullscreen: self.window.styleMask().contains(NSWindowStyleMask::FullScreen),
+            active: self.window.isKeyWindow(),
+        }
+    }
+
+    fn perform(&self, action: WindowAction) {
+        match action {
+            WindowAction::Minimize => self.window.miniaturize(None),
+            WindowAction::ToggleMaximize => self.window.zoom(None),
+            WindowAction::Close => self.window.performClose(None),
+            WindowAction::ToggleFullscreen => self.window.toggleFullScreen(None),
+        }
     }
 }
 

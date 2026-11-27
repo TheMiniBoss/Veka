@@ -9,7 +9,9 @@
 //! logiques** (indépendants de l'écran) ; l'échelle (`scale`) donne le nombre de pixels par point.
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-pub use veka_foundation::{Instant, Point, Rect, Size};
+pub use veka_foundation::{
+    Instant, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo, WindowRegion,
+};
 
 /// Erreur d'une plateforme.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +58,17 @@ pub enum Chrome {
     },
 }
 
+impl Chrome {
+    /// `Custom` opaque, avec ombre et coins arrondis.
+    pub const fn custom() -> Self {
+        Chrome::Custom {
+            transparent: false,
+            shadow: true,
+            corner_radius: 8.0,
+        }
+    }
+}
+
 /// Ce qu'il faut pour créer une fenêtre.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowDesc {
@@ -66,6 +79,8 @@ pub struct WindowDesc {
     pub min_size: Option<Size>,
     pub resizable: bool,
     pub chrome: Chrome,
+    /// Largeur des bords de redimensionnement, en points (fenêtres sans décoration du système).
+    pub resize_margin: f32,
 }
 
 impl WindowDesc {
@@ -76,6 +91,7 @@ impl WindowDesc {
             min_size: None,
             resizable: true,
             chrome: Chrome::System,
+            resize_margin: 6.0,
         }
     }
 
@@ -98,31 +114,11 @@ impl WindowDesc {
         self.chrome = chrome;
         self
     }
-}
 
-/// Un bouton de fenêtre qu'une vue Veka peut piloter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WindowControl {
-    Close,
-    Minimize,
-    Maximize,
-    Fullscreen,
-}
-
-/// Ce que représente une zone de la fenêtre pour le système.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RegionKind {
-    /// La zone déplace la fenêtre (double-clic = agrandir).
-    Drag,
-    /// La zone est un bouton de fenêtre (garde les Snap Layouts de Windows 11 pour `Maximize`).
-    Control(WindowControl),
-}
-
-/// Une zone de la fenêtre, en points. Utile seulement avec `Chrome::Hidden` ou `Chrome::Custom`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowRegion {
-    pub rect: Rect,
-    pub kind: RegionKind,
+    pub fn resize_margin(mut self, margin: f32) -> Self {
+        self.resize_margin = margin;
+        self
+    }
 }
 
 /// Bouton de la souris.
@@ -154,6 +150,11 @@ pub enum PlatformEvent {
     /// L'utilisateur veut fermer la fenêtre. Rien ne se passe tant que l'app ne la ferme pas.
     CloseRequested {
         window: WindowId,
+    },
+    /// Agrandie, plein écran, active : voir [`WindowInfo`].
+    WindowStateChanged {
+        window: WindowId,
+        info: WindowInfo,
     },
     /// La fenêtre a été détruite.
     WindowClosed {
@@ -196,6 +197,10 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn redraw_requester(&self) -> Box<dyn Fn() + 'static>;
     /// Les zones de la fenêtre pour le système (déplacement, boutons). Voir [`WindowRegion`].
     fn set_regions(&self, regions: &[WindowRegion]);
+    /// L'état actuel (agrandie, plein écran, active).
+    fn info(&self) -> WindowInfo;
+    /// Agit sur la fenêtre. Une action que la plateforme ne sait pas encore faire est ignorée.
+    fn perform(&self, action: WindowAction);
 }
 
 /// Ce que l'application peut demander à la plateforme pendant un événement.

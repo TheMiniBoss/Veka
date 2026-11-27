@@ -28,7 +28,7 @@
 #[cfg(feature = "app")]
 pub use veka_app as app;
 #[cfg(feature = "app")]
-pub use veka_app::App;
+pub use veka_app::{App, Chrome, Window};
 pub use veka_foundation as foundation;
 pub use veka_graphics as graphics;
 pub use veka_text as text;
@@ -39,6 +39,6 @@ pub use veka_ui::{HStack, VStack, ZStack};
 /// `use veka::prelude::*;` : tout ce qu'il faut pour écrire des vues.
 pub mod prelude {
     #[cfg(feature = "app")]
-    pub use veka_app::App;
+    pub use veka_app::{App, Chrome, Window};
     pub use veka_ui::prelude::*;
 }

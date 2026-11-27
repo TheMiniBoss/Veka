@@ -35,6 +35,11 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: cargo run --example compteur
+      - name: Fenêtre personnalisée (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: cargo run --example fenetre_perso
       - name: Exemple C (CMake)
         run: |
           cmake -S examples/c -B build/c

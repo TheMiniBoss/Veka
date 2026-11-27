@@ -16,36 +16,45 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Chrome, Instant, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent,
-    PlatformWindow, Point, Result, Size, WindowDesc, WindowId, WindowRegion,
+    PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowControl, WindowDesc, WindowId,
+    WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
-    ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM,
+    ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Graphics::Gdi::{InvalidateRect, ValidateRect};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWCP_ROUNDSMALL,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+};
+use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient, ValidateRect};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
+use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForSystem, GetDpiForWindow,
-    SetProcessDpiAwarenessContext,
+    GetSystemMetricsForDpi, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetMessageW, GetWindowLongW, IDC_ARROW,
-    LoadCursorW, MINMAXINFO, MSG, PostQuitMessage, RegisterClassExW, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOZORDER, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_PAINT, WM_RBUTTONDOWN,
+    DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetMessageW, GetWindowLongW, HTBOTTOM,
+    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTTOP,
+    HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
+    PostMessageW, PostQuitMessage, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED, SM_CXFRAME,
+    SM_CXPADDEDBORDER, SM_CYFRAME, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, SetWindowTextW, ShowWindow,
+    TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
     WM_RBUTTONUP, WM_SIZE, WNDCLASSEXW, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
 const CLASS: PCWSTR = w!("VekaWindow");
 const BASE_DPI: f32 = 96.0;
-/// `WM_MOUSELEAVE` (défini dans `Win32_UI_Controls`, une grosse feature pour une constante).
-const WM_MOUSELEAVE: u32 = 0x02A3;
 
 /// La plateforme Windows. `WindowsPlatform::new().run(app)` ouvre la boucle.
 #[derive(Debug, Default)]
@@ -69,6 +78,13 @@ struct WinData {
     tracking: Cell<bool>,
     buttons: Cell<u32>,
     regions: RefCell<Vec<WindowRegion>>,
+    /// Sans décoration du système (`Chrome::Hidden` ou `Chrome::Custom`).
+    custom: bool,
+    resizable: bool,
+    resize_margin: f32,
+    info: Cell<WindowInfo>,
+    /// Le pointeur est sur un bouton annoncé au système (zone non cliente).
+    nc_tracking: Cell<bool>,
 }
 
 /// Une fenêtre Win32 ouverte par Veka.
@@ -142,6 +158,35 @@ impl PlatformWindow for Win32Window {
     fn set_regions(&self, regions: &[WindowRegion]) {
         *self.data.regions.borrow_mut() = regions.to_vec();
     }
+
+    fn info(&self) -> WindowInfo {
+        self.data.info.get()
+    }
+
+    fn perform(&self, action: WindowAction) {
+        let hwnd = self.hwnd();
+        // SAFETY : HWND valide ; ces appels envoient des messages traités par `wndproc`.
+        unsafe {
+            match action {
+                WindowAction::Minimize => {
+                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                }
+                WindowAction::ToggleMaximize => {
+                    let cmd = if IsZoomed(hwnd).as_bool() {
+                        SW_RESTORE
+                    } else {
+                        SW_MAXIMIZE
+                    };
+                    let _ = ShowWindow(hwnd, cmd);
+                }
+                WindowAction::Close => {
+                    let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+                }
+                // Plein écran : pas encore sur Windows.
+                WindowAction::ToggleFullscreen => {}
+            }
+        }
+    }
 }
 
 /// Demande un `WM_PAINT`. Sans effet si la fenêtre n'existe plus (le système vérifie le HWND).
@@ -161,11 +206,15 @@ struct Ctx {
 
 impl PlatformContext for Ctx {
     fn create_window(&mut self, desc: WindowDesc) -> Result<WindowId> {
-        if desc.chrome != Chrome::System {
+        if let Chrome::Custom {
+            transparent: true, ..
+        } = desc.chrome
+        {
             return Err(PlatformError::Unsupported(
-                "Chrome::Hidden et Chrome::Custom arrivent juste après l'étape 1".into(),
+                "fenêtres transparentes : pas encore sur Windows (prochaine étape)".into(),
             ));
         }
+        let custom = desc.chrome != Chrome::System;
         let id = WindowId(self.next_id);
         self.next_id += 1;
         let style = if desc.resizable {
@@ -186,8 +235,13 @@ impl PlatformContext for Ctx {
             tracking: Cell::new(false),
             buttons: Cell::new(0),
             regions: RefCell::new(Vec::new()),
+            custom,
+            resizable: desc.resizable,
+            resize_margin: desc.resize_margin,
+            info: Cell::new(WindowInfo::default()),
+            nc_tracking: Cell::new(false),
         });
-        let (w, h) = outer_size(desc.size, style, ex_style, dpi);
+        let (w, h) = outer_size(desc.size, style, ex_style, dpi, custom);
         // SAFETY : `data` vit au moins jusqu'à la fin de l'appel ; `WM_NCCREATE` en prend une référence.
         let hwnd = unsafe {
             CreateWindowExW(
@@ -213,8 +267,11 @@ impl PlatformContext for Ctx {
             let real = GetDpiForWindow(hwnd);
             if real != 0 && real != dpi {
                 data.scale.set(real as f32 / BASE_DPI);
-                let (w, h) = outer_size(desc.size, style, ex_style, real);
+                let (w, h) = outer_size(desc.size, style, ex_style, real, custom);
                 let _ = SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            if custom {
+                decorate(hwnd, desc.chrome);
             }
             let mut rect = RECT::default();
             if GetClientRect(hwnd, &mut rect).is_ok() {
@@ -255,8 +312,66 @@ impl PlatformContext for Ctx {
     }
 }
 
-/// Taille extérieure (bordures comprises) pour un contenu de `size` points.
-fn outer_size(size: Size, style: WINDOW_STYLE, ex_style: WINDOW_EX_STYLE, dpi: u32) -> (i32, i32) {
+/// Ombre et coins demandés à DWM pour une fenêtre sans décoration, puis recalcul du cadre.
+///
+/// # Safety
+///
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn decorate(hwnd: HWND, chrome: Chrome) {
+    let (shadow, radius) = match chrome {
+        Chrome::Custom {
+            shadow,
+            corner_radius,
+            ..
+        } => (shadow, corner_radius),
+        _ => (true, 8.0),
+    };
+    // Une marge d'un pixel suffit pour que DWM dessine l'ombre ; ce pixel est recouvert par Veka.
+    let margins = MARGINS {
+        cxLeftWidth: 0,
+        cxRightWidth: 0,
+        cyTopHeight: i32::from(shadow),
+        cyBottomHeight: 0,
+    };
+    // Windows 11 ne propose que deux rayons : petit (≈ 4 px) ou normal (≈ 8 px).
+    let corners = if radius <= 0.0 {
+        DWMWCP_DONOTROUND
+    } else if radius < 6.0 {
+        DWMWCP_ROUNDSMALL
+    } else {
+        DWMWCP_ROUND
+    };
+    // SAFETY : HWND valide (contrat) et pointeurs vers des variables locales.
+    unsafe {
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+        // Échoue sans conséquence sur Windows 10 (coins droits).
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corners as *const _ as *const c_void,
+            std::mem::size_of_val(&corners) as u32,
+        );
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// Taille extérieure (bordures comprises) pour un contenu de `size` points. Sans décoration du
+/// système (`custom`), la fenêtre n'est que son contenu.
+fn outer_size(
+    size: Size,
+    style: WINDOW_STYLE,
+    ex_style: WINDOW_EX_STYLE,
+    dpi: u32,
+    custom: bool,
+) -> (i32, i32) {
     let scale = dpi as f32 / BASE_DPI;
     let mut rect = RECT {
         left: 0,
@@ -264,6 +379,9 @@ fn outer_size(size: Size, style: WINDOW_STYLE, ex_style: WINDOW_EX_STYLE, dpi: u
         right: (size.width * scale).round() as i32,
         bottom: (size.height * scale).round() as i32,
     };
+    if custom {
+        return (rect.right, rect.bottom);
+    }
     // SAFETY : pointeur vers une variable locale.
     unsafe {
         let _ = AdjustWindowRectExForDpi(&mut rect, style, false, ex_style, dpi);
@@ -409,6 +527,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let width = (lparam.0 & 0xffff) as u32;
                 let height = ((lparam.0 >> 16) & 0xffff) as u32;
                 data.pixels.set((width, height));
+                if wparam.0 as u32 != SIZE_MINIMIZED {
+                    let maximized = wparam.0 as u32 == SIZE_MAXIMIZED;
+                    set_info(
+                        &data,
+                        WindowInfo {
+                            maximized,
+                            ..data.info.get()
+                        },
+                    );
+                }
                 let size = Size::new(width as f32 / scale, height as f32 / scale);
                 push(PlatformEvent::WindowResized {
                     window,
@@ -437,12 +565,83 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if let Some(min) = data.min_size {
                     let style = WINDOW_STYLE(GetWindowLongW(hwnd, GWL_STYLE) as u32);
                     let ex_style = WINDOW_EX_STYLE(GetWindowLongW(hwnd, GWL_EXSTYLE) as u32);
-                    let (w, h) = outer_size(min, style, ex_style, (scale * BASE_DPI).round() as u32);
+                    let dpi = (scale * BASE_DPI).round() as u32;
+                    let (w, h) = outer_size(min, style, ex_style, dpi, data.custom);
                     let info = &mut *(lparam.0 as *mut MINMAXINFO);
                     info.ptMinTrackSize.x = w;
                     info.ptMinTrackSize.y = h;
                 }
                 return LRESULT(0);
+            }
+            WM_ACTIVATE => {
+                let active = (wparam.0 & 0xffff) as u32 != WA_INACTIVE;
+                set_info(
+                    &data,
+                    WindowInfo {
+                        active,
+                        ..data.info.get()
+                    },
+                );
+                pump();
+                // Le système donne le focus clavier à la fenêtre.
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            WM_NCCALCSIZE if data.custom && wparam.0 != 0 => {
+                // Pas de cadre : le contenu occupe toute la fenêtre. Agrandie, Windows place la fenêtre
+                // un cadre au-delà de l'écran : on le retire pour ne rien perdre.
+                if IsZoomed(hwnd).as_bool() {
+                    let dpi = GetDpiForWindow(hwnd);
+                    let pad = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+                    let fx = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + pad;
+                    let fy = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + pad;
+                    let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+                    let r = &mut params.rgrc[0];
+                    r.left += fx;
+                    r.right -= fx;
+                    r.top += fy;
+                    r.bottom -= fy;
+                }
+                return LRESULT(0);
+            }
+            WM_NCHITTEST if data.custom => {
+                return LRESULT(hit_test(hwnd, &data, lparam) as isize);
+            }
+            WM_NCMOUSEMOVE if data.custom => {
+                let position = client_point(hwnd, lparam, scale);
+                if wparam.0 as u32 == HTMAXBUTTON && !data.nc_tracking.get() {
+                    let mut track = TRACKMOUSEEVENT {
+                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE | TME_NONCLIENT,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    if TrackMouseEvent(&mut track).is_ok() {
+                        data.nc_tracking.set(true);
+                    }
+                }
+                push(PlatformEvent::PointerMoved { window, position });
+                pump();
+                if wparam.0 as u32 == HTMAXBUTTON {
+                    return LRESULT(0);
+                }
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            WM_NCMOUSELEAVE if data.custom => {
+                data.nc_tracking.set(false);
+                push(PlatformEvent::PointerLeft { window });
+            }
+            // Le bouton agrandir est annoncé au système (Snap Layouts) : ses clics arrivent ici.
+            WM_NCLBUTTONDOWN | WM_NCLBUTTONUP | WM_NCLBUTTONDBLCLK
+                if data.custom && wparam.0 as u32 == HTMAXBUTTON =>
+            {
+                let position = client_point(hwnd, lparam, scale);
+                let pressed = msg != WM_NCLBUTTONUP;
+                push(PlatformEvent::PointerButton {
+                    window,
+                    position,
+                    button: MouseButton::Primary,
+                    pressed,
+                });
             }
             WM_MOUSEMOVE => {
                 if !data.tracking.get() {
@@ -499,4 +698,77 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         pump();
         LRESULT(0)
     }
+}
+
+/// Met à jour l'état de la fenêtre et prévient l'application s'il a changé.
+fn set_info(data: &WinData, info: WindowInfo) {
+    if data.info.get() != info {
+        data.info.set(info);
+        push(PlatformEvent::WindowStateChanged {
+            window: data.id,
+            info,
+        });
+    }
+}
+
+/// Position du pointeur (coordonnées d'écran dans `lparam`) en points dans la fenêtre.
+///
+/// # Safety
+///
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn client_point(hwnd: HWND, lparam: LPARAM, scale: f32) -> Point {
+    let mut p = POINT {
+        x: (lparam.0 & 0xffff) as u16 as i16 as i32,
+        y: ((lparam.0 >> 16) & 0xffff) as u16 as i16 as i32,
+    };
+    // SAFETY : HWND valide (contrat), pointeur local.
+    unsafe {
+        let _ = ScreenToClient(hwnd, &mut p);
+    }
+    Point::new(p.x as f32 / scale, p.y as f32 / scale)
+}
+
+/// Ce que le système doit faire au point donné : bords, déplacement, bouton agrandir ou contenu.
+///
+/// # Safety
+///
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn hit_test(hwnd: HWND, data: &WinData, lparam: LPARAM) -> u32 {
+    let scale = data.scale.get();
+    // SAFETY : contrat de la fonction.
+    let p = unsafe { client_point(hwnd, lparam, scale) };
+    let (w, h) = data.pixels.get();
+    let (w, h) = (w as f32 / scale, h as f32 / scale);
+    // SAFETY : HWND valide.
+    let zoomed = unsafe { IsZoomed(hwnd).as_bool() };
+    if data.resizable && !zoomed {
+        let m = data.resize_margin;
+        let (left, right) = (p.x < m, p.x >= w - m);
+        let (top, bottom) = (p.y < m, p.y >= h - m);
+        let ht = match (top, bottom, left, right) {
+            (true, _, true, _) => HTTOPLEFT,
+            (true, _, _, true) => HTTOPRIGHT,
+            (_, true, true, _) => HTBOTTOMLEFT,
+            (_, true, _, true) => HTBOTTOMRIGHT,
+            (true, ..) => HTTOP,
+            (_, true, ..) => HTBOTTOM,
+            (_, _, true, _) => HTLEFT,
+            (_, _, _, true) => HTRIGHT,
+            _ => HTNOWHERE,
+        };
+        if ht != HTNOWHERE {
+            return ht;
+        }
+    }
+    let regions = data.regions.borrow();
+    for region in regions.iter().rev() {
+        if region.rect.contains(p) {
+            return match region.kind {
+                RegionKind::Drag => HTCAPTION,
+                RegionKind::Control(WindowControl::Maximize) if data.resizable => HTMAXBUTTON,
+                _ => HTCLIENT,
+            };
+        }
+    }
+    HTCLIENT
 }

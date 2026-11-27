@@ -1,6 +1,6 @@
 //! L'environnement : valeurs héritées par les enfants (police, couleurs…).
 
-use veka_foundation::Color;
+use veka_foundation::{Color, WindowInfo};
 use veka_text::{TextStyle, Weight};
 
 /// Styles de texte sémantiques.
@@ -80,6 +80,8 @@ pub struct Environment {
     pub accent: Color,
     /// Fond de la fenêtre.
     pub background: Color,
+    /// L'état de la fenêtre (agrandie, active…), donné par l'hôte.
+    pub window: WindowInfo,
 }
 
 impl Default for Environment {
@@ -90,6 +92,7 @@ impl Default for Environment {
             foreground: Color::Black,
             accent: Color::Blue,
             background: Color::White,
+            window: WindowInfo::default(),
         }
     }
 }
