@@ -367,3 +367,70 @@ pub unsafe extern "C" fn veka_on_tap(
     // SAFETY : contrat de l'API.
     unsafe { modify(element, "onTapGesture", params) }
 }
+
+// --- Fenêtres dessinées par Veka -------------------------------------------------------------
+
+/// Un bouton de fenêtre.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VekaWindowControl {
+    Close,
+    Minimize,
+    Maximize,
+    Fullscreen,
+}
+
+impl VekaWindowControl {
+    fn name(self) -> &'static str {
+        match self {
+            VekaWindowControl::Close => "close",
+            VekaWindowControl::Minimize => "minimize",
+            VekaWindowControl::Maximize => "maximize",
+            VekaWindowControl::Fullscreen => "fullscreen",
+        }
+    }
+}
+
+/// La vue déplace la fenêtre quand on la tire (double-clic : agrandir).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_window_drag_area(element: *mut VekaElement) -> *mut VekaElement {
+    // SAFETY : contrat de l'API.
+    unsafe { modify(element, "windowDragArea", Params::new()) }
+}
+
+/// La vue devient le bouton `control` de la fenêtre.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_window_control(
+    element: *mut VekaElement,
+    control: VekaWindowControl,
+) -> *mut VekaElement {
+    let params = Params::new().with("control", Value::Enum(Rc::from(control.name())));
+    // SAFETY : contrat de l'API.
+    unsafe { modify(element, "windowControl", params) }
+}
+
+/// Un bouton de fenêtre dessiné par Veka, au style du système.
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_window_button(control: VekaWindowControl) -> *mut VekaElement {
+    guard(std::ptr::null_mut(), || {
+        build_boxed(
+            "WindowButton",
+            Params::new().with("control", Value::Enum(Rc::from(control.name()))),
+            vec![],
+        )
+    })
+}
+
+/// Une barre de titre prête à l'emploi (titre et boutons placés comme sur le système).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_title_bar(title: *const c_char) -> *mut VekaElement {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY : contrat de l'API.
+        let title = unsafe { string(title, "veka_title_bar") }?;
+        build_boxed(
+            "TitleBar",
+            Params::new().with("title", Value::String(Rc::from(title))),
+            vec![],
+        )
+    })
+}

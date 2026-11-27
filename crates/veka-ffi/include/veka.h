@@ -12,6 +12,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Décoration d'une fenêtre.
+typedef enum VekaChrome {
+  // Barre et boutons du système.
+  VEKA_CHROME_SYSTEM,
+  // Barre du système masquée (macOS garde ses feux).
+  VEKA_CHROME_HIDDEN,
+  // Aucune décoration du système : Veka dessine tout.
+  VEKA_CHROME_CUSTOM,
+} VekaChrome;
+
 // Type d'une [`VekaValue`].
 typedef enum VekaValueKind {
   VEKA_VALUE_KIND_BOOL,
@@ -52,6 +62,14 @@ typedef enum VekaWeight {
   VEKA_WEIGHT_BLACK,
 } VekaWeight;
 
+// Un bouton de fenêtre.
+typedef enum VekaWindowControl {
+  VEKA_WINDOW_CONTROL_CLOSE,
+  VEKA_WINDOW_CONTROL_MINIMIZE,
+  VEKA_WINDOW_CONTROL_MAXIMIZE,
+  VEKA_WINDOW_CONTROL_FULLSCREEN,
+} VekaWindowControl;
+
 // Une application. Opaque.
 typedef struct VekaApp VekaApp;
 
@@ -69,6 +87,27 @@ typedef void (*VekaSetupFn)(struct VekaContext *cx, void *user);
 
 // Construit le contenu de la fenêtre. L'élément renvoyé est consommé par Veka.
 typedef struct VekaElement *(*VekaBodyFn)(struct VekaContext *cx, void *user);
+
+// Tous les réglages d'une fenêtre.
+typedef struct VekaWindowDesc {
+  const char *title;
+  // Taille du contenu, en points.
+  float width;
+  float height;
+  // Taille minimale (0 : aucune).
+  float min_width;
+  float min_height;
+  bool resizable;
+  enum VekaChrome chrome;
+  // `VEKA_CHROME_CUSTOM` : fond transparent.
+  bool transparent;
+  // `VEKA_CHROME_CUSTOM` : ombre du système.
+  bool shadow;
+  // `VEKA_CHROME_CUSTOM` : rayon des coins, en points.
+  float corner_radius;
+  // Largeur des bords de redimensionnement, en points (0 : 6 points).
+  float resize_margin;
+} VekaWindowDesc;
 
 // Une couleur sRGB, composantes de 0 à 1.
 typedef struct VekaColor {
@@ -133,6 +172,16 @@ int32_t veka_app_add_window(struct VekaApp *app,
                             VekaSetupFn setup,
                             VekaBodyFn body,
                             void *user);
+
+// Réglages par défaut : 480 × 320, redimensionnable, décoration du système.
+struct VekaWindowDesc veka_window_desc_default(const char *title);
+
+// Ajoute une fenêtre avec tous ses réglages. Renvoie 0, ou -1 en cas d'erreur.
+int32_t veka_app_add_window_ex(struct VekaApp *app,
+                               const struct VekaWindowDesc *desc,
+                               VekaSetupFn setup,
+                               VekaBodyFn body,
+                               void *user);
 
 // Ouvre les fenêtres et bloque jusqu'à la fermeture de la dernière. Libère `app`.
 // Renvoie 0, ou 1 en cas d'erreur (voir `veka_last_error`).
@@ -216,6 +265,19 @@ struct VekaElement *veka_font_weight(struct VekaElement *element, enum VekaWeigh
 
 // Appelle `callback` quand on touche (clique) le contenu.
 struct VekaElement *veka_on_tap(struct VekaElement *element, VekaActionFn callback, void *user);
+
+// La vue déplace la fenêtre quand on la tire (double-clic : agrandir).
+struct VekaElement *veka_window_drag_area(struct VekaElement *element);
+
+// La vue devient le bouton `control` de la fenêtre.
+struct VekaElement *veka_window_control(struct VekaElement *element,
+                                        enum VekaWindowControl control);
+
+// Un bouton de fenêtre dessiné par Veka, au style du système.
+struct VekaElement *veka_window_button(enum VekaWindowControl control);
+
+// Une barre de titre prête à l'emploi (titre et boutons placés comme sur le système).
+struct VekaElement *veka_title_bar(const char *title);
 
 // Crée un état entier (la première fois) ou retrouve le même (les fois suivantes).
 struct VekaState *veka_state_new_int(struct VekaContext *_cx, int64_t initial);

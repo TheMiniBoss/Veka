@@ -119,3 +119,35 @@ fn erreurs_sans_panique() {
         veka_element_free(e);
     }
 }
+
+#[test]
+fn fenetre_personnalisee() {
+    unsafe {
+        let lignes = [
+            veka_title_bar(c"Veka".as_ptr()),
+            veka_text(c"Contenu".as_ptr()),
+            veka_spacer(),
+        ];
+        let vue = veka_vstack(0.0, lignes.as_ptr(), lignes.len());
+        assert!(!vue.is_null());
+        let mut s = Surface::new((*Box::from_raw(vue)).element);
+        s.resize(Size::new(480.0, 320.0), 1.0);
+        s.frame();
+        assert_eq!(s.regions().len(), 4, "barre + 3 boutons");
+
+        let fermer = veka_window_control(veka_rectangle(), VekaWindowControl::Close);
+        let barre = veka_window_drag_area(veka_hstack(0.0, [fermer].as_ptr(), 1));
+        assert!(!barre.is_null());
+        veka_element_free(barre);
+        veka_element_free(veka_window_button(VekaWindowControl::Maximize));
+
+        let mut desc = veka_window_desc_default(c"Veka".as_ptr());
+        desc.chrome = VekaChrome::Custom;
+        let app = veka_app_new();
+        assert_eq!(
+            veka_app_add_window_ex(app, &desc, None, Some(body), std::ptr::null_mut()),
+            0
+        );
+        veka_app_free(app);
+    }
+}

@@ -49,6 +49,11 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: build/c/Debug/compteur.exe
+      - name: Fenêtre personnalisée en C (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: build/c/Debug/fenetre_perso.exe
 
   core:
     name: Cœur sans OS + WebAssembly
