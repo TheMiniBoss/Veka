@@ -131,7 +131,9 @@ impl Banner {
                             .foreground(Color::White)
                     })
                     .collect();
-                let bandeau = views::stack(Axis::Vertical, Some(4.0), lines)
+                // Une bande sur toute la largeur : le texte à gauche, un `Spacer` à droite.
+                let texte = views::stack(Axis::Vertical, Some(4.0), lines);
+                let bandeau = views::stack(Axis::Horizontal, Some(0.0), vec![texte, views::Spacer()])
                     .padding(12)
                     .background(Color::Red);
                 vec![bandeau, views::Spacer()]
