@@ -7,6 +7,7 @@ use veka_foundation::Color;
 use veka_ui::Action;
 use veka_ui::schema::{Params, Value};
 
+use crate::anima::{VekaAnimation, VekaTransition};
 use crate::colora::{VekaPaint, VekaTheme};
 use crate::{VekaContext, context, string};
 
@@ -84,6 +85,10 @@ pub enum VekaValueKind {
     Paint,
     /// Un thème (`VekaTheme*`, partagé : le C le garde).
     Theme,
+    /// Une spec d'animation, par valeur.
+    Animation,
+    /// Une transition (`VekaTransition*`, copiée : le C la garde).
+    Transition,
 }
 
 /// Contenu d'une [`VekaValue`], selon son type.
@@ -98,6 +103,8 @@ pub union VekaValueData {
     pub action: VekaAction,
     pub paint: *const VekaPaint,
     pub theme: *const VekaTheme,
+    pub animation: VekaAnimation,
+    pub transition: *const VekaTransition,
 }
 
 /// Une valeur de paramètre. Se construit avec `veka_number`, `veka_string`…
@@ -195,6 +202,24 @@ pub extern "C" fn veka_theme_value(theme: *const VekaTheme) -> VekaValue {
     }
 }
 
+/// Une spec d'animation comme valeur de paramètre.
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_animation_value(animation: VekaAnimation) -> VekaValue {
+    VekaValue {
+        kind: VekaValueKind::Animation,
+        data: VekaValueData { animation },
+    }
+}
+
+/// Une transition comme valeur de paramètre (copiée à l'usage : le C la garde).
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_transition_value(transition: *const VekaTransition) -> VekaValue {
+    VekaValue {
+        kind: VekaValueKind::Transition,
+        data: VekaValueData { transition },
+    }
+}
+
 /// Convertit les paramètres C.
 pub(crate) unsafe fn params(params: *const VekaParam, count: usize) -> Result<Params, String> {
     let mut out = Params::new();
@@ -234,6 +259,14 @@ pub(crate) unsafe fn params(params: *const VekaParam, count: usize) -> Result<Pa
                         return Err(format!("{name} : thème NULL"));
                     }
                     Value::Theme((*t).theme.clone())
+                }
+                VekaValueKind::Animation => Value::Animation(p.value.data.animation.into()),
+                VekaValueKind::Transition => {
+                    let t = p.value.data.transition;
+                    if t.is_null() {
+                        return Err(format!("{name} : transition NULL"));
+                    }
+                    Value::Transition((*t).transition.clone())
                 }
             }
         };

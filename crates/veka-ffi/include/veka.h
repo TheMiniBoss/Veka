@@ -12,6 +12,29 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// La forme d'une animation.
+typedef enum VekaCurve {
+  VEKA_CURVE_LINEAR,
+  VEKA_CURVE_EASE_IN,
+  VEKA_CURVE_EASE_OUT,
+  VEKA_CURVE_EASE_IN_OUT,
+  VEKA_CURVE_CIRC_EASE_IN,
+  VEKA_CURVE_CIRC_EASE_OUT,
+  VEKA_CURVE_CIRC_EASE_IN_OUT,
+  // Bézier cubique : `params` = x1, y1, x2, y2.
+  VEKA_CURVE_BEZIER,
+  // Ressort : `params` = masse, raideur, amortissement ; la durée est ignorée.
+  VEKA_CURVE_SPRING,
+} VekaCurve;
+
+// Un bord.
+typedef enum VekaEdge {
+  VEKA_EDGE_LEADING,
+  VEKA_EDGE_TRAILING,
+  VEKA_EDGE_TOP,
+  VEKA_EDGE_BOTTOM,
+} VekaEdge;
+
 // Décoration d'une fenêtre.
 typedef enum VekaChrome {
   // Barre et boutons du système.
@@ -58,6 +81,10 @@ typedef enum VekaValueKind {
   VEKA_VALUE_KIND_PAINT,
   // Un thème (`VekaTheme*`, partagé : le C le garde).
   VEKA_VALUE_KIND_THEME,
+  // Une spec d'animation, par valeur.
+  VEKA_VALUE_KIND_ANIMATION,
+  // Une transition (`VekaTransition*`, copiée : le C la garde).
+  VEKA_VALUE_KIND_TRANSITION,
 } VekaValueKind;
 
 // Style de texte.
@@ -114,6 +141,37 @@ typedef struct VekaState VekaState;
 // Un thème Colora. Opaque.
 typedef struct VekaTheme VekaTheme;
 
+// La description d'une timeline : pistes à images clés et événements. Gardée par le C
+// (`veka_timeline_free`) ; `veka_state_new_timeline` en fait une copie.
+typedef struct VekaTimeline VekaTimeline;
+
+// Une transition d'entrée et de sortie. Opaque, consommée quand elle est passée à une fonction.
+typedef struct VekaTransition VekaTransition;
+
+// Une animation, passée par valeur. Se construit avec `veka_animation_linear`,
+// `veka_animation_spring`… puis `veka_animation_delay`, `veka_animation_repeat`…
+typedef struct VekaAnimation {
+  enum VekaCurve curve;
+  float params[4];
+  // Secondes (ignorée par un ressort).
+  float duration;
+  float delay;
+  float speed;
+  // Nombre de fois en tout ; 0 ou 1 : une fois ; -1 : sans fin.
+  int32_t repeat;
+  // Une itération sur deux à l'envers.
+  bool autoreverse;
+} VekaAnimation;
+
+// Fonction appelée par `veka_with_animation`.
+typedef void (*VekaWithFn)(struct VekaContext *cx, void *user);
+
+// Fonction appelée par une action (clic sur un bouton, toucher…).
+typedef void (*VekaActionFn)(struct VekaContext *cx, void *user);
+
+// Fonction appelée pour chaque événement franchi, avec son nom.
+typedef void (*VekaEventFn)(struct VekaContext *cx, const char *name, void *user);
+
 // Déclare les états de la fenêtre (rappelée avant chaque `body`).
 typedef void (*VekaSetupFn)(struct VekaContext *cx, void *user);
 
@@ -164,9 +222,6 @@ typedef struct VekaStop {
   float location;
 } VekaStop;
 
-// Fonction appelée par une action (clic sur un bouton, toucher…).
-typedef void (*VekaActionFn)(struct VekaContext *cx, void *user);
-
 // Une action : la fonction et son pointeur `user`.
 typedef struct VekaAction {
   VekaActionFn callback;
@@ -183,6 +238,8 @@ typedef union VekaValueData {
   struct VekaAction action;
   const struct VekaPaint *paint;
   const struct VekaTheme *theme;
+  struct VekaAnimation animation;
+  const struct VekaTransition *transition;
 } VekaValueData;
 
 // Une valeur de paramètre. Se construit avec `veka_number`, `veka_string`…
@@ -227,6 +284,201 @@ void veka_clear_error(void);
 
 // La version de Veka (« 0.1.0 »).
 const char *veka_version(void);
+
+struct VekaAnimation veka_animation_linear(float duration);
+
+struct VekaAnimation veka_animation_ease_in(float duration);
+
+struct VekaAnimation veka_animation_ease_out(float duration);
+
+struct VekaAnimation veka_animation_ease_in_out(float duration);
+
+struct VekaAnimation veka_animation_circ_ease_in(float duration);
+
+struct VekaAnimation veka_animation_circ_ease_out(float duration);
+
+struct VekaAnimation veka_animation_circ_ease_in_out(float duration);
+
+// Bézier cubique, comme `cubic-bezier(x1, y1, x2, y2)` en CSS.
+struct VekaAnimation veka_animation_timing_curve(float x1,
+                                                 float y1,
+                                                 float x2,
+                                                 float y2,
+                                                 float duration);
+
+// Ressort : `response` = période (s), `damping_fraction` = 1 sans rebond.
+struct VekaAnimation veka_animation_spring(float response, float damping_fraction);
+
+// Ressort aux paramètres physiques.
+struct VekaAnimation veka_animation_interpolating_spring(float mass,
+                                                         float stiffness,
+                                                         float damping);
+
+// Le ressort sans rebond (l'animation par défaut).
+struct VekaAnimation veka_animation_smooth(void);
+
+// Un ressort au léger rebond.
+struct VekaAnimation veka_animation_snappy(void);
+
+// Un ressort au rebond visible.
+struct VekaAnimation veka_animation_bouncy(void);
+
+// Commence après `seconds`.
+struct VekaAnimation veka_animation_delay(struct VekaAnimation animation, float seconds);
+
+// Multiplie la vitesse.
+struct VekaAnimation veka_animation_speed(struct VekaAnimation animation, float speed);
+
+// Joue `count` fois en tout.
+struct VekaAnimation veka_animation_repeat(struct VekaAnimation animation,
+                                           uint32_t count,
+                                           bool autoreverse);
+
+// Joue sans fin.
+struct VekaAnimation veka_animation_repeat_forever(struct VekaAnimation animation,
+                                                   bool autoreverse);
+
+// Appelle `f` : ce que changent les états modifiés dedans s'anime avec `animation` (layout,
+// couleurs, opacité, entrées et sorties). Comme `withAnimation` de SwiftUI.
+void veka_with_animation(struct VekaContext *_cx,
+                         struct VekaAnimation animation,
+                         VekaWithFn f,
+                         void *user);
+
+// Aucun effet.
+struct VekaTransition *veka_transition_identity(void);
+
+// Le fondu (la transition par défaut).
+struct VekaTransition *veka_transition_opacity(void);
+
+// Grandit depuis l'échelle `from` (0 : depuis rien).
+struct VekaTransition *veka_transition_scale(float from);
+
+// Entre par le bord de début, sort par celui de fin.
+struct VekaTransition *veka_transition_slide(void);
+
+// Entre et sort par `edge`.
+struct VekaTransition *veka_transition_move(enum VekaEdge edge);
+
+// Entre par `from`, sort par le bord opposé, en fondu.
+struct VekaTransition *veka_transition_push(enum VekaEdge from);
+
+// Décalée de (x, y) points quand elle est absente.
+struct VekaTransition *veka_transition_offset(float x, float y);
+
+// Floue quand elle est absente (rendu par un fondu pour l'instant).
+struct VekaTransition *veka_transition_blur(float radius);
+
+// Les deux à la fois (les deux sont consommées).
+struct VekaTransition *veka_transition_combined(struct VekaTransition *a, struct VekaTransition *b);
+
+// Une transition pour l'entrée, une autre pour la sortie (les deux sont consommées).
+struct VekaTransition *veka_transition_asymmetric(struct VekaTransition *insertion,
+                                                  struct VekaTransition *removal);
+
+// Libère une transition donnée à personne.
+void veka_transition_free(struct VekaTransition *t);
+
+// Opacité (0 à 1), animable.
+struct VekaElement *veka_opacity(struct VekaElement *element, float opacity);
+
+// Décale le dessin sans changer le layout, animable.
+struct VekaElement *veka_offset(struct VekaElement *element, float x, float y);
+
+// Agrandit le dessin autour de son centre, animable.
+struct VekaElement *veka_scale_effect(struct VekaElement *element, float scale);
+
+// Comme `veka_scale_effect`, un facteur par axe.
+struct VekaElement *veka_scale_effect_xy(struct VekaElement *element, float x, float y);
+
+// Tourne le dessin autour de son centre (degrés, sens horaire), animable.
+struct VekaElement *veka_rotation_effect(struct VekaElement *element, float degrees);
+
+// Anime le contenu avec `*animation` chaque fois que `value` change. `animation` NULL : ne pas
+// animer, même dans un `veka_with_animation`.
+struct VekaElement *veka_animation(struct VekaElement *element,
+                                   const struct VekaAnimation *animation,
+                                   int64_t value);
+
+// Comment le contenu entre et sort pendant une animation. La transition est consommée.
+struct VekaElement *veka_transition(struct VekaElement *element, struct VekaTransition *transition);
+
+// Relie le contenu aux vues de même `id` : quand l'une disparaît et que l'autre apparaît dans la
+// même animation, la nouvelle part de la place de l'ancienne.
+struct VekaElement *veka_matched_geometry_effect(struct VekaElement *element, const char *id);
+
+// L'identité de l'élément parmi ses frères (comme `.id()` en Rust) : une ligne garde son état et
+// ses animations quand la liste change, et entre ou sort seule avec sa transition.
+struct VekaElement *veka_id(struct VekaElement *element,
+                            int64_t id);
+
+// Anime le contenu même si le système demande de réduire les animations.
+struct VekaElement *veka_ignore_reduce_motion(struct VekaElement *element);
+
+// Appelle `callback` quand les animations du contenu sont finies.
+struct VekaElement *veka_on_animation_end(struct VekaElement *element,
+                                          VekaActionFn callback,
+                                          void *user);
+
+// Une timeline vide (vitesse 1, sans boucle).
+struct VekaTimeline *veka_timeline_new(void);
+
+// Ajoute une image clé à la piste `track` (créée au besoin) : `value` à `time` secondes, `curve`
+// adoucissant le segment qui part de cette clé.
+void veka_timeline_key(struct VekaTimeline *t,
+                       const char *track,
+                       float time,
+                       float value,
+                       enum VekaCurve curve);
+
+// Un événement nommé à `time` secondes (voir `veka_timeline_on_event`).
+void veka_timeline_event(struct VekaTimeline *t, float time, const char *name);
+
+// La durée en secondes (0 : jusqu'à la dernière clé ou au dernier événement).
+void veka_timeline_length(struct VekaTimeline *t, float seconds);
+
+// Recommence au début une fois au bout.
+void veka_timeline_looping(struct VekaTimeline *t, bool looping);
+
+// Multiplie la vitesse de lecture.
+void veka_timeline_speed(struct VekaTimeline *t, float speed);
+
+void veka_timeline_free(struct VekaTimeline *t);
+
+// Un état timeline (créé la première fois avec une copie de `*timeline`, retrouvé ensuite), comme
+// les autres `veka_state_new_*`. `autoplay` : lancé dès sa création.
+struct VekaState *veka_state_new_timeline(struct VekaContext *_cx,
+                                          const struct VekaTimeline *timeline,
+                                          bool autoplay);
+
+// Lance (ou reprend) la lecture ; arrivée au bout, elle repart du début.
+void veka_timeline_play(struct VekaContext *_cx, struct VekaState *s);
+
+void veka_timeline_pause(struct VekaContext *_cx, struct VekaState *s);
+
+// Met en pause et revient au début.
+void veka_timeline_stop(struct VekaContext *_cx, struct VekaState *s);
+
+// Va à `time` secondes.
+void veka_timeline_seek(struct VekaContext *_cx, struct VekaState *s, float time);
+
+// Change de sens depuis l'instant présent.
+void veka_timeline_reverse(struct VekaContext *_cx, struct VekaState *s);
+
+// La valeur de la piste `track` à l'instant présent (0 si elle n'existe pas).
+float veka_timeline_value(struct VekaContext *_cx, struct VekaState *s, const char *track);
+
+// L'instant présent, en secondes.
+float veka_timeline_time(struct VekaContext *_cx, struct VekaState *s);
+
+bool veka_timeline_is_playing(struct VekaContext *_cx, struct VekaState *s);
+
+// Appelle `callback` pour chaque événement franchi pendant la lecture. Peut être rappelée à chaque
+// `body` (la dernière fonction donnée est gardée).
+void veka_timeline_on_event(struct VekaContext *_cx,
+                            struct VekaState *s,
+                            VekaEventFn callback,
+                            void *user);
 
 // Crée une application vide.
 struct VekaApp *veka_app_new(void);
@@ -513,6 +765,12 @@ struct VekaValue veka_paint_value(const struct VekaPaint *paint);
 
 // Un thème comme valeur de paramètre (modifier `theme`). Le C le garde.
 struct VekaValue veka_theme_value(const struct VekaTheme *theme);
+
+// Une spec d'animation comme valeur de paramètre.
+struct VekaValue veka_animation_value(struct VekaAnimation animation);
+
+// Une transition comme valeur de paramètre (copiée à l'usage : le C la garde).
+struct VekaValue veka_transition_value(const struct VekaTransition *transition);
 
 #ifdef __cplusplus
 }  // extern "C"
