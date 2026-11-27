@@ -56,6 +56,48 @@ pub struct GlyphRun {
 pub enum BackdropEffect {
     /// Aucun effet : sert à tester le découpage en segments (étape 1).
     None,
+    /// Flou de l'arrière-plan, teinté, découpé à la forme (`backdrop_blur`, `frosted_glass`).
+    Blur(BlurEffect),
+}
+
+/// Réglages d'un flou d'arrière-plan. Les longueurs sont en points logiques.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlurEffect {
+    /// Rayon du flou.
+    pub radius: f32,
+    /// Couleur mélangée au flou (déjà résolue par Colora).
+    pub tint: veka_foundation::Color,
+    /// Part de la teinte, de 0 à 1.
+    pub tint_amount: f32,
+    /// 1 = inchangée ; au-dessus, couleurs plus vives.
+    pub saturation: f32,
+    /// Grain (verre dépoli), de 0 à 1.
+    pub noise: f32,
+    /// Qualité réduite : un seul niveau de flou, sans mélange ni grain.
+    pub low_quality: bool,
+}
+
+impl Default for BlurEffect {
+    fn default() -> Self {
+        Self {
+            radius: 20.0,
+            tint: veka_foundation::Color::White,
+            tint_amount: 0.15,
+            saturation: 1.4,
+            noise: 0.0,
+            low_quality: false,
+        }
+    }
+}
+
+impl BackdropEffect {
+    /// Jusqu'où l'effet lit autour de sa forme, en points (le flou déborde).
+    pub fn reach(&self) -> f32 {
+        match self {
+            BackdropEffect::None => 0.0,
+            BackdropEffect::Blur(b) => b.radius.max(0.0) * 2.0,
+        }
+    }
 }
 
 /// Une commande de dessin.
@@ -132,6 +174,11 @@ impl DrawList {
             rect,
             paint: paint.into(),
         });
+    }
+
+    /// Lit ce qui est déjà dessiné derrière `rect` et y applique `effect`, découpé à `shape`.
+    pub fn backdrop(&mut self, shape: Shape, rect: Rect, effect: BackdropEffect) {
+        self.push(DrawCommand::Backdrop { shape, rect, effect });
     }
 
     pub fn stroke(&mut self, shape: Shape, rect: Rect, paint: impl Into<Paint>, width: f32) {

@@ -2,6 +2,21 @@
 
 Le plus récent en premier.
 
+## Étape 6 — Liquid Glass
+
+### Flou d'arrière-plan (PR L)
+- `.backdrop_blur(rayon)`, `.frosted_glass()` et `.backdrop(BackdropBlur { … })` : ce qui est dessiné derrière
+  la vue est flouté, saturé, teinté (jeton Colora) et granuleux, découpé à sa forme (rectangle, rectangle arrondi,
+  capsule, cercle, ellipse). Tout est animable. Dans le `.vk` : `.backdropBlur(16, shape: .capsule)`,
+  `.frostedGlass()` ; en C : `veka_backdrop_blur`, `veka_frosted_glass`, `veka_backdrop`.
+- Renderer wgpu : une capture copie seulement la zone utile, puis une pyramide (réduction 2×2 et flou gaussien
+  par niveau) donne n'importe quel rayon en mélangeant deux niveaux. Les effets partagent une capture tant que
+  rien n'a été dessiné sur leur zone depuis ; un verre posé sur un autre le voit. Sans effet, rien ne change
+  (pas de copie ni de passe en plus).
+- Repli : `App::backdrop_quality(BackdropQuality::Off | Low | High)` (`veka_app_set_backdrop_quality`), et
+  « Réduire la transparence » de macOS / effets de transparence désactivés sur Windows : teinte unie et opaque.
+- Exemple `verre` (`cargo run --example verre`).
+
 ## Étape 5 — le langage `.vk`
 
 ### Composants, données de l'hôte, logique, interface C (PR K)

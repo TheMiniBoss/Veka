@@ -39,7 +39,7 @@ pub mod views;
 pub mod window;
 
 pub use element::{Action, Element, Key, View, component, component_tagged};
-pub use env::{Environment, Font, ThemeRef};
+pub use env::{BackdropQuality, Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
 pub use state::{State, with_animation};
@@ -66,10 +66,10 @@ pub mod prelude {
         perform_window_action,
     };
     pub use crate::{
-        Alignment, AngularGradient, Axis, Color, ColorScheme, ColorSpace, CornerRadii, Element,
-        EllipticalGradient, Environment, Font, Gradient, Hierarchy, Ink, Insets, Key, LinearGradient,
-        MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface, Theme, Token,
-        UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
+        Alignment, AngularGradient, Axis, BackdropQuality, Color, ColorScheme, ColorSpace, CornerRadii,
+        Element, EllipticalGradient, Environment, Font, Gradient, Hierarchy, Ink, Insets, Key,
+        LinearGradient, MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface,
+        Theme, Token, UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
     pub use crate::{Animation, Curve, Edge, Keyframe, Timeline, TimelineState, Transition, with_animation};
     pub use crate::{HStack, VStack, ZStack};

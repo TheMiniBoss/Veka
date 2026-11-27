@@ -467,10 +467,16 @@ fn read_appearance() -> Appearance {
         )
     };
     let reduce_motion = ok.is_ok() && !animations.as_bool();
+    // Effets de transparence : 0 = désactivés.
+    let reduce_transparency = read_dword(
+        w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+        w!("EnableTransparency"),
+    ) == Some(0);
     Appearance {
         scheme,
         accent,
         reduce_motion,
+        reduce_transparency,
     }
 }
 

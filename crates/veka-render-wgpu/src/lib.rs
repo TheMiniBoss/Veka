@@ -9,11 +9,12 @@
 //!   permettra aux effets (`Backdrop`, verre) de lire ce qui est déjà dessiné.
 
 mod atlas;
+mod backdrop;
 mod painter;
 mod ramps;
 mod window;
 
-pub use painter::Painter;
+pub use painter::{FrameStats, Painter};
 pub use veka_render::{FrameInfo, RenderError, Renderer};
 pub use window::{SurfaceOptions, WindowRenderer};
 
@@ -90,6 +91,15 @@ impl Gpu {
 
 /// Dessine `list` hors écran et renvoie l'image en RGBA 8 bits (sRGB), ligne par ligne.
 pub fn render_to_rgba(gpu: &Gpu, list: &veka_graphics::DrawList, frame: FrameInfo) -> Vec<u8> {
+    render_to_rgba_with_stats(gpu, list, frame).0
+}
+
+/// Comme [`render_to_rgba`], avec ce que l'image a demandé au GPU.
+pub fn render_to_rgba_with_stats(
+    gpu: &Gpu,
+    list: &veka_graphics::DrawList,
+    frame: FrameInfo,
+) -> (Vec<u8>, FrameStats) {
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let mut painter = Painter::new(&gpu.device, format);
     let target = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -148,5 +158,5 @@ pub fn render_to_rgba(gpu: &Gpu, list: &veka_graphics::DrawList, frame: FrameInf
         let start = (y * padded) as usize;
         out.extend_from_slice(&data[start..start + row as usize]);
     }
-    out
+    (out, painter.stats())
 }
