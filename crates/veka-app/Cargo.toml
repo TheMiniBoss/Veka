@@ -7,6 +7,17 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+veka-foundation.workspace = true
+veka-ui.workspace = true
+veka-platform.workspace = true
+veka-render.workspace = true
+veka-render-wgpu.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+veka-platform-windows.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+veka-platform-macos.workspace = true
 
 [lints]
 workspace = true

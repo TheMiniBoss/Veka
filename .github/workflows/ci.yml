@@ -29,6 +29,11 @@ jobs:
       - name: Tests
         run: cargo test --workspace
       - name: Exemple (sans fenêtre)
+        run: cargo run --example compteur_sans_fenetre
+      - name: Exemple fenêtré (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: cargo run --example compteur
 
   core:

@@ -9,6 +9,7 @@
 //! | [`graphics`] | formes, liste de dessin |
 //! | [`text`] | polices, mise en page du texte |
 //! | [`ui`] | vues, état, layout, contrôles |
+//! | [`app`] | fenêtres natives : `App::new().window(titre, vue).run()` |
 //!
 //! ```
 //! use veka::prelude::*;
@@ -24,6 +25,10 @@
 //! # let _ = component(compteur);
 //! ```
 
+#[cfg(feature = "app")]
+pub use veka_app as app;
+#[cfg(feature = "app")]
+pub use veka_app::App;
 pub use veka_foundation as foundation;
 pub use veka_graphics as graphics;
 pub use veka_text as text;
@@ -33,5 +38,7 @@ pub use veka_ui::{HStack, VStack, ZStack};
 
 /// `use veka::prelude::*;` : tout ce qu'il faut pour écrire des vues.
 pub mod prelude {
+    #[cfg(feature = "app")]
+    pub use veka_app::App;
     pub use veka_ui::prelude::*;
 }
