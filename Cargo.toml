@@ -41,6 +41,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSGeometry",
     "NSNotification",
     "NSObject",
+    "NSProcessInfo",
     "NSThread",
     "NSUserDefaults",
 ] }
@@ -57,6 +58,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSEvent",
     "NSGraphics",
     "NSGraphicsContext",
+    "NSMenu",
+    "NSMenuItem",
     "NSResponder",
     "NSRunningApplication",
     "NSScreen",

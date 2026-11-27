@@ -2,6 +2,15 @@
 
 Le plus récent en premier.
 
+## Essais sur le Mac mini
+
+- macOS : les animations (Anima, timelines, `@Clock`, feux d'artifice) s'arrêtaient après la première image,
+  car AppKit oublie un `setNeedsDisplay` demandé pendant `drawRect:`. Les images sont maintenant cadencées par
+  le `CADisplayLink` de la vue (macOS 14+, mis en pause quand rien ne bouge : toujours 0 % de CPU au repos).
+- macOS : menu d'application (Masquer ⌘H, Masquer les autres ⌥⌘H, Quitter ⌘Q ; Fenêtre : Réduire ⌘M, Zoom,
+  Plein écran ⌃⌘F, Fermer ⌘W). Quitter (menu, Dock) demande la fermeture de chaque fenêtre, comme sur Windows.
+- macOS : « Réduire les animations » et la couleur d'accent sont relus dès qu'ils changent dans les Réglages.
+
 ## Étape 5 — le langage `.vk`
 
 ### Composants, données de l'hôte, logique, interface C (PR K)
