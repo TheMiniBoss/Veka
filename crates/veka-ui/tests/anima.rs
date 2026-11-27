@@ -319,3 +319,68 @@ fn timeline_lecture_evenement_retour() {
     assert!((width(&s) - 110.0).abs() < 0.01);
     assert!(!s.is_animating());
 }
+
+thread_local! {
+    static COTE: Cell<Option<State<bool>>> = const { Cell::new(None) };
+    static FINS: Cell<u32> = const { Cell::new(0) };
+}
+
+fn vue_liee() -> impl View {
+    let droite = State::new(false);
+    COTE.with(|c| c.set(Some(droite)));
+    let pastille = |taille: f32, id: i64| {
+        Circle()
+            .frame(taille, taille)
+            .matched_geometry_effect("pastille")
+            .id(id)
+    };
+    let enfants = if droite.get() {
+        vec![Rectangle().frame(100, 20).id(0), pastille(40.0, 2)]
+    } else {
+        vec![pastille(20.0, 1), Rectangle().frame(100, 20).id(0)]
+    };
+    veka_ui::views::stack(veka_ui::Axis::Horizontal, Some(0.0), enfants)
+        .on_animation_end(|| FINS.with(|f| f.set(f.get() + 1)))
+}
+
+fn transforms(s: &Surface) -> Vec<veka_foundation::Transform2D> {
+    s.draw_list()
+        .commands
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::PushTransform(t) => Some(*t),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn geometrie_liee_et_fin_d_animation() {
+    let mut s = surface(component(vue_liee));
+    let avant = s.rects_of("Circle")[0];
+    assert_eq!(avant.width(), 20.0);
+    with_animation(Animation::linear(1.0), || COTE.with(|c| c.get()).unwrap().set(true));
+    at(&mut s, 10.0);
+    let apres = s.rects_of("Circle")[0];
+    assert_eq!(apres.width(), 40.0);
+    assert_eq!(s.rects_of("Circle").len(), 1, "la source est retirée tout de suite");
+    at(&mut s, 10.5);
+    assert_eq!(s.rects_of("Circle").len(), 1);
+    let t = transforms(&s);
+    assert_eq!(t.len(), 1, "{t:?}");
+    // Le milieu : le centre à mi-chemin, 30 points de large.
+    let c = t[0].apply(apres.center());
+    let attendu = veka_foundation::Point::new(
+        (avant.center().x + apres.center().x) / 2.0,
+        (avant.center().y + apres.center().y) / 2.0,
+    );
+    assert!((c.x - attendu.x).abs() < 0.01 && (c.y - attendu.y).abs() < 0.01, "{c:?} ≠ {attendu:?}");
+    assert!((t[0].a - 0.75).abs() < 0.01, "{}", t[0].a);
+    assert_eq!(FINS.with(|f| f.get()), 0);
+    at(&mut s, 11.0);
+    assert!(transforms(&s).is_empty());
+    assert!(!s.is_animating());
+    assert_eq!(FINS.with(|f| f.get()), 1, "on_animation_end appelé une fois");
+    at(&mut s, 12.0);
+    assert_eq!(FINS.with(|f| f.get()), 1);
+}

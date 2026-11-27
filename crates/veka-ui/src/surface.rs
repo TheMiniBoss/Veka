@@ -88,6 +88,8 @@ pub struct Surface {
     regions_changed: bool,
     /// L'heure de la dernière image, en secondes (donnée par l'hôte, voir `frame_at`).
     now: f64,
+    /// Les vues `.on_animation_end` dont le sous-arbre s'animait à l'image précédente.
+    animating_watchers: Vec<NodeId>,
 }
 
 impl std::fmt::Debug for Surface {
@@ -125,6 +127,7 @@ impl Surface {
             regions: Vec::new(),
             regions_changed: false,
             now: 0.0,
+            animating_watchers: Vec::new(),
         }
     }
 
@@ -268,7 +271,37 @@ impl Surface {
             tree::paint(&self.tree, &mut self.list, self.root);
             self.needs_paint = false;
         }
+        for a in self.finished_animations() {
+            a.call();
+        }
         &self.list
+    }
+
+    /// Les rappels `.on_animation_end` dont le sous-arbre vient d'arrêter de s'animer.
+    fn finished_animations(&mut self) -> Vec<crate::Action> {
+        if self.tree.anims.is_empty() && self.animating_watchers.is_empty() {
+            return Vec::new();
+        }
+        fn animating(tree: &Tree, id: NodeId) -> bool {
+            tree.anims.contains_key(&id) || tree.nodes[id].children.iter().any(|&c| animating(tree, c))
+        }
+        fn visit(tree: &Tree, id: NodeId, now: &mut Vec<NodeId>, before: &[NodeId], out: &mut Vec<crate::Action>) {
+            let node = &tree.nodes[id];
+            if let Some(w) = (node.prim.as_ref() as &dyn std::any::Any).downcast_ref::<crate::views::AnimationEndPrim>() {
+                if animating(tree, id) {
+                    now.push(id);
+                } else if before.contains(&id) {
+                    out.push(w.action.clone());
+                }
+            }
+            for &c in &node.children {
+                visit(tree, c, now, before, out);
+            }
+        }
+        let before = std::mem::take(&mut self.animating_watchers);
+        let mut out = Vec::new();
+        visit(&self.tree, self.root, &mut self.animating_watchers, &before, &mut out);
+        out
     }
 
     /// La dernière liste produite par [`frame`](Self::frame).
