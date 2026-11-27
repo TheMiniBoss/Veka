@@ -16,13 +16,14 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
-    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, WindowAction,
-    WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, SystemBackdrop,
+    WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
     ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
+    DWMSBT_MAINWINDOW, DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DWMWCP_ROUNDSMALL, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
@@ -222,7 +223,7 @@ impl PlatformContext for Ctx {
             WS_OVERLAPPEDWINDOW & !(WS_THICKFRAME | WS_MAXIMIZEBOX)
         };
         // Fenêtre transparente : pas de surface GDI, le contenu vient de DirectComposition (wgpu).
-        let ex_style = if desc.chrome.is_transparent() {
+        let ex_style = if desc.is_transparent() {
             WS_EX_NOREDIRECTIONBITMAP
         } else {
             WINDOW_EX_STYLE(0)
@@ -277,6 +278,9 @@ impl PlatformContext for Ctx {
             apply_scheme(hwnd, APPEARANCE.with(|a| a.get()).scheme);
             if custom {
                 decorate(hwnd, desc.chrome);
+            }
+            if desc.backdrop != SystemBackdrop::None {
+                system_backdrop(hwnd, desc.backdrop);
             }
             let mut rect = RECT::default();
             if GetClientRect(hwnd, &mut rect).is_ok() {
@@ -376,6 +380,37 @@ unsafe fn decorate(hwnd: HWND, chrome: Chrome) {
             0,
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// Matériau de DWM sous tout le contenu (Windows 11 22H2 et plus ; sans effet avant).
+///
+/// # Safety
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn system_backdrop(hwnd: HWND, backdrop: SystemBackdrop) {
+    let kind = match backdrop {
+        SystemBackdrop::Mica => DWMSBT_MAINWINDOW,
+        SystemBackdrop::MicaAlt => DWMSBT_TABBEDWINDOW,
+        SystemBackdrop::Acrylic => DWMSBT_TRANSIENTWINDOW,
+        _ => return,
+    };
+    // Le cadre étendu à tout le contenu : DWM y dessine le matériau, que Veka laisse voir là où il
+    // dessine du transparent.
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+    // SAFETY : HWND valide (contrat) et pointeurs vers des variables locales.
+    unsafe {
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &kind as *const _ as *const c_void,
+            std::mem::size_of_val(&kind) as u32,
         );
     }
 }

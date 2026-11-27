@@ -832,6 +832,55 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, c| one(c).backdrop(backdrop_params(p, crate::views::BackdropBlur::frosted())),
         },
         Entry {
+            name: "glass",
+            kind: Modifier,
+            children: One,
+            doc: "verre liquide (façon Liquid Glass 27) ; dans un glassGroup, donne sa forme au groupe",
+            params: GLASS_PARAMS,
+            build: |p, c| one(c).glass_with(glass_params(p)),
+        },
+        Entry {
+            name: "glassGroup",
+            kind: Modifier,
+            children: One,
+            doc: "un seul verre pour les glass du sous-arbre, qui fusionnent comme des gouttes",
+            params: GLASS_GROUP_PARAMS,
+            build: |p, c| one(c).glass_group_with(p.number("smoothness").unwrap_or(16.0), glass_params(p)),
+        },
+        Entry {
+            name: "liquidDistortion",
+            kind: Modifier,
+            children: One,
+            doc: "le fond ondule dans la forme (eau, chaleur)",
+            params: const {
+                &[
+                    p(
+                        "strength",
+                        ValueType::Number,
+                        false,
+                        "déplacement du fond, en points (8)",
+                    ),
+                    p(
+                        "scale",
+                        ValueType::Number,
+                        false,
+                        "taille des vagues, en points (120)",
+                    ),
+                    p("speed", ValueType::Number, false, "1 = normal, 0 = figé"),
+                    p("shape", ValueType::Enum(BACKDROP_SHAPES), false, "forme"),
+                    p("cornerRadius", ValueType::Number, false, "rayon des coins"),
+                ]
+            },
+            build: |p, c| {
+                one(c).liquid_distortion(
+                    p.number("strength").unwrap_or(8.0),
+                    p.number("scale").unwrap_or(120.0),
+                    p.number("speed").unwrap_or(1.0),
+                    shape_param(p).unwrap_or(Shape::Rectangle),
+                )
+            },
+        },
+        Entry {
             name: "ignoreReduceMotion",
             kind: Modifier,
             children: One,
@@ -941,26 +990,90 @@ const BACKDROP_PARAMS: &[ParamSpec] = &[
     p("noise", ValueType::Number, false, "grain, de 0 à 1"),
 ];
 
+const GLASS_STYLES: &[&str] = &["regular", "clear"];
+
+macro_rules! glass_params {
+    ($($extra:expr),*) => {
+        &[
+            $($extra,)*
+            p("style", ValueType::Enum(GLASS_STYLES), false, "regular (par défaut) ou clear"),
+            p("clarity", ValueType::Number, false, "de 0 (teinté) à 1 (clair)"),
+            p("tint", ValueType::Paint, false, "teinte"),
+            p("interactive", ValueType::Bool, false, "le reflet suit le pointeur"),
+            p("shape", ValueType::Enum(BACKDROP_SHAPES), false, "forme (capsule par défaut)"),
+            p("cornerRadius", ValueType::Number, false, "rayon des coins"),
+            p("refraction", ValueType::Number, false, "déplacement du fond au bord, en points"),
+            p("bezel", ValueType::Number, false, "largeur du bord courbe, en points"),
+            p("aberration", ValueType::Number, false, "séparation des couleurs au bord, de 0 à 1"),
+            p("highlight", ValueType::Number, false, "reflet du bord, de 0 à 1"),
+            p("shadow", ValueType::Number, false, "ombre portée, de 0 à 1"),
+        ]
+    };
+}
+
+const GLASS_PARAMS: &[ParamSpec] = glass_params!();
+const GLASS_GROUP_PARAMS: &[ParamSpec] = glass_params!(p(
+    "smoothness",
+    ValueType::Number,
+    false,
+    "distance de fusion, en points (16)"
+));
+
+/// La forme donnée par `shape` et `cornerRadius`.
+fn shape_param(p: &Params) -> Option<Shape> {
+    let corner = p.number("cornerRadius");
+    match p.enumeration("shape") {
+        Some("rectangle") => Some(Shape::Rectangle),
+        Some("capsule") => Some(Shape::Capsule),
+        Some("circle") => Some(Shape::Circle),
+        Some("ellipse") => Some(Shape::Ellipse),
+        Some("roundedRectangle") => Some(Shape::RoundedRectangle(CornerRadii::all(corner.unwrap_or(16.0)))),
+        _ => corner.map(|r| Shape::RoundedRectangle(CornerRadii::all(r))),
+    }
+}
+
+/// Le matériau d'un verre (`glass`, `glassGroup`).
+fn glass_params(p: &Params) -> crate::views::Glass {
+    let mut g = match p.enumeration("style") {
+        Some("clear") => crate::views::Glass::clear(),
+        _ => crate::views::Glass::regular(),
+    };
+    if let Some(v) = p.number("clarity") {
+        g.clarity = v;
+    }
+    if let Some(t) = p.paint("tint") {
+        g.tint = Some(t);
+    }
+    if let Some(Value::Bool(b)) = p.get("interactive") {
+        g.interactive = *b;
+    }
+    g.shape = shape_param(p).or(g.shape);
+    if let Some(v) = p.number("refraction") {
+        g.refraction = v;
+    }
+    if let Some(v) = p.number("bezel") {
+        g.bezel = v;
+    }
+    if let Some(v) = p.number("aberration") {
+        g.aberration = v;
+    }
+    if let Some(v) = p.number("highlight") {
+        g.highlight = v;
+    }
+    if let Some(v) = p.number("shadow") {
+        g.shadow = v;
+    }
+    g
+}
+
 /// Les réglages donnés par-dessus `base` (`backdropBlur`, `frostedGlass`).
 fn backdrop_params(p: &Params, base: crate::views::BackdropBlur) -> crate::views::BackdropBlur {
     let mut b = base;
     if let Some(r) = p.number("radius") {
         b.radius = r;
     }
-    let corner = p.number("cornerRadius");
-    match p.enumeration("shape") {
-        Some("rectangle") => b.shape = Shape::Rectangle,
-        Some("capsule") => b.shape = Shape::Capsule,
-        Some("circle") => b.shape = Shape::Circle,
-        Some("ellipse") => b.shape = Shape::Ellipse,
-        Some("roundedRectangle") => {
-            b.shape = Shape::RoundedRectangle(CornerRadii::all(corner.unwrap_or(16.0)));
-        }
-        _ => {
-            if let Some(r) = corner {
-                b.shape = Shape::RoundedRectangle(CornerRadii::all(r));
-            }
-        }
+    if let Some(shape) = shape_param(p) {
+        b.shape = shape;
     }
     if let Some(t) = p.paint("tint") {
         b.tint = t;

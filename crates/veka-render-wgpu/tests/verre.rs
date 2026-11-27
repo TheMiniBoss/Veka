@@ -1,7 +1,7 @@
 //! L'exemple `verre` rendu hors écran : le panneau dépoli floute bien le fond, et le repli
 //! « Réduire la transparence » donne une teinte unie.
 //!
-//! `VEKA_DUMP=chemin` écrit les images brutes (`chemin.rgba` et `chemin-repli.rgba`, 1440 × 960).
+//! `VEKA_DUMP=chemin` écrit les images brutes (`chemin.rgba` et `chemin-repli.rgba`, 1800 × 1120).
 
 use veka::prelude::*;
 use veka_render_wgpu::{FrameInfo, Gpu, render_to_rgba_with_stats};
@@ -21,12 +21,12 @@ fn verre_hors_ecran() {
     };
     let scale = 2.0;
     let frame = FrameInfo {
-        width: 1440,
-        height: 960,
+        width: 1800,
+        height: 1120,
         scale,
     };
     let mut surface = Surface::new(component(verre::vue));
-    surface.resize(Size::new(720.0, 480.0), scale);
+    surface.resize(Size::new(900.0, 560.0), scale);
     let list = surface.frame().clone();
     let (img, stats) = render_to_rgba_with_stats(&gpu, &list, frame);
     surface.set_reduce_transparency(true);
@@ -36,17 +36,18 @@ fn verre_hors_ecran() {
         std::fs::write(format!("{path}.rgba"), &img).expect("écriture");
         std::fs::write(format!("{path}-repli.rgba"), &repli).expect("écriture");
     }
-    // La barre lit, autour d'elle, la zone où le texte du panneau vient d'être dessiné : deux captures.
-    assert_eq!(stats.effects, 2, "{stats:?}");
-    assert_eq!(stats.captures, 2, "{stats:?}");
+    // Dépoli, carte, goutte (verre et eau), barre (un seul verre pour ses trois onglets).
+    assert_eq!(stats.effects, 5, "{stats:?}");
+    // Chaque effet lit autour de lui une zone où du texte vient d'être dessiné : pas de partage ici.
+    assert!(stats.captures <= 5, "{stats:?}");
     assert_eq!(stats_repli.captures, 0);
     // Au centre du panneau (sous le texte, côté gauche, hors des lettres) : flou, donc proche de la
     // moyenne de ses voisins à 20 pixels.
     let px = |img: &[u8], x: u32, y: u32| {
-        let i = ((y * 1440 + x) * 4) as usize;
+        let i = ((y * 1800 + x) * 4) as usize;
         [img[i] as i32, img[i + 1] as i32, img[i + 2] as i32]
     };
-    let (cx, cy) = (720 - 280, 480 - 160);
+    let (cx, cy) = (2 * 120, 2 * 175);
     let c = px(&img, cx, cy);
     let n = px(&img, cx + 20, cy);
     assert!(c.iter().zip(n).all(|(a, b)| (a - b).abs() < 24), "{c:?} {n:?}");

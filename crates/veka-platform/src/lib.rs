@@ -105,6 +105,27 @@ impl Chrome {
     }
 }
 
+/// Matériau du système derrière le contenu de la fenêtre. Le bureau ne se voit qu'à travers lui : un
+/// verre de Veka ne lit que ce que Veka dessine. Veka se dessine par-dessus, sur un fond transparent.
+///
+/// | Valeur | Windows 11 | macOS |
+/// |---|---|---|
+/// | `Mica` | Mica | fond de fenêtre (`underWindowBackground`) |
+/// | `MicaAlt` | Mica Alt (onglets) | barre latérale (`sidebar`) |
+/// | `Acrylic` | Acrylic (fenêtres passagères) | HUD (`hudWindow`) |
+///
+/// Sans effet sur Windows 10 (le fond reste celui de la fenêtre) et quand « Réduire la transparence »
+/// est actif sur macOS (le système donne alors une teinte unie).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum SystemBackdrop {
+    #[default]
+    None,
+    Mica,
+    MicaAlt,
+    Acrylic,
+}
+
 /// Ce qu'il faut pour créer une fenêtre.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowDesc {
@@ -117,6 +138,8 @@ pub struct WindowDesc {
     pub chrome: Chrome,
     /// Largeur des bords de redimensionnement, en points (fenêtres sans décoration du système).
     pub resize_margin: f32,
+    /// Matériau du système derrière le contenu.
+    pub backdrop: SystemBackdrop,
 }
 
 impl WindowDesc {
@@ -128,7 +151,18 @@ impl WindowDesc {
             resizable: true,
             chrome: Chrome::System,
             resize_margin: 6.0,
+            backdrop: SystemBackdrop::None,
         }
+    }
+
+    /// Le contenu se dessine sur un fond transparent (fenêtre transparente ou matériau du système).
+    pub fn is_transparent(&self) -> bool {
+        self.chrome.is_transparent() || self.backdrop != SystemBackdrop::None
+    }
+
+    pub fn backdrop(mut self, backdrop: SystemBackdrop) -> Self {
+        self.backdrop = backdrop;
+        self
     }
 
     pub fn size(mut self, size: Size) -> Self {

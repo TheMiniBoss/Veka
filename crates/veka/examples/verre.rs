@@ -1,5 +1,7 @@
-//! Verre : un flou d'arrière-plan et un panneau en verre dépoli au-dessus d'un fond coloré qui bouge.
-//! `cargo run --example verre`
+//! Verre : verre dépoli, verre liquide (façon 27), gouttes qui fusionnent et eau, au-dessus d'un fond
+//! coloré qui bouge.
+//! `cargo run --example verre` ; `-- mica`, `-- mica-alt` ou `-- acrylic` : sans le fond coloré, sur le
+//! matériau du système (Windows 11, macOS).
 
 use veka::prelude::*;
 
@@ -43,7 +45,7 @@ pub fn fond() -> impl View {
         veka::ui::views::stack(
             Axis::Horizontal,
             Some(14.0),
-            (0..24)
+            (0..40)
                 .map(|i| {
                     Capsule()
                         .fill(if i % 2 == 0 { Color::White } else { Color::Black })
@@ -56,7 +58,7 @@ pub fn fond() -> impl View {
             Text("Veka").font(Font::Title).foreground(Color::White),
             Text("verre").font(Font::Title).foreground(Color::Black),
         ]
-        .offset(0.0, 106.0),
+        .offset(-300.0, 230.0),
     ]
 }
 
@@ -75,29 +77,92 @@ pub fn panneau() -> impl View {
     .backdrop(BackdropBlur::frosted().radius(if f { 30.0 } else { 8.0 }))
 }
 
+/// Une barre d'onglets en verre liquide : trois boutons qui fusionnent quand on les rapproche.
 pub fn barre() -> impl View {
-    HStack![spacing: 16;
-        Text("Accueil"),
-        Text("Recherche"),
-        Text("Réglages"),
+    let serre = State::new(false);
+    let sr = serre.get();
+    let onglet = |nom: &'static str| {
+        Text(nom)
+            .padding_hv(18.0, 10.0)
+            .glass_with(Glass::regular().interactive(true))
+    };
+    VStack![spacing: 12;
+        HStack![spacing: if sr { 2.0 } else { 18.0 };
+            onglet("Accueil"),
+            onglet("Recherche"),
+            onglet("Réglages"),
+        ]
+        .glass_group_with(14.0, Glass::regular().interactive(true)),
+        Button(if sr { "Écarter" } else { "Rapprocher" }, move || {
+            with_animation(Animation::spring(0.5, 0.7), || serre.toggle())
+        }),
     ]
-    .padding_hv(24.0, 12.0)
-    .backdrop(BackdropBlur::default().radius(16.0).shape(Shape::Capsule))
+}
+
+/// Une carte en verre clair : le bord tord le fond, le reflet suit le pointeur.
+pub fn carte() -> impl View {
+    let clarte = State::new(1usize);
+    let niveaux = [0.0f32, 0.4, 0.9];
+    let noms = ["Teinté", "Par défaut", "Clair"];
+    let c = clarte.get();
+    VStack![spacing: 10;
+        Text("Liquid Glass").font(Font::Title2),
+        Text(format!("Clarté : {}", noms[c])).font(Font::Footnote),
+        Button("Changer", move || {
+            with_animation(Animation::smooth(), || clarte.update(|v| *v = (*v + 1) % 3))
+        }),
+    ]
+    .padding(22)
+    .frame(240, 150)
+    .glass_with(
+        Glass::regular()
+            .clarity(niveaux[c])
+            .shape(Shape::RoundedRectangle(CornerRadii::all(28.0)))
+            .interactive(true),
+    )
+}
+
+/// Une goutte d'eau : le fond ondule dedans.
+pub fn goutte() -> impl View {
+    Text("Eau")
+        .font(Font::Headline)
+        .frame(110, 110)
+        .liquid_distortion(10.0, 90.0, 1.0, Shape::Circle)
+        .glass_with(Glass::clear().shape(Shape::Circle))
+}
+
+fn verres() -> Element {
+    VStack![spacing: 28;
+        HStack![spacing: 28;
+            component(panneau),
+            component(carte),
+            component(goutte),
+        ],
+        component(barre),
+    ]
+    .into_element()
 }
 
 pub fn vue() -> impl View {
-    ZStack![
-        component(fond),
-        VStack![spacing: 24;
-            component(panneau),
-            component(barre),
-        ],
-    ]
+    ZStack![component(fond), verres()]
 }
 
 fn main() {
-    let fenetre = Window::new("Verre").size(Size::new(720.0, 480.0));
-    if let Err(e) = App::new().window_with(fenetre, vue).run() {
+    let materiau = match std::env::args().nth(1).as_deref() {
+        Some("mica") => SystemBackdrop::Mica,
+        Some("mica-alt") => SystemBackdrop::MicaAlt,
+        Some("acrylic") => SystemBackdrop::Acrylic,
+        _ => SystemBackdrop::None,
+    };
+    let fenetre = Window::new("Verre")
+        .size(Size::new(900.0, 560.0))
+        .backdrop(materiau);
+    let app = if materiau == SystemBackdrop::None {
+        App::new().window_with(fenetre, vue)
+    } else {
+        App::new().window_with(fenetre, verres)
+    };
+    if let Err(e) = app.run() {
         eprintln!("Veka : {e}");
         std::process::exit(1);
     }

@@ -112,6 +112,8 @@ pub struct Environment {
     pub reduce_transparency: bool,
     /// Qualité des effets d'arrière-plan (réglée sur l'app).
     pub backdrop_quality: BackdropQuality,
+    /// Dans un `glass_group` : les verres donnent leur forme au groupe.
+    pub in_glass_group: bool,
 }
 
 /// Qualité des effets qui lisent l'arrière-plan (flou, verre).
@@ -143,6 +145,7 @@ impl Default for Environment {
             ignore_reduce_motion: false,
             reduce_transparency: false,
             backdrop_quality: BackdropQuality::High,
+            in_glass_group: false,
         }
     }
 }
