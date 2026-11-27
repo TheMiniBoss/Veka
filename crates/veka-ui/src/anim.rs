@@ -219,6 +219,19 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
                     progress: 0.0,
                 });
             }
+            // Le parent se déplace encore (une liste qui se recentre…) : la vue insérée part avec
+            // lui, au lieu d'apparaître d'emblée à sa place finale, par-dessus ses voisins.
+            let parent = &tree.nodes[tree.nodes[id].parent.expect("vérifié")];
+            let (dx, dy) = (
+                parent.rect.x() - parent.layout_rect.x(),
+                parent.rect.y() - parent.layout_rect.y(),
+            );
+            if !reduce && (dx != 0.0 || dy != 0.0) {
+                let from = Rect::new(target.x() + dx, target.y() + dy, target.width(), target.height());
+                let a = tree.anims.entry(id).or_default();
+                a.geometry = Some(Animator::new(s, now, rect_data(from), rect_data(target), None));
+                a.geometry_rect = Some(from);
+            }
         }
         for c in tree.nodes[id].children.clone() {
             walk(tree, c, spec, true, cx);

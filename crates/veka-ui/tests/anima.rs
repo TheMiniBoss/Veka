@@ -519,3 +519,36 @@ fn timeline_avant_la_premiere_heure() {
     at(&mut s, 1_000_500.0);
     assert!(BATTEMENTS.with(|b| b.get()) <= 3);
 }
+
+#[test]
+fn insertion_suit_le_parent_qui_bouge() {
+    // La pile se recentre en grandissant : la nouvelle ligne part avec elle et ne chevauche pas
+    // la ligne affichée au-dessus.
+    fn vue() -> impl View {
+        let n = State::new(2u32);
+        LISTE.with(|c| c.set(Some(n)));
+        let lignes = (1..=n.get())
+            .map(|i| {
+                Rectangle()
+                    .frame(100, 20)
+                    .id(i as i64)
+                    .transition(Transition::opacity())
+            })
+            .collect();
+        veka_ui::views::stack(veka_ui::Axis::Vertical, Some(0.0), lignes)
+    }
+    let mut s = surface(component(vue));
+    with_animation(Animation::linear(1.0), || LISTE.with(|c| c.get()).unwrap().set(3));
+    at(&mut s, 10.0);
+    let r = s.rects_of("Rectangle");
+    let t = transforms(&s);
+    assert_eq!(t.len(), 1, "{t:?}");
+    let haut_nouvelle = r[2].y() + t[0].ty;
+    assert!(
+        (haut_nouvelle - (r[1].y() + r[1].height())).abs() < 0.01,
+        "{haut_nouvelle} vs {:?}",
+        r[1]
+    );
+    at(&mut s, 11.0);
+    assert!(transforms(&s).is_empty());
+}
