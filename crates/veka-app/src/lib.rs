@@ -24,8 +24,8 @@ use veka_platform::{
     MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowId,
 };
 use veka_render::{FrameInfo, RenderError, Renderer};
-use veka_render_wgpu::WindowRenderer;
-use veka_ui::{Element, InputEvent, PointerButton, Surface, View, component};
+use veka_render_wgpu::{SurfaceOptions, WindowRenderer};
+use veka_ui::{Color, Element, InputEvent, PointerButton, Surface, View, component};
 
 pub use veka_platform::{Chrome, Size, WindowDesc};
 
@@ -155,9 +155,15 @@ impl Host {
         desc: WindowDesc,
         root: Element,
     ) -> Result<(), AppError> {
+        let transparent = desc.chrome.is_transparent();
         let id = ctx.create_window(desc).map_err(AppError::Platform)?;
         let window = ctx.window(id);
         let mut surface = Surface::new(root);
+        if transparent {
+            let mut env = surface.environment().clone();
+            env.background = Color::Clear;
+            surface.set_environment(env);
+        }
         surface.resize(window.size(), window.scale());
         surface.set_waker(window.redraw_requester());
         surface.set_window_info(window.info());
@@ -168,7 +174,7 @@ impl Host {
             scale: window.scale(),
         };
         // SAFETY : le renderer est retiré (et détruit) avant la fermeture de sa fenêtre.
-        let renderer = unsafe { WindowRenderer::new(window, frame) };
+        let renderer = unsafe { WindowRenderer::with_options(window, frame, SurfaceOptions { transparent }) };
         let renderer = match renderer {
             Ok(r) => r,
             Err(e) => {

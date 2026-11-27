@@ -1,6 +1,6 @@
 # Veka : étape 2, les fenêtres personnalisées
 
-Statut : **conception, à valider**. Fait suite à `VEKA_ETAPE1.md` §8.4 (choix n° 7).
+Statut : **validé, en cours** (PR D fusionnée, PR E en revue ; essais macOS en attente du Mac). Fait suite à `VEKA_ETAPE1.md` §8.4 (choix n° 7).
 
 ## 1. Objectif
 

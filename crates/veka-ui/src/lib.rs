@@ -56,8 +56,8 @@ pub mod prelude {
         perform_window_action,
     };
     pub use crate::{
-        Alignment, Axis, Color, Element, Environment, Font, Insets, Key, Point, Rect, Shape, Size, State,
-        Surface, View, Weight, WindowAction, WindowControl, WindowInfo, component,
+        Alignment, Axis, Color, CornerRadii, Element, Environment, Font, Insets, Key, Point, Rect, Shape,
+        Size, State, Surface, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
     pub use crate::{HStack, VStack, ZStack};
 }

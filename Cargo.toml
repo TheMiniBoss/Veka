@@ -39,11 +39,15 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSNotification",
     "NSObject",
     "NSThread",
+    "NSUserDefaults",
 ] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",
     "NSApplication",
+    "NSButton",
+    "NSColor",
+    "NSControl",
     "NSEvent",
     "NSGraphics",
     "NSGraphicsContext",

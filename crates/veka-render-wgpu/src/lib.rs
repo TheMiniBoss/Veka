@@ -14,7 +14,7 @@ mod window;
 
 pub use painter::Painter;
 pub use veka_render::{FrameInfo, RenderError, Renderer};
-pub use window::WindowRenderer;
+pub use window::{SurfaceOptions, WindowRenderer};
 
 /// Instance, adaptateur, appareil et file du GPU.
 pub struct Gpu {
@@ -69,6 +69,16 @@ impl Gpu {
             backends: wgpu::Backends::PRIMARY,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         })
+    }
+
+    /// Instance pour une fenêtre transparente : sur Windows, DX12 présente par DirectComposition.
+    pub fn transparent_instance() -> wgpu::Instance {
+        let mut desc = wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        };
+        desc.backend_options.dx12.presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
+        wgpu::Instance::new(desc)
     }
 
     /// GPU sans fenêtre (tests, rendu hors écran).
