@@ -81,7 +81,10 @@ impl Vector {
 }
 
 impl Size {
-    pub const ZERO: Size = Size { width: 0.0, height: 0.0 };
+    pub const ZERO: Size = Size {
+        width: 0.0,
+        height: 0.0,
+    };
 
     pub const fn new(width: f32, height: f32) -> Self {
         Self { width, height }
@@ -98,10 +101,16 @@ impl Size {
 }
 
 impl Rect {
-    pub const ZERO: Rect = Rect { origin: Point::ZERO, size: Size::ZERO };
+    pub const ZERO: Rect = Rect {
+        origin: Point::ZERO,
+        size: Size::ZERO,
+    };
 
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { origin: Point::new(x, y), size: Size::new(width, height) }
+        Self {
+            origin: Point::new(x, y),
+            size: Size::new(width, height),
+        }
     }
 
     pub const fn from_origin_size(origin: Point, size: Size) -> Self {
@@ -128,7 +137,10 @@ impl Rect {
     }
 
     pub fn center(&self) -> Point {
-        Point::new(self.origin.x + self.size.width * 0.5, self.origin.y + self.size.height * 0.5)
+        Point::new(
+            self.origin.x + self.size.width * 0.5,
+            self.origin.y + self.size.height * 0.5,
+        )
     }
 
     /// Vrai si `p` est dans le rectangle (bord haut-gauche inclus, bord bas-droit exclu).
@@ -140,14 +152,23 @@ impl Rect {
     pub fn inset(&self, insets: Insets) -> Rect {
         Rect::from_origin_size(
             Point::new(self.x() + insets.leading, self.y() + insets.top),
-            Size::new(self.width() - insets.horizontal(), self.height() - insets.vertical()).non_negative(),
+            Size::new(
+                self.width() - insets.horizontal(),
+                self.height() - insets.vertical(),
+            )
+            .non_negative(),
         )
     }
 
     pub fn union(&self, other: &Rect) -> Rect {
         let x = self.x().min(other.x());
         let y = self.y().min(other.y());
-        Rect::new(x, y, self.max_x().max(other.max_x()) - x, self.max_y().max(other.max_y()) - y)
+        Rect::new(
+            x,
+            y,
+            self.max_x().max(other.max_x()) - x,
+            self.max_y().max(other.max_y()) - y,
+        )
     }
 
     /// Intersection, ou `None` si les rectangles ne se touchent pas.
@@ -166,15 +187,30 @@ impl Rect {
     /// Un rectangle de taille `size` centré dans celui-ci.
     pub fn centered(&self, size: Size) -> Rect {
         let c = self.center();
-        Rect::new(c.x - size.width * 0.5, c.y - size.height * 0.5, size.width, size.height)
+        Rect::new(
+            c.x - size.width * 0.5,
+            c.y - size.height * 0.5,
+            size.width,
+            size.height,
+        )
     }
 }
 
 impl Insets {
-    pub const ZERO: Insets = Insets { top: 0.0, leading: 0.0, bottom: 0.0, trailing: 0.0 };
+    pub const ZERO: Insets = Insets {
+        top: 0.0,
+        leading: 0.0,
+        bottom: 0.0,
+        trailing: 0.0,
+    };
 
     pub const fn new(top: f32, leading: f32, bottom: f32, trailing: f32) -> Self {
-        Self { top, leading, bottom, trailing }
+        Self {
+            top,
+            leading,
+            bottom,
+            trailing,
+        }
     }
 
     pub const fn all(v: f32) -> Self {
@@ -197,19 +233,47 @@ impl Default for Transform2D {
 }
 
 impl Transform2D {
-    pub const IDENTITY: Transform2D = Transform2D { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 };
+    pub const IDENTITY: Transform2D = Transform2D {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 0.0,
+        ty: 0.0,
+    };
 
     pub const fn translation(tx: f32, ty: f32) -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx, ty }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx,
+            ty,
+        }
     }
 
     pub const fn scale(sx: f32, sy: f32) -> Self {
-        Self { a: sx, b: 0.0, c: 0.0, d: sy, tx: 0.0, ty: 0.0 }
+        Self {
+            a: sx,
+            b: 0.0,
+            c: 0.0,
+            d: sy,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 
     pub fn rotation(radians: f32) -> Self {
         let (s, c) = radians.sin_cos();
-        Self { a: c, b: s, c: -s, d: c, tx: 0.0, ty: 0.0 }
+        Self {
+            a: c,
+            b: s,
+            c: -s,
+            d: c,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 
     /// `self` puis `other` (d'abord `self`, ensuite `other`).
@@ -225,7 +289,10 @@ impl Transform2D {
     }
 
     pub fn apply(&self, p: Point) -> Point {
-        Point::new(self.a * p.x + self.c * p.y + self.tx, self.b * p.x + self.d * p.y + self.ty)
+        Point::new(
+            self.a * p.x + self.c * p.y + self.tx,
+            self.b * p.x + self.d * p.y + self.ty,
+        )
     }
 
     /// Inverse, ou `None` si la transformation n'est pas inversible.
@@ -239,7 +306,14 @@ impl Transform2D {
         let b = -self.b * inv;
         let c = -self.c * inv;
         let d = self.a * inv;
-        Some(Transform2D { a, b, c, d, tx: -(a * self.tx + c * self.ty), ty: -(b * self.tx + d * self.ty) })
+        Some(Transform2D {
+            a,
+            b,
+            c,
+            d,
+            tx: -(a * self.tx + c * self.ty),
+            ty: -(b * self.tx + d * self.ty),
+        })
     }
 }
 

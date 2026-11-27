@@ -55,7 +55,12 @@ pub struct TextStyle {
 
 impl Default for TextStyle {
     fn default() -> Self {
-        Self { family: None, size: 17.0, weight: Weight::Regular, color: Color::Black }
+        Self {
+            family: None,
+            size: 17.0,
+            weight: Weight::Regular,
+            color: Color::Black,
+        }
     }
 }
 
@@ -98,7 +103,9 @@ pub struct TextSystem {
 
 impl std::fmt::Debug for TextSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TextSystem").field("default_family", &self.default_family).finish()
+        f.debug_struct("TextSystem")
+            .field("default_family", &self.default_family)
+            .finish()
     }
 }
 
@@ -121,9 +128,15 @@ impl TextSystem {
 
     /// Sans aucune police.
     pub fn empty() -> Self {
-        let collection = Collection::new(CollectionOptions { shared: false, system_fonts: false });
+        let collection = Collection::new(CollectionOptions {
+            shared: false,
+            system_fonts: false,
+        });
         Self {
-            fonts: FontContext { collection, source_cache: SourceCache::default() },
+            fonts: FontContext {
+                collection,
+                source_cache: SourceCache::default(),
+            },
             layout: LayoutContext::new(),
             default_family: DEFAULT_FAMILY.into(),
         }
@@ -149,7 +162,10 @@ impl TextSystem {
 
     /// Met en page `text`. Avec `max_width`, le texte revient à la ligne pour tenir dans la largeur.
     pub fn layout(&mut self, text: &str, style: &TextStyle, max_width: Option<f32>) -> TextLayout {
-        let family = style.family.clone().unwrap_or_else(|| self.default_family.clone());
+        let family = style
+            .family
+            .clone()
+            .unwrap_or_else(|| self.default_family.clone());
         let mut builder = self.layout.ranged_builder(&mut self.fonts, text, 1.0, false);
         builder.push_default(StyleProperty::FontFamily(FontFamily::named(&family)));
         builder.push_default(StyleProperty::FontSize(style.size));
@@ -166,14 +182,27 @@ impl TextSystem {
         };
         for line in layout.lines() {
             for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(run) = item else { continue };
+                let PositionedLayoutItem::GlyphRun(run) = item else {
+                    continue;
+                };
                 let font = run.run().font();
                 let (data, key) = font.data.clone().into_raw_parts();
                 out.runs.push(TextRun {
-                    font: FontRef { key, data, index: font.index },
+                    font: FontRef {
+                        key,
+                        data,
+                        index: font.index,
+                    },
                     size: run.run().font_size(),
                     color: run.style().brush,
-                    glyphs: run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }).collect(),
+                    glyphs: run
+                        .positioned_glyphs()
+                        .map(|g| Glyph {
+                            id: g.id,
+                            x: g.x,
+                            y: g.y,
+                        })
+                        .collect(),
                 });
             }
         }
@@ -185,8 +214,12 @@ impl TextSystem {
 mod default_fonts {
     macro_rules! font {
         ($name:literal) => {
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fonts/LTFlodeNeue/LTFlodeNeue-", $name, ".otf"))
-                as &'static [u8]
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../fonts/LTFlodeNeue/LTFlodeNeue-",
+                $name,
+                ".otf"
+            )) as &'static [u8]
         };
     }
 
@@ -221,10 +254,25 @@ mod tests {
     #[test]
     fn measures_a_line() {
         let mut s = TextSystem::new();
-        let l = s.layout("Bonjour Veka", &TextStyle { size: 28.0, ..Default::default() }, None);
+        let l = s.layout(
+            "Bonjour Veka",
+            &TextStyle {
+                size: 28.0,
+                ..Default::default()
+            },
+            None,
+        );
         assert_eq!(l.line_count, 1);
-        assert!(l.size.width > 100.0 && l.size.width < 250.0, "largeur {}", l.size.width);
-        assert!(l.size.height > 28.0 && l.size.height < 45.0, "hauteur {}", l.size.height);
+        assert!(
+            l.size.width > 100.0 && l.size.width < 250.0,
+            "largeur {}",
+            l.size.width
+        );
+        assert!(
+            l.size.height > 28.0 && l.size.height < 45.0,
+            "hauteur {}",
+            l.size.height
+        );
         assert!(l.first_baseline > 0.0 && l.first_baseline < l.size.height);
         let n: usize = l.runs.iter().map(|r| r.glyphs.len()).sum();
         assert_eq!(n, 12);
@@ -235,14 +283,27 @@ mod tests {
         let mut a = TextSystem::new();
         let mut b = TextSystem::new();
         let st = TextStyle::default();
-        assert_eq!(a.layout("Clics : 42", &st, None).size, b.layout("Clics : 42", &st, None).size);
+        assert_eq!(
+            a.layout("Clics : 42", &st, None).size,
+            b.layout("Clics : 42", &st, None).size
+        );
     }
 
     #[test]
     fn bold_is_wider() {
         let mut s = TextSystem::new();
         let regular = s.layout("Veka", &TextStyle::default(), None).size.width;
-        let bold = s.layout("Veka", &TextStyle { weight: Weight::Black, ..Default::default() }, None).size.width;
+        let bold = s
+            .layout(
+                "Veka",
+                &TextStyle {
+                    weight: Weight::Black,
+                    ..Default::default()
+                },
+                None,
+            )
+            .size
+            .width;
         assert!(bold > regular);
     }
 
@@ -261,7 +322,10 @@ mod tests {
     fn accents_have_glyphs() {
         let mut s = TextSystem::new();
         let l = s.layout("éàçôü", &TextStyle::default(), None);
-        assert!(l.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0), "pas de glyphe manquant");
+        assert!(
+            l.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0),
+            "pas de glyphe manquant"
+        );
     }
 
     #[test]

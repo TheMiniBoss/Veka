@@ -15,7 +15,12 @@ pub struct CornerRadii {
 
 impl CornerRadii {
     pub const fn all(r: f32) -> Self {
-        Self { top_left: r, top_right: r, bottom_right: r, bottom_left: r }
+        Self {
+            top_left: r,
+            top_right: r,
+            bottom_right: r,
+            bottom_left: r,
+        }
     }
 
     /// Rayons bornés à la moitié du plus petit côté (et jamais négatifs).
@@ -117,14 +122,21 @@ mod tests {
     #[test]
     fn rounded_corner_is_not_hit() {
         let s = Shape::RoundedRectangle(CornerRadii::all(12.0));
-        assert!(!s.contains(&R, Point::new(1.0, 1.0)), "coin arrondi : pas de clic");
+        assert!(
+            !s.contains(&R, Point::new(1.0, 1.0)),
+            "coin arrondi : pas de clic"
+        );
         assert!(s.contains(&R, Point::new(12.0, 1.0)));
         assert!(s.contains(&R, Point::new(50.0, 20.0)));
     }
 
     #[test]
     fn per_corner_radius() {
-        let s = Shape::RoundedRectangle(CornerRadii { top_left: 0.0, top_right: 20.0, ..Default::default() });
+        let s = Shape::RoundedRectangle(CornerRadii {
+            top_left: 0.0,
+            top_right: 20.0,
+            ..Default::default()
+        });
         assert!(s.contains(&R, Point::new(0.5, 0.5)));
         assert!(!s.contains(&R, Point::new(99.5, 0.5)));
     }
@@ -143,7 +155,10 @@ mod tests {
     fn circle_uses_smallest_side() {
         let s = Shape::Circle;
         assert!(s.contains(&R, Point::new(50.0, 1.0)));
-        assert!(!s.contains(&R, Point::new(25.0, 20.0)), "hors du cercle de rayon 20");
+        assert!(
+            !s.contains(&R, Point::new(25.0, 20.0)),
+            "hors du cercle de rayon 20"
+        );
         assert!((s.distance(&R, Point::new(50.0, 20.0)) + 20.0).abs() < 1e-4);
     }
 

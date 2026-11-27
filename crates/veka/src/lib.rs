@@ -1,14 +1,37 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! # Veka
+//!
+//! Bibliothèque d'interface utilisateur pour Windows et macOS, utilisable depuis Rust, C, C++, C#,
+//! Unreal et Unity. Organisée en modules, à la manière des frameworks d'Apple :
+//!
+//! | Module | Contenu |
+//! |---|---|
+//! | [`foundation`] | géométrie, couleurs, temps |
+//! | [`graphics`] | formes, liste de dessin |
+//! | [`text`] | polices, mise en page du texte |
+//! | [`ui`] | vues, état, layout, contrôles |
+//!
+//! ```
+//! use veka::prelude::*;
+//!
+//! fn compteur() -> impl View {
+//!     let mut clics = State::new(0);
+//!     VStack![spacing: 16;
+//!         Text("Bonjour Veka").font(Font::Title),
+//!         Button(format!("Clics : {clics}"), move || clics += 1),
+//!     ]
+//!     .padding(24)
+//! }
+//! # let _ = component(compteur);
+//! ```
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use veka_foundation as foundation;
+pub use veka_graphics as graphics;
+pub use veka_text as text;
+pub use veka_ui as ui;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub use veka_ui::{HStack, VStack, ZStack};
+
+/// `use veka::prelude::*;` : tout ce qu'il faut pour écrire des vues.
+pub mod prelude {
+    pub use veka_ui::prelude::*;
 }

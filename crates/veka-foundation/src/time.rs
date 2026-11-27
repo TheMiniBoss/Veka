@@ -16,7 +16,7 @@ impl Instant {
         Duration::from_nanos(self.0.saturating_sub(earlier.0))
     }
 
-    pub fn add(self, d: Duration) -> Instant {
+    pub fn plus(self, d: Duration) -> Instant {
         Instant(self.0.saturating_add(d.as_nanos() as u64))
     }
 }

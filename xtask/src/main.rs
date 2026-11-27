@@ -47,7 +47,9 @@ fn check_core() -> ExitCode {
     for krate in CORE {
         // Toutes les cibles : une dépendance propre à Windows ou macOS compte aussi.
         let out = cargo()
-            .args(["tree", "-q", "-p", krate, "-e", "normal", "--target", "all", "--prefix", "none"])
+            .args([
+                "tree", "-q", "-p", krate, "-e", "normal", "--target", "all", "--prefix", "none",
+            ])
             .args(["--format", "{p}"])
             .output()
             .expect("cargo tree");

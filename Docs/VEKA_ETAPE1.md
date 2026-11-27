@@ -162,7 +162,7 @@ veka-ffi → veka-app
 use veka::prelude::*;
 
 fn compteur() -> impl View {
-    let clics = State::new(0);
+    let mut clics = State::new(0);
 
     VStack![spacing: 16;
         Text("Bonjour Veka").font(Font::Title),
@@ -185,6 +185,8 @@ fn main() {
 - Noms de SwiftUI : `Text`, `VStack`, `Capsule`, `Button(titre, action)`.
 - **Pas de contexte à passer** : l'arbre vit sur un seul thread, Veka garde le contexte courant en interne
   (`clics += 1`, `{clics}` dans `format!`).
+- `let mut clics` : Rust exige `mut` pour écrire `clics += 1` (même si `State` n'est qu'une poignée) ;
+  `clics.set(…)` / `clics.update(…)` marchent sans `mut`.
 - Les piles sont des macros (`VStack![…]`) pour lister des enfants de types différents sans tuples.
 - Limites de Rust : `Font::Title` au lieu de `.title`, pas de paramètres nommés hors macro (`.spacing(16)` sinon),
   pas de closure en fin d'appel. Une macro `veka! { … }` encore plus proche de SwiftUI est écartée pour l'instant

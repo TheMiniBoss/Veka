@@ -51,30 +51,51 @@ impl Color {
     }
 
     pub fn opacity(self, factor: f32) -> Self {
-        Self { a: self.a * factor, ..self }
+        Self {
+            a: self.a * factor,
+            ..self
+        }
     }
 
     /// Mélange linéaire (en sRGB, suffisant pour les états survol / appui).
     pub fn mix(self, other: Color, t: f32) -> Self {
         let l = |a: f32, b: f32| a + (b - a) * t;
-        Self::rgba(l(self.r, other.r), l(self.g, other.g), l(self.b, other.b), l(self.a, other.a))
+        Self::rgba(
+            l(self.r, other.r),
+            l(self.g, other.g),
+            l(self.b, other.b),
+            l(self.a, other.a),
+        )
     }
 
     /// Composantes linéaires, alpha prémultiplié : ce qu'attend un renderer.
     pub fn to_linear_premultiplied(self) -> [f32; 4] {
         let a = self.a.clamp(0.0, 1.0);
-        [srgb_to_linear(self.r) * a, srgb_to_linear(self.g) * a, srgb_to_linear(self.b) * a, a]
+        [
+            srgb_to_linear(self.r) * a,
+            srgb_to_linear(self.g) * a,
+            srgb_to_linear(self.b) * a,
+            a,
+        ]
     }
 }
 
 pub fn srgb_to_linear(c: f32) -> f32 {
     let c = c.clamp(0.0, 1.0);
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 pub fn linear_to_srgb(c: f32) -> f32 {
     let c = c.clamp(0.0, 1.0);
-    if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
 }
 
 #[cfg(test)]

@@ -23,7 +23,10 @@ pub struct FontRef {
 
 impl fmt::Debug for FontRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FontRef").field("key", &self.key).field("index", &self.index).finish()
+        f.debug_struct("FontRef")
+            .field("key", &self.key)
+            .field("index", &self.index)
+            .finish()
     }
 }
 
@@ -58,17 +61,35 @@ pub enum BackdropEffect {
 /// Une commande de dessin.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawCommand {
-    FillShape { shape: Shape, rect: Rect, paint: Paint },
-    StrokeShape { shape: Shape, rect: Rect, paint: Paint, width: f32 },
+    FillShape {
+        shape: Shape,
+        rect: Rect,
+        paint: Paint,
+    },
+    StrokeShape {
+        shape: Shape,
+        rect: Rect,
+        paint: Paint,
+        width: f32,
+    },
     Glyphs(GlyphRun),
-    PushClip { shape: Shape, rect: Rect },
+    PushClip {
+        shape: Shape,
+        rect: Rect,
+    },
     PopClip,
     PushTransform(Transform2D),
     PopTransform,
-    PushLayer { opacity: f32 },
+    PushLayer {
+        opacity: f32,
+    },
     PopLayer,
     /// Lit ce qui est déjà dessiné derrière `rect` (Liquid Glass) : coupe la liste en segments.
-    Backdrop { shape: Shape, rect: Rect, effect: BackdropEffect },
+    Backdrop {
+        shape: Shape,
+        rect: Rect,
+        effect: BackdropEffect,
+    },
 }
 
 /// Une partie de la liste entre deux lectures de l'arrière-plan.
@@ -106,16 +127,29 @@ impl DrawList {
     }
 
     pub fn fill(&mut self, shape: Shape, rect: Rect, paint: impl Into<Paint>) {
-        self.push(DrawCommand::FillShape { shape, rect, paint: paint.into() });
+        self.push(DrawCommand::FillShape {
+            shape,
+            rect,
+            paint: paint.into(),
+        });
     }
 
     pub fn stroke(&mut self, shape: Shape, rect: Rect, paint: impl Into<Paint>, width: f32) {
-        self.push(DrawCommand::StrokeShape { shape, rect, paint: paint.into(), width });
+        self.push(DrawCommand::StrokeShape {
+            shape,
+            rect,
+            paint: paint.into(),
+            width,
+        });
     }
 
     /// Ajoute une police (ou retrouve celle déjà ajoutée avec la même clé).
     pub fn font(&mut self, font: FontRef) -> FontId {
-        if let Some(i) = self.fonts.iter().position(|f| f.key == font.key && f.index == font.index) {
+        if let Some(i) = self
+            .fonts
+            .iter()
+            .position(|f| f.key == font.key && f.index == font.index)
+        {
             return FontId(i as u32);
         }
         self.fonts.push(font);
@@ -132,10 +166,19 @@ impl DrawList {
         paint: impl Into<Paint>,
     ) {
         let start = self.glyphs.len() as u32;
-        self.glyphs.extend(glyphs.into_iter().map(|g| Glyph { id: g.id, x: g.x + origin.x, y: g.y + origin.y }));
+        self.glyphs.extend(glyphs.into_iter().map(|g| Glyph {
+            id: g.id,
+            x: g.x + origin.x,
+            y: g.y + origin.y,
+        }));
         let end = self.glyphs.len() as u32;
         if end > start {
-            self.push(DrawCommand::Glyphs(GlyphRun { font, size, glyphs: start..end, paint: paint.into() }));
+            self.push(DrawCommand::Glyphs(GlyphRun {
+                font,
+                size,
+                glyphs: start..end,
+                paint: paint.into(),
+            }));
         }
     }
 
@@ -152,14 +195,20 @@ impl DrawList {
                 while i < n && matches!(self.commands[i], DrawCommand::Backdrop { .. }) {
                     i += 1;
                 }
-                out.push(Segment { commands: start..b, backdrops: b..i });
+                out.push(Segment {
+                    commands: start..b,
+                    backdrops: b..i,
+                });
                 start = i;
             } else {
                 i += 1;
             }
         }
         if start < n || out.is_empty() {
-            out.push(Segment { commands: start..n, backdrops: n..n });
+            out.push(Segment {
+                commands: start..n,
+                backdrops: n..n,
+            });
         }
         out
     }
@@ -175,17 +224,25 @@ impl fmt::Display for DrawList {
         };
         let mut depth = 0usize;
         for c in &self.commands {
-            if matches!(c, DrawCommand::PopClip | DrawCommand::PopTransform | DrawCommand::PopLayer) {
+            if matches!(
+                c,
+                DrawCommand::PopClip | DrawCommand::PopTransform | DrawCommand::PopLayer
+            ) {
                 depth = depth.saturating_sub(1);
             }
             write!(f, "{}", "  ".repeat(depth))?;
             match c {
-                DrawCommand::FillShape { shape, rect: x, paint: p } => {
-                    writeln!(f, "fill {shape:?} {} {}", rect(x), paint(p))?
-                }
-                DrawCommand::StrokeShape { shape, rect: x, paint: p, width } => {
-                    writeln!(f, "stroke {shape:?} {} {} w={}", rect(x), paint(p), r(*width))?
-                }
+                DrawCommand::FillShape {
+                    shape,
+                    rect: x,
+                    paint: p,
+                } => writeln!(f, "fill {shape:?} {} {}", rect(x), paint(p))?,
+                DrawCommand::StrokeShape {
+                    shape,
+                    rect: x,
+                    paint: p,
+                    width,
+                } => writeln!(f, "stroke {shape:?} {} {} w={}", rect(x), paint(p), r(*width))?,
                 DrawCommand::Glyphs(run) => {
                     let gs = &self.glyphs[run.glyphs.start as usize..run.glyphs.end as usize];
                     let first = gs.first().map(|g| (r(g.x), r(g.y))).unwrap_or_default();
@@ -205,12 +262,16 @@ impl fmt::Display for DrawList {
                 DrawCommand::PopClip | DrawCommand::PopTransform | DrawCommand::PopLayer => {
                     writeln!(f, "end")?
                 }
-                DrawCommand::Backdrop { shape, rect: x, effect } => {
-                    writeln!(f, "backdrop {shape:?} {} {effect:?}", rect(x))?
-                }
+                DrawCommand::Backdrop {
+                    shape,
+                    rect: x,
+                    effect,
+                } => writeln!(f, "backdrop {shape:?} {} {effect:?}", rect(x))?,
             }
-            if matches!(c, DrawCommand::PushClip { .. } | DrawCommand::PushTransform(_) | DrawCommand::PushLayer { .. })
-            {
+            if matches!(
+                c,
+                DrawCommand::PushClip { .. } | DrawCommand::PushTransform(_) | DrawCommand::PushLayer { .. }
+            ) {
                 depth += 1;
             }
         }
@@ -224,14 +285,24 @@ mod tests {
     use veka_foundation::Color;
 
     fn backdrop() -> DrawCommand {
-        DrawCommand::Backdrop { shape: Shape::Capsule, rect: Rect::ZERO, effect: BackdropEffect::None }
+        DrawCommand::Backdrop {
+            shape: Shape::Capsule,
+            rect: Rect::ZERO,
+            effect: BackdropEffect::None,
+        }
     }
 
     #[test]
     fn one_segment_without_backdrop() {
         let mut l = DrawList::new();
         l.fill(Shape::Rectangle, Rect::new(0.0, 0.0, 1.0, 1.0), Color::Red);
-        assert_eq!(l.segments(), vec![Segment { commands: 0..1, backdrops: 1..1 }]);
+        assert_eq!(
+            l.segments(),
+            vec![Segment {
+                commands: 0..1,
+                backdrops: 1..1
+            }]
+        );
     }
 
     #[test]
@@ -245,8 +316,14 @@ mod tests {
         assert_eq!(
             l.segments(),
             vec![
-                Segment { commands: 0..1, backdrops: 1..3 },
-                Segment { commands: 3..4, backdrops: 4..5 },
+                Segment {
+                    commands: 0..1,
+                    backdrops: 1..3
+                },
+                Segment {
+                    commands: 3..4,
+                    backdrops: 4..5
+                },
             ]
         );
     }
@@ -255,8 +332,16 @@ mod tests {
     fn fonts_are_deduplicated() {
         let mut l = DrawList::new();
         let data: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(vec![0u8; 4]);
-        let a = l.font(FontRef { key: 7, data: data.clone(), index: 0 });
-        let b = l.font(FontRef { key: 7, data, index: 0 });
+        let a = l.font(FontRef {
+            key: 7,
+            data: data.clone(),
+            index: 0,
+        });
+        let b = l.font(FontRef {
+            key: 7,
+            data,
+            index: 0,
+        });
         assert_eq!(a, b);
         assert_eq!(l.fonts.len(), 1);
     }
