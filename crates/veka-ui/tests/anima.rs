@@ -417,3 +417,56 @@ fn reduire_les_animations() {
     at(&mut s, 10.5);
     assert!((width(&s) - 150.0).abs() < 0.01, "{}", width(&s));
 }
+
+#[test]
+fn anima_dans_le_schema() {
+    use veka_ui::schema::{Params, Schema, Value};
+    let schema = Schema::builtin();
+    let rust = Circle()
+        .frame(20, 20)
+        .opacity(0.5)
+        .offset(3.0, 4.0)
+        .scale_effect(1.5)
+        .rotation_effect(45.0)
+        .animation(Animation::snappy(), 1)
+        .transition(Transition::scale(0.5))
+        .matched_geometry_effect("a")
+        .ignore_reduce_motion()
+        .on_animation_end(|| {});
+    for name in rust.primitive_names() {
+        assert!(schema.get(name).is_some(), "`{name}` n'est pas dans le schéma");
+    }
+    let b = |name: &str, params: Params, child: Element| schema.build(name, params, vec![child]).unwrap();
+    let mut e = Circle().frame(20, 20);
+    e = b("opacity", Params::new().with("amount", Value::Float(0.5)), e);
+    e = b("offset", Params::new().with("x", Value::Int(3)).with("y", Value::Int(4)), e);
+    e = b("scaleEffect", Params::new().with("scale", Value::Float(1.5)), e);
+    e = b("rotationEffect", Params::new().with("degrees", Value::Int(45)), e);
+    e = b(
+        "animation",
+        Params::new()
+            .with("spec", Value::Animation(Animation::snappy()))
+            .with("value", Value::Int(1)),
+        e,
+    );
+    e = b(
+        "transition",
+        Params::new().with("transition", Value::Transition(Transition::scale(0.5))),
+        e,
+    );
+    e = b("matchedGeometryEffect", Params::new().with("id", Value::String("a".into())), e);
+    e = b("ignoreReduceMotion", Params::new(), e);
+    let donnees = b(
+        "onAnimationEnd",
+        Params::new().with("action", Value::Action(veka_ui::Action::new(|| {}))),
+        e,
+    );
+    let mut a = Surface::new(rust);
+    let mut d = Surface::new(donnees);
+    for s in [&mut a, &mut d] {
+        s.resize(Size::new(100.0, 100.0), 1.0);
+        s.frame();
+    }
+    assert_eq!(a.draw_list().to_string(), d.draw_list().to_string());
+    assert_eq!(Value::Int(1).key(), Value::Float(1.0).key());
+}

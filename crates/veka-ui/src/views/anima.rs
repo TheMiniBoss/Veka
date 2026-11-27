@@ -347,7 +347,7 @@ pub struct MatchedGeometryPrim {
 
 impl Primitive for MatchedGeometryPrim {
     fn name(&self) -> &'static str {
-        "matchedGeometry"
+        "matchedGeometryEffect"
     }
 }
 
