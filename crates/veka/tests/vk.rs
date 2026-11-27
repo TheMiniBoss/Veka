@@ -122,24 +122,6 @@ const ANIMA: &str = include_str!("../examples/vk/anima.vk");
 #[allow(dead_code)]
 mod anima_rs;
 
-/// `anima.rs` sans la pulsation (les timelines .vk arrivent ensuite).
-fn anima_rust() -> impl View {
-    use anima_rs::*;
-    let fond = Rectangle().fill(Token::WindowBackground);
-    let contenu = HStack![spacing: 32;
-        VStack![spacing: 24;
-            Text("Anima").font(Font::LargeTitle),
-            component(carte),
-            component(couleur),
-            component(galerie),
-            component(geometrie),
-        ],
-        component(liste),
-    ]
-    .padding(24);
-    ZStack![fond, contenu]
-}
-
 fn at(s: &mut Surface, t: f64) {
     s.frame_at(veka::foundation::Instant::from_nanos((t * 1e9) as u64));
 }
@@ -148,7 +130,7 @@ fn at(s: &mut Surface, t: f64) {
 fn anima_meme_dessin_que_rust() {
     let p = program(ANIMA);
     let mut vk = Surface::new(p.view("Anima"));
-    let mut rs = Surface::new(component(anima_rust));
+    let mut rs = Surface::new(component(anima_rs::vue));
     for s in [&mut vk, &mut rs] {
         s.resize(Size::new(860.0, 720.0), 1.0);
         at(s, 0.0);
@@ -184,7 +166,12 @@ fn anima_meme_dessin_que_rust() {
         t += 2.0;
     }
     let textes = vk.texts();
-    for attendu in ["Froid", "Élément 4"] {
+    for attendu in ["Froid", "Élément 4", "Lecture"] {
         assert!(textes.iter().any(|x| x == attendu), "{textes:?}");
     }
+    let battements = textes
+        .iter()
+        .find(|x| x.starts_with("Battements"))
+        .expect("le cœur");
+    assert_ne!(battements, "Battements : 0");
 }

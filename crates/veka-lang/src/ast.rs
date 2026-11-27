@@ -36,6 +36,9 @@ pub struct Module {
 pub enum Item {
     View(ViewDecl),
     Theme(ThemeDecl),
+    Func(FuncDecl),
+    Timeline(TimelineDecl),
+    Import(ImportDecl),
 }
 
 impl Module {
@@ -56,13 +59,94 @@ impl Module {
             _ => None,
         })
     }
+
+    pub fn funcs(&self) -> impl Iterator<Item = &FuncDecl> {
+        self.items.iter().filter_map(|i| match i {
+            Item::Func(f) => Some(f),
+            _ => None,
+        })
+    }
+
+    pub fn func(&self, name: &str) -> Option<&FuncDecl> {
+        self.funcs().find(|f| f.name == name)
+    }
+
+    pub fn timelines(&self) -> impl Iterator<Item = &TimelineDecl> {
+        self.items.iter().filter_map(|i| match i {
+            Item::Timeline(t) => Some(t),
+            _ => None,
+        })
+    }
+
+    pub fn timeline(&self, name: &str) -> Option<&TimelineDecl> {
+        self.timelines().find(|t| t.name == name)
+    }
+
+    pub fn imports(&self) -> impl Iterator<Item = &ImportDecl> {
+        self.items.iter().filter_map(|i| match i {
+            Item::Import(d) => Some(d),
+            _ => None,
+        })
+    }
+}
+
+/// `import "boutons.vk"`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportDecl {
+    pub path: String,
+    pub span: Span,
+}
+
+/// `func nom(a: Int, b: Float) -> Float { … ; expression }` : une fonction pure.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FuncDecl {
+    pub name: String,
+    pub params: Vec<(String, Option<TypeName>)>,
+    pub ret: Option<TypeName>,
+    /// Des `let`, puis l'expression rendue.
+    pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// `timeline Nom(loop: true, length: 0.9) { track nom { 0: 1 .easeOut ; 0.5: 2 } ; event 0.15 nom }`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TimelineDecl {
+    pub name: String,
+    pub args: Vec<Arg>,
+    pub tracks: Vec<TrackDecl>,
+    pub events: Vec<(Expr, String)>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrackDecl {
+    pub name: String,
+    pub keys: Vec<KeyDecl>,
+}
+
+/// `temps: valeur .courbe`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeyDecl {
+    pub time: Expr,
+    pub value: Expr,
+    pub curve: Option<String>,
 }
 
 /// `view Nom { @State var … ; corps }`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ViewDecl {
     pub name: String,
+    /// `@Param var nom: Type = défaut`.
+    pub params: Vec<ParamDecl>,
+    /// `@Slot nom`.
+    pub slots: Vec<String>,
+    /// `@Event nom(Type)`.
+    pub events: Vec<EventDecl>,
     pub states: Vec<StateDecl>,
+    /// `@Timeline var p = Pulsation(autoplay: true)`.
+    pub timelines: Vec<StateDecl>,
+    /// `@Clock var t`.
+    pub clocks: Vec<String>,
     pub body: Vec<Stmt>,
     pub span: Span,
 }
@@ -73,6 +157,23 @@ pub struct StateDecl {
     pub name: String,
     pub ty: Option<TypeName>,
     pub init: Expr,
+    pub span: Span,
+}
+
+/// `@Param var nom: Type = défaut` (sans défaut : l'appelant doit le donner).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamDecl {
+    pub name: String,
+    pub ty: Option<TypeName>,
+    pub default: Option<Expr>,
+    pub span: Span,
+}
+
+/// `@Event nom(Type)` ou `@Event nom`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventDecl {
+    pub name: String,
+    pub ty: Option<TypeName>,
     pub span: Span,
 }
 
@@ -114,6 +215,12 @@ pub enum Stmt {
     Let {
         name: String,
         value: Expr,
+        span: Span,
+    },
+    /// `emit nom(valeur)` (dans une action).
+    Emit {
+        name: String,
+        value: Option<Expr>,
         span: Span,
     },
     /// `cible = valeur`, `cible += valeur`…
@@ -163,6 +270,13 @@ pub enum ExprKind {
     /// `.nom` : énumération, jeton, animation… selon l'endroit.
     Symbol(String),
     Array(Vec<Expr>),
+    /// `{ x: 1, y: 2 }`.
+    Record(Vec<(String, Expr)>),
+    /// `a[i]`.
+    Index {
+        recv: Box<Expr>,
+        index: Box<Expr>,
+    },
     Range {
         lo: Box<Expr>,
         hi: Box<Expr>,

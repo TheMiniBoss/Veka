@@ -31,6 +31,7 @@ pub use ast::Span;
 pub use parser::{parse, parse_expr};
 pub use printer::{print, print_expr};
 pub use program::Program;
+pub use value::Val;
 
 /// Gravité d'un [`Diagnostic`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
