@@ -1180,6 +1180,7 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 name = "veka"
 version = "0.1.0"
 dependencies = [
+ "veka-app",
  "veka-foundation",
  "veka-graphics",
  "veka-text",
@@ -1189,6 +1190,15 @@ dependencies = [
 [[package]]
 name = "veka-app"
 version = "0.1.0"
+dependencies = [
+ "veka-foundation",
+ "veka-platform",
+ "veka-platform-macos",
+ "veka-platform-windows",
+ "veka-render",
+ "veka-render-wgpu",
+ "veka-ui",
+]
 
 [[package]]
 name = "veka-ffi"
@@ -1208,6 +1218,10 @@ dependencies = [
 [[package]]
 name = "veka-platform"
 version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "veka-foundation",
+]
 
 [[package]]
 name = "veka-platform-macos"
@@ -1216,6 +1230,11 @@ version = "0.1.0"
 [[package]]
 name = "veka-platform-windows"
 version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "veka-platform",
+ "windows",
+]
 
 [[package]]
 name = "veka-render"

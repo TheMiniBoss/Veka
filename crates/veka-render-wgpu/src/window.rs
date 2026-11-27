@@ -6,6 +6,21 @@ use veka_render::{FrameInfo, RenderError, Renderer};
 
 use crate::{Gpu, Painter};
 
+/// Pour passer une fenêtre de taille inconnue (`&dyn PlatformWindow`) à wgpu, qui veut un type sized.
+struct ByRef<'a, W: ?Sized>(&'a W);
+
+impl<W: HasWindowHandle + ?Sized> HasWindowHandle for ByRef<'_, W> {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        self.0.window_handle()
+    }
+}
+
+impl<W: HasDisplayHandle + ?Sized> HasDisplayHandle for ByRef<'_, W> {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        self.0.display_handle()
+    }
+}
+
 /// Renderer d'une fenêtre.
 pub struct WindowRenderer {
     gpu: Gpu,
@@ -30,8 +45,8 @@ impl WindowRenderer {
     /// # Safety
     ///
     /// La fenêtre désignée par `window` doit rester valide tant que ce renderer existe.
-    pub unsafe fn new(
-        window: &(impl HasWindowHandle + HasDisplayHandle),
+    pub unsafe fn new<W: HasWindowHandle + HasDisplayHandle + ?Sized>(
+        window: &W,
         frame: FrameInfo,
     ) -> Result<Self, RenderError> {
         // SAFETY : garanti par l'appelant (la fenêtre vit plus longtemps que le renderer).
@@ -43,14 +58,15 @@ impl WindowRenderer {
     /// # Safety
     ///
     /// Comme [`new`](Self::new).
-    pub async unsafe fn new_async(
-        window: &(impl HasWindowHandle + HasDisplayHandle),
+    pub async unsafe fn new_async<W: HasWindowHandle + HasDisplayHandle + ?Sized>(
+        window: &W,
         frame: FrameInfo,
     ) -> Result<Self, RenderError> {
         let instance = Gpu::default_instance();
         // SAFETY : la fenêtre reste valide tant que le renderer existe (contrat de la fonction).
-        let target = unsafe { wgpu::SurfaceTargetUnsafe::from_display_and_window(window, window) }
-            .map_err(|e| RenderError::Other(e.to_string()))?;
+        let target =
+            unsafe { wgpu::SurfaceTargetUnsafe::from_display_and_window(&ByRef(window), &ByRef(window)) }
+                .map_err(|e| RenderError::Other(e.to_string()))?;
         // SAFETY : la fenêtre reste valide tant que le renderer existe (contrat de la fonction).
         let surface = unsafe { instance.create_surface_unsafe(target) }
             .map_err(|e| RenderError::Other(e.to_string()))?;

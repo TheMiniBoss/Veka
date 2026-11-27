@@ -12,6 +12,12 @@ veka-foundation.workspace = true
 veka-graphics.workspace = true
 veka-text.workspace = true
 veka-ui.workspace = true
+veka-app = { workspace = true, optional = true }
+
+[features]
+default = ["app"]
+# Les fenêtres natives (`App`). Sans elle, Veka n'a que le cœur, sans aucun appel au système.
+app = ["dep:veka-app"]
 
 [lints]
 workspace = true
