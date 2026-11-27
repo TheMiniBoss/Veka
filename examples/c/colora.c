@@ -55,8 +55,7 @@ static VekaElement *nuancier(void) {
 static VekaElement *carte(const char *titre, VekaPaint *peinture) {
     VekaElement *lignes[] = {
         veka_frame(veka_fill_paint(veka_rounded_rect(14), peinture), 112, 84),
-        veka_foreground_paint(veka_font(veka_text(titre), VEKA_FONT_FOOTNOTE),
-                              veka_token("Foreground", VEKA_HIERARCHY_SECONDARY)),
+        veka_font(veka_text(titre), VEKA_FONT_FOOTNOTE),
     };
     return veka_vstack(6, lignes, 2);
 }

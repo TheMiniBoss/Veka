@@ -19,6 +19,7 @@
 - [x] PR G : `VekaPaint`, dégradés et thèmes en C ; peintures dans le schéma ; clair / sombre et accent de macOS.
 - [ ] Colora sur le Mac : mode clair / sombre en direct, accent, exemples Rust et C.
 - [ ] Constantes `VEKA_UNIT_*` de `veka.h` : littéraux composés du C99, à revoir pour les liaisons C++.
+- [ ] Hiérarchie (`secondary` 60 %…) : le mélange alpha se fait en lumière linéaire, donc un noir à 60 % sur fond clair paraît bien plus pâle que chez Apple (mélange en sRGB) ; à corriger (mélange en sRGB pour le texte, ou alphas compensés).
 - [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
 - [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
 
