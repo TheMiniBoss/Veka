@@ -9,6 +9,7 @@ mod animator;
 mod curve;
 mod data;
 mod spring;
+mod timeline;
 mod transition;
 
 pub use animation::{Animation, Curve, Repeat};
@@ -16,6 +17,7 @@ pub use animator::{Animator, Sample};
 pub use curve::{cubic_bezier, ease};
 pub use data::{AnimatableData, AnimatableReader};
 pub use spring::{SpringParams, spring_at};
+pub use timeline::{Keyframe, Playback, Timeline, TimelineEvent, Track};
 pub use transition::{Edge, Transition, TransitionEffect, TransitionFrame};
 
 /// Les secondes écoulées depuis `start` (le temps des animations).

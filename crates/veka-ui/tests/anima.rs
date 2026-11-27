@@ -263,3 +263,59 @@ fn delai_et_repetition() {
     at(&mut s, 12.6);
     assert_eq!(width(&s), 200.0, "fin : la cible");
 }
+
+thread_local! {
+    static TL: Cell<Option<TimelineState>> = const { Cell::new(None) };
+    static EVENEMENTS: Cell<u32> = const { Cell::new(0) };
+}
+
+fn vue_timeline() -> impl View {
+    let t = TimelineState::new(
+        Timeline::new()
+            .track(
+                "largeur",
+                [Keyframe::new(0.0, 100.0).curve(Curve::Linear), Keyframe::new(1.0, 200.0)],
+            )
+            .event(0.5, "milieu"),
+    );
+    t.on_event(|nom| {
+        assert_eq!(nom, "milieu");
+        EVENEMENTS.with(|e| e.set(e.get() + 1));
+    });
+    TL.with(|c| c.set(Some(t)));
+    Rectangle().frame(t.value("largeur"), 40)
+}
+
+#[test]
+fn timeline_lecture_evenement_retour() {
+    let mut s = surface(component(vue_timeline));
+    let t = TL.with(|c| c.get()).unwrap();
+    assert_eq!(width(&s), 100.0);
+    assert!(!s.needs_frame(), "en pause : rien à faire");
+    t.play();
+    at(&mut s, 10.0);
+    assert!(s.is_animating());
+    at(&mut s, 10.5);
+    assert!((width(&s) - 150.0).abs() < 0.01, "{}", width(&s));
+    assert_eq!(EVENEMENTS.with(|e| e.get()), 1);
+    at(&mut s, 11.2);
+    assert_eq!(width(&s), 200.0);
+    assert!(!t.is_playing());
+    assert!(!s.is_animating());
+    assert!(!s.needs_frame(), "0 % CPU au bout");
+
+    // À l'envers depuis la fin : l'événement est franchi une seconde fois.
+    t.reverse();
+    t.play();
+    at(&mut s, 12.0);
+    at(&mut s, 12.75);
+    assert!((width(&s) - 125.0).abs() < 0.01, "{}", width(&s));
+    assert_eq!(EVENEMENTS.with(|e| e.get()), 2);
+
+    // Pause puis déplacement à la main.
+    t.pause();
+    t.seek(0.1);
+    at(&mut s, 13.0);
+    assert!((width(&s) - 110.0).abs() < 0.01);
+    assert!(!s.is_animating());
+}

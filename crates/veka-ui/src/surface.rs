@@ -209,7 +209,7 @@ impl Surface {
 
     /// Vrai tant qu'une animation tourne : l'hôte doit alors redessiner à chaque image.
     pub fn is_animating(&self) -> bool {
-        !self.tree.anims.is_empty()
+        !self.tree.anims.is_empty() || crate::timeline::has_playing(self.id)
     }
 
     /// Comme [`frame`](Self::frame), à l'heure `now` (celle de la plateforme) : les animations
@@ -228,6 +228,7 @@ impl Surface {
     /// Les animations restent à l'heure de la dernière image (voir [`frame_at`](Self::frame_at)).
     pub fn frame(&mut self) -> &DrawList {
         let now = self.now;
+        crate::timeline::advance(self.id, now);
         let ticked = crate::anim::tick(&mut self.tree, now);
         self.needs_paint |= ticked.paint;
         self.needs_layout |= ticked.layout;
@@ -500,6 +501,7 @@ impl Drop for Surface {
         let root = self.root;
         self.tree.remove(root);
         state::set_waker(self.id, None);
+        crate::timeline::forget(self.id);
         let _ = state::take_dirty(self.id);
     }
 }
