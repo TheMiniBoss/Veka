@@ -130,7 +130,7 @@ fn fenetre_personnalisee() {
         ];
         let vue = veka_vstack(0.0, lignes.as_ptr(), lignes.len());
         assert!(!vue.is_null());
-        let mut s = Surface::new((*Box::from_raw(vue)).element);
+        let mut s = Surface::new(Box::from_raw(vue).element);
         s.resize(Size::new(480.0, 320.0), 1.0);
         s.frame();
         assert_eq!(s.regions().len(), 4, "barre + 3 boutons");
