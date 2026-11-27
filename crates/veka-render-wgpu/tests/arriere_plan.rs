@@ -162,3 +162,69 @@ fn sans_effet_rien_ne_change() {
     // Le dessin et la copie vers la cible.
     assert_eq!(stats.passes, 2);
 }
+
+fn dump(name: &str, img: &[u8]) {
+    if let Ok(dir) = std::env::var("VEKA_DUMP_DIR") {
+        std::fs::write(format!("{dir}/{name}.rgba"), img).expect("écriture");
+    }
+}
+
+#[test]
+fn le_verre_refracte_au_bord() {
+    let Some(gpu) = gpu() else { return };
+    let mut l = DrawList::new();
+    bandes(&mut l);
+    // Un verre seul, puis deux gouttes fusionnées.
+    l.backdrop(
+        Shape::Capsule,
+        Rect::new(16.0, 24.0, 100.0, 48.0),
+        BackdropEffect::Glass(Box::default()),
+    );
+    let mut g = veka_graphics::GlassEffect {
+        smoothness: 16.0,
+        ..Default::default()
+    };
+    g.shapes[0] = veka_graphics::GlassShape {
+        shape: Shape::Circle,
+        rect: Rect::new(140.0, 30.0, 44.0, 44.0),
+    };
+    g.shapes[1] = veka_graphics::GlassShape {
+        shape: Shape::Circle,
+        rect: Rect::new(192.0, 30.0, 44.0, 44.0),
+    };
+    g.count = 2;
+    l.backdrop(
+        Shape::Rectangle,
+        Rect::new(140.0, 30.0, 96.0, 44.0),
+        BackdropEffect::Glass(Box::new(g)),
+    );
+    let (img, stats) = render_to_rgba_with_stats(&gpu, &l, frame());
+    dump("verre", &img);
+    assert_eq!(stats.effects, 2);
+    // Au centre du verre seul : les bandes (4 px) restent visibles sous le léger flou, pas un gris uni.
+    let row: Vec<u8> = (50..82).map(|x| px(&img, x, 48)[0]).collect();
+    let (min, max) = (row.iter().min().unwrap(), row.iter().max().unwrap());
+    assert!(max - min > 8, "{row:?}");
+    // Le pont entre les deux gouttes est du verre (teinté, lumineux), pas une bande noire nette.
+    let pont = px(&img, 188, 52);
+    assert!(pont[3] == 255, "{pont:?}");
+}
+
+#[test]
+fn le_verre_sur_un_fond_transparent_reste_clair() {
+    // Fenêtre posée sur Mica : rien n'est dessiné derrière le verre, il ne doit pas devenir noir.
+    let Some(gpu) = gpu() else { return };
+    let mut l = DrawList::new();
+    l.backdrop(
+        Shape::Capsule,
+        Rect::new(16.0, 24.0, 200.0, 56.0),
+        BackdropEffect::Glass(Box::default()),
+    );
+    let img = render_to_rgba_with_stats(&gpu, &l, frame()).0;
+    dump("verre-transparent", &img);
+    let centre = px(&img, 116, 52);
+    assert!(centre[3] < 128, "le corps reste transparent : {centre:?}");
+    // Le reflet du bord se voit, clair.
+    let bord = (20..40).map(|y| px(&img, 116, y)).max_by_key(|p| p[3]).unwrap();
+    assert!(bord[3] > 40 && bord[0] >= bord[3] / 2, "{bord:?}");
+}

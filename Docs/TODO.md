@@ -47,8 +47,12 @@
 
 ## Étape 6 (Liquid Glass)
 - [x] PR L : flou d'arrière-plan, verre dépoli, qualité et repli, schéma, `.vk` et C.
-- [ ] PR M : verre liquide (`glass`, `glass_group`, `liquid_distortion`), fonds du système, exemple `verre`
+- [x] PR M : verre liquide (`glass`, `glass_group`, `liquid_distortion`), fonds du système, exemple `verre`
   complet en Rust, `.vk` et C.
+- [ ] Verre qui gonfle à l'appui (Liquid Glass 26 / 27 sur iOS).
+- [ ] Clics sur la forme fusionnée d'un `glass_group` (aujourd'hui : chaque vue garde sa boîte).
+- [ ] Plus de 8 formes par groupe.
+- [ ] Fonds du système : essayer la vibrancy sur le Mac (écrite, pas encore vue à l'écran).
 - [ ] Teinte en dégradé (aujourd'hui : couleur moyenne de la peinture).
 - [ ] Forme prise du fond ou du découpage de la vue (aujourd'hui : paramètre `shape`).
 - [ ] Mesurer le coût GPU (requêtes de temps) et l'afficher dans l'exemple.

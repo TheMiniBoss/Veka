@@ -10,7 +10,8 @@ mod paint;
 mod shape;
 
 pub use draw_list::{
-    BackdropEffect, BlurEffect, DrawCommand, DrawList, FontId, FontRef, Glyph, GlyphRun, Segment,
+    BackdropEffect, BlurEffect, DrawCommand, DrawList, FontId, FontRef, GlassEffect, GlassShape, Glyph,
+    GlyphRun, MAX_GLASS_SHAPES, Segment,
 };
 pub use paint::Paint;
 pub use shape::{CornerRadii, Shape};

@@ -42,7 +42,7 @@ use veka_ui::{
     views,
 };
 
-pub use veka_platform::{Chrome, Size, WindowDesc};
+pub use veka_platform::{Chrome, Size, SystemBackdrop, WindowDesc};
 
 /// Les réglages d'une fenêtre : `Window::new("Titre").size(…).chrome(Chrome::custom())`.
 pub type Window = WindowDesc;
@@ -434,7 +434,7 @@ impl Host {
         desc: WindowDesc,
         root: Element,
     ) -> Result<(), AppError> {
-        let transparent = desc.chrome.is_transparent();
+        let transparent = desc.is_transparent();
         let id = ctx.create_window(desc).map_err(AppError::Platform)?;
         let window = ctx.window(id);
         let mut surface = Surface::new(root);

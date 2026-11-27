@@ -12,8 +12,9 @@ fn main() {
         "colora" => ("Colora", Size::new(680.0, 520.0)),
         "anima" => ("Anima", Size::new(860.0, 720.0)),
         "feux" => ("Feux", Size::new(640.0, 200.0)),
+        "verre" => ("Verre", Size::new(900.0, 560.0)),
         _ => {
-            eprintln!("Veka : exemple inconnu `{nom}` (compteur, colora, anima, feux)");
+            eprintln!("Veka : exemple inconnu `{nom}` (compteur, colora, anima, feux, verre)");
             std::process::exit(2);
         }
     };

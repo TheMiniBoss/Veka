@@ -27,12 +27,49 @@ pub(crate) struct EffectInstance {
     pub tint: [f32; 4],
     /// Zone capturée, en pixels : min.xy, max.xy.
     pub region: [f32; 4],
+    /// Ondulation : force (pixels), 1 / taille des vagues (pixels), temps.
+    pub flow: [f32; 4],
 }
 
-const EFFECT_ATTRS: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
+const EFFECT_ATTRS: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array![
     0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-    4 => Float32x4, 5 => Float32x4, 6 => Float32x4
+    4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4
 ];
+
+/// Un verre liquide à composer (ses formes sont dans [`GlassShapeGpu`]).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub(crate) struct GlassInstance {
+    /// Boîte de toutes les formes, repère local.
+    pub rect: [f32; 4],
+    pub xform: [f32; 4],
+    /// tx, ty, première forme, nombre de formes.
+    pub extra: [f32; 4],
+    /// Niveau de flou, réfraction (px), largeur du bord (px), aberration.
+    pub p1: [f32; 4],
+    /// Reflet, fusion (repère local), saturation, opacité.
+    pub p2: [f32; 4],
+    pub tint: [f32; 4],
+    pub region: [f32; 4],
+    /// Pointeur (px), pointeur présent (1), qualité réduite (1).
+    pub light: [f32; 4],
+    /// Bord sombre, lumière interne, ombre, rayon de l'ombre (px).
+    pub p3: [f32; 4],
+}
+
+const GLASS_ATTRS: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
+    0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
+    4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Float32x4
+];
+
+/// Une forme d'un verre, lue par le shader dans un tampon de stockage.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub(crate) struct GlassShapeGpu {
+    pub rect: [f32; 4],
+    pub radii: [f32; 4],
+    pub kind: [f32; 4],
+}
 
 /// Une capture : la zone copiée (pixels entiers) et le plus haut niveau de flou demandé.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -94,6 +131,10 @@ pub(crate) struct Backdrop {
     down_pipeline: wgpu::RenderPipeline,
     gauss_pipeline: wgpu::RenderPipeline,
     pub effect_pipeline: wgpu::RenderPipeline,
+    pub glass_pipeline: wgpu::RenderPipeline,
+    shapes_layout: wgpu::BindGroupLayout,
+    shapes: Option<(wgpu::Buffer, wgpu::BindGroup)>,
+    pub glass_buf: Option<wgpu::Buffer>,
     sampler: wgpu::Sampler,
     pass_buf: Option<(wgpu::Buffer, wgpu::BindGroup)>,
     pyramid: Option<Pyramid>,
@@ -165,6 +206,38 @@ impl Backdrop {
             bind_group_layouts: &[Some(globals_layout), Some(&levels_layout)],
             immediate_size: 0,
         });
+        let shapes_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("veka verre : formes"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let glass_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("veka verre"),
+            bind_group_layouts: &[Some(globals_layout), Some(&levels_layout), Some(&shapes_layout)],
+            immediate_size: 0,
+        });
+        let glass_pipeline = crate::painter::pipeline(
+            device,
+            &effect_module,
+            &glass_pl,
+            "glass_vs",
+            "glass_fs",
+            &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<GlassInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &GLASS_ATTRS,
+            })],
+            format,
+            Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+        );
         let pass_pipeline =
             |fs| crate::painter::pipeline(device, &pass_module, &pass_pl, "full_vs", fs, &[], format, None);
         let down_pipeline = pass_pipeline("down_fs");
@@ -197,6 +270,10 @@ impl Backdrop {
             down_pipeline,
             gauss_pipeline,
             effect_pipeline,
+            glass_pipeline,
+            shapes_layout,
+            shapes: None,
+            glass_buf: None,
             sampler,
             pass_buf: None,
             pyramid: None,
@@ -449,6 +526,40 @@ impl Backdrop {
             run(enc, &self.gauss_pipeline, &p.temps[k].1, &p.level_bg[k], k);
             run(enc, &self.gauss_pipeline, &p.levels[k].1, &p.temp_bg[k], k);
         }
+    }
+
+    /// Envoie les formes des verres de l'image.
+    pub fn upload_shapes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, shapes: &[GlassShapeGpu]) {
+        if shapes.is_empty() {
+            return;
+        }
+        let bytes: &[u8] = bytemuck::cast_slice(shapes);
+        if self
+            .shapes
+            .as_ref()
+            .is_none_or(|(b, _)| b.size() < bytes.len() as u64)
+        {
+            let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("veka verre : formes"),
+                size: (bytes.len() as u64).next_power_of_two().max(1024),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("veka verre : formes"),
+                layout: &self.shapes_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf.as_entire_binding(),
+                }],
+            });
+            self.shapes = Some((buf, bg));
+        }
+        queue.write_buffer(&self.shapes.as_ref().expect("formes").0, 0, bytes);
+    }
+
+    pub fn shapes_bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.shapes.as_ref().map(|(_, bg)| bg)
     }
 
     pub fn effect_bind_group(&self) -> Option<&wgpu::BindGroup> {

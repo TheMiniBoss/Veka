@@ -537,3 +537,50 @@ fn flou_d_arriere_plan_en_c() {
         assert!(veka_backdrop(veka_text(c"x".as_ptr()), std::ptr::null(), std::ptr::null_mut()).is_null());
     }
 }
+
+#[test]
+fn verre_liquide_en_c() {
+    use veka_ui::prelude::*;
+    let dessin = |e: Element| {
+        let mut s = Surface::new(e);
+        s.resize(Size::new(300.0, 100.0), 1.0);
+        s.frame().to_string()
+    };
+    unsafe {
+        let c = veka_glass(veka_text(c"A".as_ptr()), std::ptr::null(), std::ptr::null_mut());
+        assert_eq!(
+            dessin(Box::from_raw(c).element),
+            dessin(Text("A").glass_with(Glass::regular().shape(Shape::Capsule)))
+        );
+
+        let mut g = veka_glass_clear();
+        g.interactive = 1;
+        g.shape = VekaBackdropShape::Circle;
+        let c = veka_glass(veka_text(c"B".as_ptr()), &g, std::ptr::null_mut());
+        assert_eq!(
+            dessin(Box::from_raw(c).element),
+            dessin(Text("B").glass_with(Glass::clear().interactive(true).shape(Shape::Circle)))
+        );
+
+        // Un groupe : un seul verre pour deux membres.
+        let a = veka_glass(veka_text(c"A".as_ptr()), std::ptr::null(), std::ptr::null_mut());
+        let b = veka_glass(veka_text(c"B".as_ptr()), std::ptr::null(), std::ptr::null_mut());
+        let row = veka_hstack(4.0, [a, b].as_ptr(), 2);
+        let grp = veka_glass_group(row, 12.0, std::ptr::null(), std::ptr::null_mut());
+        assert!(!grp.is_null());
+        let d = dessin(Box::from_raw(grp).element);
+        assert_eq!(d.matches("backdrop").count(), 1, "{d}");
+
+        let c = veka_liquid_distortion(
+            veka_text(c"Eau".as_ptr()),
+            6.0,
+            90.0,
+            1.0,
+            VekaBackdropShape::Circle,
+            0.0,
+        );
+        assert!(!c.is_null());
+        drop(Box::from_raw(c));
+        assert!(veka_glass(std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut()).is_null());
+    }
+}
