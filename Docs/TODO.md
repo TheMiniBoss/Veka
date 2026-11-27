@@ -8,7 +8,10 @@
 - [ ] Choisir la licence de Veka.
 
 ## Juste après l’étape 1
-- [ ] Fenêtres `Chrome::Hidden` et `Chrome::Custom` (régions déjà dans l’API, §8.4), avec Snap Layouts sur Windows 11.
+- [x] Fenêtres `Chrome::Hidden` et `Chrome::Custom`, avec Snap Layouts sur Windows 11 (étape 2, essayé sur le PC).
+- [ ] Étape 2 sur le Mac : `Hidden`, `Custom`, transparence, plein écran.
+- [ ] Fenêtre transparente : laisser passer les clics là où Veka ne dessine rien (aujourd’hui la marge transparente
+  capte la souris).
 - [ ] Clavier et focus, saisie de texte (IME).
 - [ ] Un seul GPU partagé entre les fenêtres.
 
