@@ -1,0 +1,26 @@
+// L'exemple de l'étape 1, en .vk : `cargo run --example vk -- compteur`
+// (même dessin que `compteur.rs`, testé).
+
+view Compteur {
+    @State var clics = 0
+
+    VStack(spacing: 16) {
+        Text("Bonjour Veka")
+            .font(.title)
+        HStack(spacing: 12) {
+            RoundedRectangle(12)
+                .fill(.blue)
+                .frame(80, 48)
+            Capsule()
+                .fill(.orange)
+                .frame(96, 48)
+            Circle()
+                .fill(.green)
+                .frame(48, 48)
+        }
+        Button("Clics : \(clics)") {
+            clics += 1
+        }
+    }
+    .padding(24)
+}

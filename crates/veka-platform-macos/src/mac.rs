@@ -640,6 +640,14 @@ impl PlatformContext for Ctx {
         APPEARANCE.with(|a| a.get())
     }
 
+    fn waker(&self) -> Option<veka_platform::Waker> {
+        // SAFETY : la file principale existe toute la vie du processus ; `wake_on_main` n'utilise
+        // pas le contexte.
+        Some(std::sync::Arc::new(|| unsafe {
+            dispatch_async_f(&raw const _dispatch_main_q, std::ptr::null_mut(), wake_on_main);
+        }))
+    }
+
     fn exit(&mut self) {
         let app = NSApplication::sharedApplication(self.mtm);
         app.stop(None);
@@ -725,6 +733,26 @@ fn pump() {
             runner.app.event(&mut runner.ctx, event);
         }
     });
+}
+
+/// libdispatch (dans libSystem) : la file principale tourne dans la boucle d'AppKit.
+#[repr(C)]
+struct DispatchQueue {
+    _private: [u8; 0],
+}
+
+unsafe extern "C" {
+    static _dispatch_main_q: DispatchQueue;
+    fn dispatch_async_f(
+        queue: *const DispatchQueue,
+        context: *mut std::ffi::c_void,
+        work: extern "C" fn(*mut std::ffi::c_void),
+    );
+}
+
+extern "C" fn wake_on_main(_: *mut std::ffi::c_void) {
+    push(PlatformEvent::Wake);
+    pump();
 }
 
 impl Platform for MacPlatform {

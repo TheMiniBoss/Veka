@@ -1,0 +1,163 @@
+// Anima en .vk : une carte à ressort, une liste avec transitions, une couleur animée, la galerie
+// des courbes et une pastille à géométrie liée. `cargo run --example vk -- anima`
+// (même dessin que `anima.rs`, testé ; la pulsation en timeline arrive avec les timelines .vk).
+
+view Anima {
+    ZStack {
+        Rectangle()
+            .fill(.WindowBackground)
+        HStack(spacing: 32) {
+            VStack(spacing: 24) {
+                Text("Anima")
+                    .font(.largeTitle)
+                Carte
+                Couleur
+                Galerie
+                Geometrie
+            }
+            Liste
+        }
+        .padding(24)
+    }
+}
+
+view Carte {
+    @State var ouvert = false
+
+    VStack(spacing: 8) {
+        RoundedRectangle(ouvert ? 24 : 12)
+            .fill(ouvert ? LinearGradient([.Indigo, .Pink], from: .topLeading, to: .bottomTrailing) : LinearGradient([.Blue, .Teal], from: .topLeading, to: .bottomTrailing))
+            .frame(ouvert ? 300 : 140, ouvert ? 120 : 64)
+            .onTapGesture {
+                withAnimation(.bouncy) {
+                    ouvert.toggle()
+                }
+            }
+        Text("Touche la carte (ressort « bouncy »)")
+            .font(.footnote)
+            .opacity(ouvert ? 0.4 : 1)
+            .animation(.easeInOut(0.25), ouvert)
+    }
+}
+
+view Liste {
+    @State var prochain = 4
+    @State var ids = [1, 2, 3]
+
+    VStack(spacing: 8) {
+        HStack(spacing: 8) {
+            Button("Ajouter") {
+                withAnimation(.snappy) {
+                    ids.insert(prochain, at: 0)
+                    prochain += 1
+                }
+            }
+            Button("Retirer") {
+                withAnimation(.smooth) {
+                    ids.removeLast()
+                }
+            }
+        }
+        VStack(spacing: 6) {
+            ForEach(ids) { i in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(.Accent)
+                        .frame(10, 10)
+                    Text("Élément \(i)")
+                }
+                .padding(horizontal: 12, vertical: 6)
+                .background(.Fill, shape: .capsule)
+                .id(i)
+                // Descend un peu en apparaissant (les lignes s'ajoutent en tête, sous les
+                // boutons), part en se réduisant.
+                .transition(.asymmetric(insertion: .offset(0, -12).combined(with: .scale(0.9)).combined(with: .opacity), removal: .scale(0.8).combined(with: .opacity)))
+            }
+        }
+    }
+}
+
+view Couleur {
+    @State var chaud = false
+
+    HStack(spacing: 12) {
+        Button(chaud ? "Froid" : "Chaud") {
+            withAnimation(.easeInOut(0.6)) {
+                chaud.toggle()
+            }
+        }
+        .tint(chaud ? #FF6A00 : #0A84FF)
+        Circle()
+            .fill(chaud ? #FF2D55 : #00C7BE)
+            .frame(36, 36)
+            .scaleEffect(chaud ? 1.2 : 1)
+            .rotationEffect(chaud ? 90 : 0)
+        Text("Couleurs en Oklab")
+            .font(.footnote)
+            .grayscale(chaud ? 0 : 1)
+    }
+}
+
+view Galerie {
+    @State var droite = false
+
+    VStack(spacing: 6) {
+        Button("Lancer les courbes") {
+            droite.toggle()
+        }
+        VStack(spacing: 6) {
+            ForEach([.linear(1), .easeInOut(1), .circEaseOut(1), .timingCurve(0.3, 1.6, 0.6, 1, 1), .bouncy]) { courbe, n in
+                HStack(spacing: 12) {
+                    Text(n == 0 ? "Linéaire" : n == 1 ? "Ease in-out" : n == 2 ? "Circ. out" : n == 3 ? "Bézier" : "Ressort")
+                        .font(.footnote)
+                        .frame(width: 80)
+                    ZStack {
+                        Capsule()
+                            .fill(.Fill)
+                            .frame(240, 4)
+                        Circle()
+                            .fill(.Accent)
+                            .frame(16, 16)
+                            .offset(droite ? 112 : -112, 0)
+                    }
+                    .animation(courbe, droite)
+                }
+            }
+        }
+    }
+}
+
+view Geometrie {
+    @State var droite = false
+
+    VStack(spacing: 8) {
+        Button("Déplacer") {
+            withAnimation(.spring(0.45, 0.75)) {
+                droite.toggle()
+            }
+        }
+        HStack(spacing: 12) {
+            if droite {
+                Capsule()
+                    .fill(.Fill)
+                    .frame(180, 6)
+                    .id(0)
+                Circle()
+                    .fill(.Orange)
+                    .frame(droite ? 44 : 20, droite ? 44 : 20)
+                    .matchedGeometryEffect("pastille")
+                    .id(droite ? 2 : 1)
+            } else {
+                Circle()
+                    .fill(.Orange)
+                    .frame(droite ? 44 : 20, droite ? 44 : 20)
+                    .matchedGeometryEffect("pastille")
+                    .id(droite ? 2 : 1)
+                Capsule()
+                    .fill(.Fill)
+                    .frame(180, 6)
+                    .id(0)
+            }
+        }
+    }
+}

@@ -2,6 +2,26 @@
 
 Le plus récent en premier.
 
+## Étape 5 — le langage `.vk`
+
+### Parseur, interpréteur, rechargement à chaud (PR J)
+- Nouveau crate `veka-lang` (cœur, compile pour WebAssembly) : lexer, parseur avec reprise sur erreur, AST,
+  imprimeur canonique (relire le texte imprimé redonne le même arbre), analyse au chargement (vues, modifiers et
+  paramètres inconnus, avec « vouliez-vous dire »).
+- Interpréteur : `view`, `@State var nom: Type = valeur` (retrouvés par nom : le rechargement les garde),
+  expressions (arithmétique, comparaisons, ternaire, plages, chaînes `\(…)`, couleurs `#RRGGBB[AA]`),
+  `if` / `else`, `let`, `ForEach(tableau ou plage) { x, i in … }`, actions (`=`, `+=`…, `toggle`, `append`,
+  `insert(at:)`, `remove(at:)`, `removeLast`…), `withAnimation(.snappy) { … }`, les cinq dégradés, animations et
+  transitions, jetons Colora, `theme Nom: Parent { Jeton: clair / sombre }` dans le fichier.
+- `Program::new(source)`, `.view("Nom")`, `.reload(source)` (un fichier faux laisse l'ancien en place),
+  `.errors()` ; une vue fausse affiche son erreur (`ligne:colonne : message`).
+- veka-app : `App::window_vk(chemin, "Vue")`, rechargement à chaud (actif en debug, `App::hot_reload(false)`),
+  bandeau rouge des erreurs ; plateformes : `PlatformEvent::Wake` et `PlatformContext::waker()` (Windows :
+  message de fil, macOS : file principale de libdispatch).
+- veka-ui : `component_tagged` (deux vues `.vk` n'ont pas les mêmes états), `colorScheme(.system)`.
+- Exemples `examples/vk/compteur.vk`, `colora.vk`, `anima.vk` (`cargo run --example vk -- colora`) : même liste
+  de dessin que les exemples Rust, testé image par image.
+
 ## Étape 4 — Anima
 
 ### Timelines, géométrie liée, interface C (PR I)

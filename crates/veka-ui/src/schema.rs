@@ -712,11 +712,12 @@ fn builtin_entries() -> Vec<Entry> {
             doc: "force le mode clair ou sombre du sous-arbre",
             params: const { &[p("scheme", ValueType::Enum(SCHEMES), true, "mode")] },
             build: |p, c| {
-                let scheme = match p.enumeration("scheme") {
-                    Some("dark") => ColorScheme::Dark,
-                    _ => ColorScheme::Light,
-                };
-                one(c).color_scheme(scheme)
+                // `system` : comme le parent (rien n'est imposé).
+                match p.enumeration("scheme") {
+                    Some("dark") => one(c).color_scheme(ColorScheme::Dark),
+                    Some("system") => one(c),
+                    _ => one(c).color_scheme(ColorScheme::Light),
+                }
             },
         },
         adjust("brightness", "ajoute la valeur (-1 à 1) à chaque composante"),
@@ -899,7 +900,7 @@ fn builtin_entries() -> Vec<Entry> {
     ]
 }
 
-const SCHEMES: &[&str] = &["light", "dark"];
+const SCHEMES: &[&str] = &["light", "dark", "system"];
 const BACKGROUND_SHAPES: &[&str] = &["rectangle", "capsule", "circle", "ellipse"];
 
 /// Un réglage de couleur : un seul paramètre `amount`.

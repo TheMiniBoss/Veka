@@ -1,0 +1,20 @@
+[package]
+name = "veka-lang"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Le langage .vk de Veka : parseur, analyse et interpréteur (cœur, sans appel système)."
+
+[dependencies]
+veka-foundation.workspace = true
+veka-colora.workspace = true
+veka-anima.workspace = true
+veka-ui.workspace = true
+
+[dev-dependencies]
+veka-graphics.workspace = true
+
+[lints]
+workspace = true

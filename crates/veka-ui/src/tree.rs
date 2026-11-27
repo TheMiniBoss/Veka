@@ -28,7 +28,8 @@ pub(crate) struct ComponentData {
 
 pub(crate) struct Node {
     pub prim: Rc<dyn Primitive>,
-    pub type_id: TypeId,
+    /// Le type du primitive, ou de la vue composée et son `tag`.
+    pub type_id: (TypeId, u64),
     pub key: Option<Key>,
     pub component: Option<ComponentData>,
     pub children: Vec<NodeId>,
@@ -91,15 +92,17 @@ impl Tree {
     /// Crée le nœud d'un élément et tout son sous-arbre.
     pub fn insert(&mut self, element: Element, parent: Option<NodeId>) -> NodeId {
         let key = element.key;
-        let (prim, type_id, component, children): (Rc<dyn Primitive>, TypeId, _, Vec<Element>) =
+        let (prim, type_id, component, children): (Rc<dyn Primitive>, (TypeId, u64), _, Vec<Element>) =
             match element.kind {
                 ElementKind::Primitive { prim, children } => {
                     let t = (prim.as_ref() as &dyn Any).type_id();
-                    (prim, t, None, children)
+                    (prim, (t, 0), None, children)
                 }
-                ElementKind::Component { render, type_id, .. } => (
+                ElementKind::Component {
+                    render, type_id, tag, ..
+                } => (
                     Rc::new(ComponentPrim),
-                    type_id,
+                    (type_id, tag),
                     Some(ComponentData {
                         render,
                         hooks: Vec::new(),
@@ -285,10 +288,10 @@ impl Tree {
     }
 }
 
-fn element_type(e: &Element) -> TypeId {
+fn element_type(e: &Element) -> (TypeId, u64) {
     match &e.kind {
-        ElementKind::Primitive { prim, .. } => (prim.as_ref() as &dyn Any).type_id(),
-        ElementKind::Component { type_id, .. } => *type_id,
+        ElementKind::Primitive { prim, .. } => ((prim.as_ref() as &dyn Any).type_id(), 0),
+        ElementKind::Component { type_id, tag, .. } => (*type_id, *tag),
     }
 }
 

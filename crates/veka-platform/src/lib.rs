@@ -215,7 +215,13 @@ pub enum PlatformEvent {
     AppearanceChanged {
         appearance: Appearance,
     },
+    /// Un autre fil a appelé le [`Waker`] de la boucle (fichier relu, travail fini…).
+    Wake,
 }
+
+/// Réveille la boucle depuis n'importe quel fil : elle reçoit un [`PlatformEvent::Wake`].
+/// Plusieurs appels rapprochés peuvent ne donner qu'un événement.
+pub type Waker = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 /// Une fenêtre ouverte. Ses poignées `raw-window-handle` servent au renderer.
 pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
@@ -253,6 +259,10 @@ pub trait PlatformContext {
     /// Mode clair / sombre et couleur d'accent du système.
     fn appearance(&self) -> Appearance {
         Appearance::default()
+    }
+    /// De quoi réveiller la boucle depuis un autre fil, si la plateforme le sait.
+    fn waker(&self) -> Option<Waker> {
+        None
     }
 }
 

@@ -1,0 +1,190 @@
+//! Le langage `.vk` : un fichier donne le même dessin que la même vue écrite en Rust.
+
+use veka::lang::{Program, parse, print};
+use veka::prelude::*;
+use veka::ui::{InputEvent, PointerButton};
+
+const COMPTEUR: &str = include_str!("../examples/vk/compteur.vk");
+
+fn surface(view: Element) -> Surface {
+    let mut s = Surface::new(view);
+    s.resize(Size::new(480.0, 320.0), 2.0);
+    s.frame();
+    s
+}
+
+fn click(s: &mut Surface, p: Point) {
+    s.handle(InputEvent::PointerMoved { position: p });
+    s.handle(InputEvent::PointerDown {
+        position: p,
+        button: PointerButton::Primary,
+    });
+    s.handle(InputEvent::PointerUp {
+        position: p,
+        button: PointerButton::Primary,
+    });
+    s.frame();
+}
+
+fn compteur_rust() -> impl View {
+    let mut clics = State::new(0);
+    VStack![spacing: 16;
+        Text("Bonjour Veka").font(Font::Title),
+        HStack![spacing: 12;
+            RoundedRectangle(12).fill(Color::Blue).frame(80, 48),
+            Capsule().fill(Color::Orange).frame(96, 48),
+            Circle().fill(Color::Green).frame(48, 48),
+        ],
+        Button(format!("Clics : {clics}"), move || clics += 1),
+    ]
+    .padding(24)
+}
+
+fn program(source: &str) -> Program {
+    let p = Program::new(source);
+    let errors = p.errors();
+    assert!(
+        errors.is_empty(),
+        "{}",
+        errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    p
+}
+
+#[test]
+fn aller_retour_texte() {
+    let (m, errors) = parse(COMPTEUR);
+    assert!(errors.is_empty(), "{errors:?}");
+    let text = print(&m);
+    let (m2, errors) = parse(&text);
+    assert!(errors.is_empty(), "{errors:?}\n{text}");
+    assert_eq!(m, m2);
+    assert_eq!(print(&m2), text, "l'impression est stable");
+}
+
+#[test]
+fn compteur_meme_dessin_que_rust() {
+    let p = program(COMPTEUR);
+    let mut vk = surface(p.view("Compteur"));
+    let mut rs = surface(component(compteur_rust));
+    assert_eq!(vk.draw_list().to_string(), rs.draw_list().to_string());
+    let bouton = rs.rects_of("Button")[0].center();
+    assert_eq!(vk.rects_of("Button")[0].center(), bouton);
+    click(&mut vk, bouton);
+    click(&mut rs, bouton);
+    assert!(vk.texts().contains(&"Clics : 1".to_string()), "{:?}", vk.texts());
+    assert_eq!(vk.draw_list().to_string(), rs.draw_list().to_string());
+}
+
+const COLORA: &str = include_str!("../examples/vk/colora.vk");
+
+#[path = "../examples/colora.rs"]
+#[allow(dead_code)]
+mod colora_rs;
+
+fn same(vk: &Surface, rs: &Surface) {
+    let (a, b) = (vk.draw_list().to_string(), rs.draw_list().to_string());
+    if a != b {
+        let line = a.lines().zip(b.lines()).position(|(x, y)| x != y);
+        panic!("dessins différents (ligne {line:?})\n.vk :\n{a}\nRust :\n{b}");
+    }
+}
+
+#[test]
+fn colora_meme_dessin_que_rust() {
+    let p = program(COLORA);
+    let mut vk = surface(p.view("Colora"));
+    let mut rs = surface(component(colora_rs::vue));
+    same(&vk, &rs);
+    // Les deux boutons du bas : mode, puis gris.
+    for i in [1, 1, 2, 2, 1] {
+        let b = rs.rects_of("Button")[i].center();
+        // Rust recrée le contenu quand `grayscale` apparaît (le survol est perdu) ; le .vk garde
+        // le même arbre : on compare pointeur sorti.
+        for s in [&mut vk, &mut rs] {
+            click(s, b);
+            s.handle(InputEvent::PointerMoved {
+                position: Point::new(1.0, 1.0),
+            });
+            s.frame();
+        }
+        same(&vk, &rs);
+    }
+}
+
+const ANIMA: &str = include_str!("../examples/vk/anima.vk");
+
+#[path = "../examples/anima.rs"]
+#[allow(dead_code)]
+mod anima_rs;
+
+/// `anima.rs` sans la pulsation (les timelines .vk arrivent ensuite).
+fn anima_rust() -> impl View {
+    use anima_rs::*;
+    let fond = Rectangle().fill(Token::WindowBackground);
+    let contenu = HStack![spacing: 32;
+        VStack![spacing: 24;
+            Text("Anima").font(Font::LargeTitle),
+            component(carte),
+            component(couleur),
+            component(galerie),
+            component(geometrie),
+        ],
+        component(liste),
+    ]
+    .padding(24);
+    ZStack![fond, contenu]
+}
+
+fn at(s: &mut Surface, t: f64) {
+    s.frame_at(veka::foundation::Instant::from_nanos((t * 1e9) as u64));
+}
+
+#[test]
+fn anima_meme_dessin_que_rust() {
+    let p = program(ANIMA);
+    let mut vk = Surface::new(p.view("Anima"));
+    let mut rs = Surface::new(component(anima_rust));
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(860.0, 720.0), 1.0);
+        at(s, 0.0);
+    }
+    same(&vk, &rs);
+    // Chaque bouton, puis la carte ; on compare pendant et après l'animation.
+    let mut t = 0.0;
+    let boutons = rs.rects_of("Button").len();
+    let mut cibles: Vec<Point> = (0..boutons).map(|i| rs.rects_of("Button")[i].center()).collect();
+    cibles.push(rs.rects_of("RoundedRectangle")[0].center());
+    cibles.push(cibles[cibles.len() - 1]);
+    for c in cibles {
+        for s in [&mut vk, &mut rs] {
+            s.handle(InputEvent::PointerMoved { position: c });
+            s.handle(InputEvent::PointerDown {
+                position: c,
+                button: PointerButton::Primary,
+            });
+            s.handle(InputEvent::PointerUp {
+                position: c,
+                button: PointerButton::Primary,
+            });
+            s.handle(InputEvent::PointerMoved {
+                position: Point::new(1.0, 1.0),
+            });
+        }
+        for dt in [0.0, 0.1, 0.3, 2.0] {
+            for s in [&mut vk, &mut rs] {
+                at(s, t + dt);
+            }
+            same(&vk, &rs);
+        }
+        t += 2.0;
+    }
+    let textes = vk.texts();
+    for attendu in ["Froid", "Élément 4"] {
+        assert!(textes.iter().any(|x| x == attendu), "{textes:?}");
+    }
+}
