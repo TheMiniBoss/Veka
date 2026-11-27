@@ -12,6 +12,7 @@ veka-foundation.workspace = true
 veka-graphics.workspace = true
 veka-text.workspace = true
 veka-ui.workspace = true
+veka-lang.workspace = true
 veka-app = { workspace = true, optional = true }
 
 [features]

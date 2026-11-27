@@ -38,7 +38,7 @@ mod tree;
 pub mod views;
 pub mod window;
 
-pub use element::{Action, Element, Key, View, component};
+pub use element::{Action, Element, Key, View, component, component_tagged};
 pub use env::{Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};

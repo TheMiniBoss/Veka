@@ -9,6 +9,7 @@
 //! | [`graphics`] | formes, liste de dessin |
 //! | [`text`] | polices, mise en page du texte |
 //! | [`ui`] | vues, état, layout, contrôles |
+//! | [`lang`] | le langage `.vk` : des vues dans un fichier, relues à chaud |
 //! | [`app`] | fenêtres natives : `App::new().window(titre, vue).run()` |
 //!
 //! ```
@@ -31,6 +32,7 @@ pub use veka_app as app;
 pub use veka_app::{App, Chrome, Window};
 pub use veka_foundation as foundation;
 pub use veka_graphics as graphics;
+pub use veka_lang as lang;
 pub use veka_text as text;
 pub use veka_ui as ui;
 

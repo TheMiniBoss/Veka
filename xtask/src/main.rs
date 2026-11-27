@@ -15,6 +15,7 @@ const CORE: &[&str] = &[
     "veka-graphics",
     "veka-text",
     "veka-ui",
+    "veka-lang",
 ];
 
 /// Dépendances interdites dans le cœur (fenêtres, OS, GPU).

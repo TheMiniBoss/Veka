@@ -3,7 +3,7 @@
 
 use veka::prelude::*;
 
-fn carte() -> impl View {
+pub fn carte() -> impl View {
     let ouvert = State::new(false);
     let o = ouvert.get();
     VStack![spacing: 8;
@@ -22,7 +22,7 @@ fn carte() -> impl View {
     ]
 }
 
-fn liste() -> impl View {
+pub fn liste() -> impl View {
     let prochain = State::new(4u32);
     let ids = State::new(vec![1u32, 2, 3]);
     let lignes: Vec<Element> = ids
@@ -61,7 +61,7 @@ fn liste() -> impl View {
     ]
 }
 
-fn couleur() -> impl View {
+pub fn couleur() -> impl View {
     let chaud = State::new(false);
     let c = chaud.get();
     HStack![spacing: 12;
@@ -78,7 +78,7 @@ fn couleur() -> impl View {
     ]
 }
 
-fn galerie() -> impl View {
+pub fn galerie() -> impl View {
     let droite = State::new(false);
     let d = droite.get();
     let courbes = [
@@ -107,7 +107,7 @@ fn galerie() -> impl View {
     ]
 }
 
-fn geometrie() -> impl View {
+pub fn geometrie() -> impl View {
     let droite = State::new(false);
     let d = droite.get();
     let pastille = Circle()
@@ -129,7 +129,7 @@ fn geometrie() -> impl View {
     ]
 }
 
-fn pulsation() -> impl View {
+pub fn pulsation() -> impl View {
     let battements = State::new(0u32);
     let tl = TimelineState::playing(
         Timeline::new()

@@ -61,6 +61,8 @@ pub(crate) enum ElementKind {
     Component {
         render: Rc<dyn Fn() -> Element>,
         type_id: TypeId,
+        /// Distingue des vues qui partagent la même fonction (vues d'un fichier `.vk`).
+        tag: u64,
         name: &'static str,
     },
 }
@@ -180,8 +182,25 @@ where
         kind: ElementKind::Component {
             render: Rc::new(move || render().into_element()),
             type_id: TypeId::of::<F>(),
+            tag: 0,
             name: std::any::type_name::<F>(),
         },
         key: None,
     }
 }
+
+/// Comme [`component`], pour des vues décrites par des données (un fichier `.vk`) : deux vues de même
+/// `tag` sont la même vue (elles gardent leurs états), deux `tag` différents ne le sont jamais.
+pub fn component_tagged(tag: u64, name: &'static str, render: impl Fn() -> Element + 'static) -> Element {
+    Element {
+        kind: ElementKind::Component {
+            render: Rc::new(render),
+            type_id: TypeId::of::<ComponentTagged>(),
+            tag,
+            name,
+        },
+        key: None,
+    }
+}
+
+struct ComponentTagged;

@@ -1,0 +1,102 @@
+// Colora en .vk : jetons, les cinq dégradés, un thème maison, le mode clair / sombre et les
+// réglages de couleur. `cargo run --example vk -- colora` (même dessin que `colora.rs`, testé).
+
+theme Marque {
+    Tint: #FF6A00 / #FF8A33
+    Marque.Bandeau: LinearGradient([#FF6A00, #FF2D55]) / LinearGradient([#7A2E00, #4A0018])
+}
+
+view Colora {
+    // 0 = comme le système, 1 = clair, 2 = sombre.
+    @State var mode = 0
+    @State var gris = false
+
+    ZStack {
+        Rectangle()
+            .fill(.WindowBackground)
+            .colorScheme(mode == 1 ? .light : mode == 2 ? .dark : .system)
+        VStack(spacing: 20) {
+            Text("Colora")
+                .font(.largeTitle)
+            VStack(spacing: 8) {
+                Text("Jetons")
+                    .font(.headline)
+                HStack(spacing: 8) {
+                    ForEach([.Red, .Orange, .Yellow, .Green, .Mint, .Teal, .Cyan, .Blue, .Indigo, .Purple, .Pink, .Brown]) { jeton in
+                        Circle()
+                            .fill(jeton)
+                            .frame(28, 28)
+                    }
+                }
+            }
+            VStack(spacing: 8) {
+                Text("Dégradés (Oklab)")
+                    .font(.headline)
+                Degrades
+            }
+            VStack(spacing: 8) {
+                Text("Thème « Marque » sur cette partie")
+                    .font(.headline)
+                HStack(spacing: 12) {
+                    Button("Valider") {
+                    }
+                    Capsule()
+                        .fill(.Marque.Bandeau)
+                        .frame(160, 36)
+                }
+                .theme(Marque)
+            }
+            HStack(spacing: 12) {
+                Button(mode == 0 ? "Mode : système" : mode == 1 ? "Mode : clair" : "Mode : sombre") {
+                    mode = (mode + 1) % 3
+                }
+                Button(gris ? "Couleurs" : "Niveaux de gris") {
+                    gris.toggle()
+                }
+            }
+        }
+        .padding(24)
+        .colorScheme(mode == 1 ? .light : mode == 2 ? .dark : .system)
+        .grayscale(gris ? 1 : 0)
+    }
+}
+
+view Degrades {
+    HStack(spacing: 12) {
+        VStack(spacing: 6) {
+            RoundedRectangle(14)
+                .fill(LinearGradient([.Blue, .Purple], from: .topLeading, to: .bottomTrailing))
+                .frame(112, 84)
+            Text("Linéaire")
+                .font(.footnote)
+        }
+        VStack(spacing: 6) {
+            RoundedRectangle(14)
+                .fill(RadialGradient([.Yellow, .Orange, .Red], 60))
+                .frame(112, 84)
+            Text("Radial")
+                .font(.footnote)
+        }
+        VStack(spacing: 6) {
+            RoundedRectangle(14)
+                .fill(EllipticalGradient([.white, #5AC8FA, #0040DD]))
+                .frame(112, 84)
+            Text("Elliptique")
+                .font(.footnote)
+        }
+        VStack(spacing: 6) {
+            RoundedRectangle(14)
+                .fill(AngularGradient([.Red, .Yellow, .Green, .Cyan, .Blue, .Purple, .Red]))
+                .frame(112, 84)
+            Text("Angulaire")
+                .font(.footnote)
+        }
+        VStack(spacing: 6) {
+            RoundedRectangle(14)
+                .fill(MeshGradient(3, 3, [#FF2D55, #FF9500, #FFCC00, #AF52DE, #FFFFFF, #34C759, #5856D6, #007AFF, #00C7BE]))
+                .frame(112, 84)
+            Text("Maillé")
+                .font(.footnote)
+        }
+    }
+}

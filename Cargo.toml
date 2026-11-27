@@ -18,6 +18,7 @@ veka-anima = { path = "crates/veka-anima" }
 veka-graphics = { path = "crates/veka-graphics" }
 veka-text = { path = "crates/veka-text" }
 veka-ui = { path = "crates/veka-ui" }
+veka-lang = { path = "crates/veka-lang" }
 veka-platform = { path = "crates/veka-platform" }
 veka-render = { path = "crates/veka-render" }
 veka-render-wgpu = { path = "crates/veka-render-wgpu" }
