@@ -301,9 +301,17 @@ impl Surface {
         fn animating(tree: &Tree, id: NodeId) -> bool {
             tree.anims.contains_key(&id) || tree.nodes[id].children.iter().any(|&c| animating(tree, c))
         }
-        fn visit(tree: &Tree, id: NodeId, now: &mut Vec<NodeId>, before: &[NodeId], out: &mut Vec<crate::Action>) {
+        fn visit(
+            tree: &Tree,
+            id: NodeId,
+            now: &mut Vec<NodeId>,
+            before: &[NodeId],
+            out: &mut Vec<crate::Action>,
+        ) {
             let node = &tree.nodes[id];
-            if let Some(w) = (node.prim.as_ref() as &dyn std::any::Any).downcast_ref::<crate::views::AnimationEndPrim>() {
+            if let Some(w) =
+                (node.prim.as_ref() as &dyn std::any::Any).downcast_ref::<crate::views::AnimationEndPrim>()
+            {
                 if animating(tree, id) {
                     now.push(id);
                 } else if before.contains(&id) {
@@ -316,7 +324,13 @@ impl Surface {
         }
         let before = std::mem::take(&mut self.animating_watchers);
         let mut out = Vec::new();
-        visit(&self.tree, self.root, &mut self.animating_watchers, &before, &mut out);
+        visit(
+            &self.tree,
+            self.root,
+            &mut self.animating_watchers,
+            &before,
+            &mut out,
+        );
         out
     }
 

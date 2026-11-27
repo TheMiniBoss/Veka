@@ -217,7 +217,11 @@ pub(crate) fn advance(surface: u32, now: f64) {
 
 /// Vrai si une timeline de `surface` est en lecture.
 pub(crate) fn has_playing(surface: u32) -> bool {
-    PLAYING.with(|p| p.borrow().iter().any(|e| e.surface == surface && e.state.is_alive()))
+    PLAYING.with(|p| {
+        p.borrow()
+            .iter()
+            .any(|e| e.surface == surface && e.state.is_alive())
+    })
 }
 
 pub(crate) fn forget(surface: u32) {

@@ -196,7 +196,11 @@ impl Playback {
         let mut to = self.time + dt * self.timeline.speed * self.direction;
         loop {
             let end = if self.direction > 0.0 { len } else { 0.0 };
-            let past = if self.direction > 0.0 { to >= end } else { to <= end };
+            let past = if self.direction > 0.0 {
+                to >= end
+            } else {
+                to <= end
+            };
             if !past || len <= 0.0 {
                 events.extend(self.timeline.crossed(from, to).into_iter().map(String::from));
                 self.time = to.clamp(0.0, len.max(0.0));
@@ -260,7 +264,11 @@ mod tests {
         Timeline::new()
             .track(
                 "x",
-                [Keyframe::new(0.0, 0.0).curve(Curve::Linear), Keyframe::new(1.0, 100.0), Keyframe::new(2.0, 50.0)],
+                [
+                    Keyframe::new(0.0, 0.0).curve(Curve::Linear),
+                    Keyframe::new(1.0, 100.0),
+                    Keyframe::new(2.0, 50.0),
+                ],
             )
             .event(0.5, "milieu")
             .event(2.0, "fin")

@@ -136,7 +136,9 @@ impl WindowRenderer {
             width: frame.width.max(1),
             height: frame.height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
-            desired_maximum_frame_latency: 2,
+            // Une seule image d'avance : un clic se voit une image plus tôt (une interface dessine
+            // peu, le GPU n'a pas besoin de file d'attente).
+            desired_maximum_frame_latency: 1,
             alpha_mode,
             view_formats: vec![],
             color_space: wgpu::SurfaceColorSpace::Auto,

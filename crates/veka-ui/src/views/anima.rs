@@ -425,6 +425,8 @@ impl Element {
     /// Appelle `f` quand les animations de ce sous-arbre (layout, valeurs, entrées et sorties) se
     /// terminent.
     pub fn on_animation_end(self, f: impl FnMut() + 'static) -> Element {
-        self.wrap(AnimationEndPrim { action: Action::new(f) })
+        self.wrap(AnimationEndPrim {
+            action: Action::new(f),
+        })
     }
 }

@@ -297,7 +297,12 @@ impl<T: 'static> State<T> {
 
     /// Lit la valeur si l'état existe encore.
     pub(crate) fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        STATES.with(|s| s.borrow().get(self.key).and_then(|slot| slot.value.downcast_ref::<T>()).map(f))
+        STATES.with(|s| {
+            s.borrow()
+                .get(self.key)
+                .and_then(|slot| slot.value.downcast_ref::<T>())
+                .map(f)
+        })
     }
 }
 

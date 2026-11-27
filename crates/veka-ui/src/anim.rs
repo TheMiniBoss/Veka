@@ -15,7 +15,9 @@ use veka_graphics::{DrawCommand, DrawList};
 use crate::tree::{NodeId, Tree};
 use std::collections::HashMap;
 
-use crate::views::{AnimationPrim, MatchedGeometryPrim, OffsetPrim, RotationPrim, ScaleEffectPrim, TransitionPrim};
+use crate::views::{
+    AnimationPrim, MatchedGeometryPrim, OffsetPrim, RotationPrim, ScaleEffectPrim, TransitionPrim,
+};
 
 /// Ce qui s'anime sur un nœud.
 #[derive(Default)]
@@ -52,8 +54,16 @@ impl NodeAnims {
     /// `matched_geometry_effect`.
     pub(crate) fn geometry_transform(&self, rect: Rect) -> Option<Transform2D> {
         let g = self.geometry_rect?;
-        let sx = if rect.width() > 0.0 { g.width() / rect.width() } else { 1.0 };
-        let sy = if rect.height() > 0.0 { g.height() / rect.height() } else { 1.0 };
+        let sx = if rect.width() > 0.0 {
+            g.width() / rect.width()
+        } else {
+            1.0
+        };
+        let sy = if rect.height() > 0.0 {
+            g.height() / rect.height()
+        } else {
+            1.0
+        };
         Some(
             Transform2D::translation(-rect.x(), -rect.y())
                 .then(&Transform2D::scale(sx, sy))

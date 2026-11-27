@@ -289,7 +289,11 @@ unsafe extern "C" fn anima_setup(cx: *mut VekaContext, user: *mut c_void) {
 unsafe extern "C" fn anima_body(cx: *mut VekaContext, user: *mut c_void) -> *mut VekaElement {
     let a = unsafe { &mut *(user as *mut Anima) };
     veka_timeline_on_event(cx, a.tl, Some(compter), user);
-    let largeur = if veka_state_get_bool(cx, a.ouvert) { 200.0 } else { 100.0 };
+    let largeur = if veka_state_get_bool(cx, a.ouvert) {
+        200.0
+    } else {
+        100.0
+    };
     unsafe {
         let lignes = [
             veka_frame(veka_rectangle(), largeur, 40.0),
@@ -332,7 +336,11 @@ fn anima_en_c() {
             evenements: 0,
         };
         let user = &mut a as *mut Anima as *mut c_void;
-        let mut s = Surface::new(component(app::window_view(Some(anima_setup), Some(anima_body), user)));
+        let mut s = Surface::new(component(app::window_view(
+            Some(anima_setup),
+            Some(anima_body),
+            user,
+        )));
         s.resize(Size::new(400.0, 300.0), 1.0);
         at(&mut s, 10.0);
         assert!(veka_timeline_is_playing(context(), a.tl));
@@ -407,7 +415,12 @@ fn anima_c_comme_rust() {
         assert!(veka_transition(veka_rectangle(), std::ptr::null_mut()).is_null());
         assert!(veka_transition_combined(veka_transition_opacity(), std::ptr::null_mut()).is_null());
         assert!(veka_state_new_timeline(std::ptr::null_mut(), std::ptr::null(), false).is_null());
-        veka_with_animation(std::ptr::null_mut(), veka_animation_smooth(), None, std::ptr::null_mut());
+        veka_with_animation(
+            std::ptr::null_mut(),
+            veka_animation_smooth(),
+            None,
+            std::ptr::null_mut(),
+        );
         assert!(!veka_last_error().is_null());
     }
 }

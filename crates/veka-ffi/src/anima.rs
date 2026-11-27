@@ -4,7 +4,7 @@
 use std::ffi::{c_char, c_void};
 use std::rc::Rc;
 
-use veka_ui::anima::{Animation, Curve, Edge, Keyframe, Repeat, Timeline, Transition, Track};
+use veka_ui::anima::{Animation, Curve, Edge, Keyframe, Repeat, Timeline, Track, Transition};
 use veka_ui::schema::{Params, Value};
 use veka_ui::{TimelineState, with_animation};
 
@@ -166,7 +166,13 @@ pub extern "C" fn veka_animation_circ_ease_in_out(duration: f32) -> VekaAnimatio
 
 /// Bézier cubique, comme `cubic-bezier(x1, y1, x2, y2)` en CSS.
 #[unsafe(no_mangle)]
-pub extern "C" fn veka_animation_timing_curve(x1: f32, y1: f32, x2: f32, y2: f32, duration: f32) -> VekaAnimation {
+pub extern "C" fn veka_animation_timing_curve(
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    duration: f32,
+) -> VekaAnimation {
     Animation::timing_curve(x1, y1, x2, y2, duration).into()
 }
 
@@ -178,7 +184,11 @@ pub extern "C" fn veka_animation_spring(response: f32, damping_fraction: f32) ->
 
 /// Ressort aux paramètres physiques.
 #[unsafe(no_mangle)]
-pub extern "C" fn veka_animation_interpolating_spring(mass: f32, stiffness: f32, damping: f32) -> VekaAnimation {
+pub extern "C" fn veka_animation_interpolating_spring(
+    mass: f32,
+    stiffness: f32,
+    damping: f32,
+) -> VekaAnimation {
     Animation::interpolating_spring(mass, stiffness, damping).into()
 }
 
@@ -214,13 +224,20 @@ pub extern "C" fn veka_animation_speed(animation: VekaAnimation, speed: f32) -> 
 
 /// Joue `count` fois en tout.
 #[unsafe(no_mangle)]
-pub extern "C" fn veka_animation_repeat(animation: VekaAnimation, count: u32, autoreverse: bool) -> VekaAnimation {
+pub extern "C" fn veka_animation_repeat(
+    animation: VekaAnimation,
+    count: u32,
+    autoreverse: bool,
+) -> VekaAnimation {
     Animation::from(animation).repeat(count, autoreverse).into()
 }
 
 /// Joue sans fin.
 #[unsafe(no_mangle)]
-pub extern "C" fn veka_animation_repeat_forever(animation: VekaAnimation, autoreverse: bool) -> VekaAnimation {
+pub extern "C" fn veka_animation_repeat_forever(
+    animation: VekaAnimation,
+    autoreverse: bool,
+) -> VekaAnimation {
     Animation::from(animation).repeat_forever(autoreverse).into()
 }
 
@@ -415,7 +432,13 @@ pub unsafe extern "C" fn veka_scale_effect_xy(element: *mut VekaElement, x: f32,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn veka_rotation_effect(element: *mut VekaElement, degrees: f32) -> *mut VekaElement {
     // SAFETY : contrat de l'API.
-    unsafe { modify(element, "rotationEffect", Params::new().with("degrees", num(degrees))) }
+    unsafe {
+        modify(
+            element,
+            "rotationEffect",
+            Params::new().with("degrees", num(degrees)),
+        )
+    }
 }
 
 /// Anime le contenu avec `*animation` chaque fois que `value` change. `animation` NULL : ne pas
@@ -710,7 +733,8 @@ pub extern "C" fn veka_timeline_is_playing(_cx: *mut VekaContext, s: *mut VekaSt
 }
 
 /// Fonction appelée pour chaque événement franchi, avec son nom.
-pub type VekaEventFn = Option<unsafe extern "C" fn(cx: *mut VekaContext, name: *const c_char, user: *mut c_void)>;
+pub type VekaEventFn =
+    Option<unsafe extern "C" fn(cx: *mut VekaContext, name: *const c_char, user: *mut c_void)>;
 
 /// Appelle `callback` pour chaque événement franchi pendant la lecture. Peut être rappelée à chaque
 /// `body` (la dernière fonction donnée est gardée).

@@ -9,7 +9,8 @@ mod shape;
 mod text;
 
 pub use anima::{
-    AnimationEndPrim, AnimationPrim, MatchedGeometryPrim, OffsetPrim, OpacityPrim, RotationPrim, ScaleEffectPrim, TransitionPrim, value_key,
+    AnimationEndPrim, AnimationPrim, MatchedGeometryPrim, OffsetPrim, OpacityPrim, RotationPrim,
+    ScaleEffectPrim, TransitionPrim, value_key,
 };
 pub use button::{ButtonPrim, ButtonState};
 pub use modifiers::{Background, EnvModifier, Length, TapGesture};

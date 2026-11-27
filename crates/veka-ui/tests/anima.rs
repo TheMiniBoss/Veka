@@ -274,7 +274,10 @@ fn vue_timeline() -> impl View {
         Timeline::new()
             .track(
                 "largeur",
-                [Keyframe::new(0.0, 100.0).curve(Curve::Linear), Keyframe::new(1.0, 200.0)],
+                [
+                    Keyframe::new(0.0, 100.0).curve(Curve::Linear),
+                    Keyframe::new(1.0, 200.0),
+                ],
             )
             .event(0.5, "milieu"),
     );
@@ -359,11 +362,17 @@ fn geometrie_liee_et_fin_d_animation() {
     let mut s = surface(component(vue_liee));
     let avant = s.rects_of("Circle")[0];
     assert_eq!(avant.width(), 20.0);
-    with_animation(Animation::linear(1.0), || COTE.with(|c| c.get()).unwrap().set(true));
+    with_animation(Animation::linear(1.0), || {
+        COTE.with(|c| c.get()).unwrap().set(true)
+    });
     at(&mut s, 10.0);
     let apres = s.rects_of("Circle")[0];
     assert_eq!(apres.width(), 40.0);
-    assert_eq!(s.rects_of("Circle").len(), 1, "la source est retirée tout de suite");
+    assert_eq!(
+        s.rects_of("Circle").len(),
+        1,
+        "la source est retirée tout de suite"
+    );
     at(&mut s, 10.5);
     assert_eq!(s.rects_of("Circle").len(), 1);
     let t = transforms(&s);
@@ -374,7 +383,10 @@ fn geometrie_liee_et_fin_d_animation() {
         (avant.center().x + apres.center().x) / 2.0,
         (avant.center().y + apres.center().y) / 2.0,
     );
-    assert!((c.x - attendu.x).abs() < 0.01 && (c.y - attendu.y).abs() < 0.01, "{c:?} ≠ {attendu:?}");
+    assert!(
+        (c.x - attendu.x).abs() < 0.01 && (c.y - attendu.y).abs() < 0.01,
+        "{c:?} ≠ {attendu:?}"
+    );
     assert!((t[0].a - 0.75).abs() < 0.01, "{}", t[0].a);
     assert_eq!(FINS.with(|f| f.get()), 0);
     at(&mut s, 11.0);
@@ -439,7 +451,11 @@ fn anima_dans_le_schema() {
     let b = |name: &str, params: Params, child: Element| schema.build(name, params, vec![child]).unwrap();
     let mut e = Circle().frame(20, 20);
     e = b("opacity", Params::new().with("amount", Value::Float(0.5)), e);
-    e = b("offset", Params::new().with("x", Value::Int(3)).with("y", Value::Int(4)), e);
+    e = b(
+        "offset",
+        Params::new().with("x", Value::Int(3)).with("y", Value::Int(4)),
+        e,
+    );
     e = b("scaleEffect", Params::new().with("scale", Value::Float(1.5)), e);
     e = b("rotationEffect", Params::new().with("degrees", Value::Int(45)), e);
     e = b(
@@ -454,7 +470,11 @@ fn anima_dans_le_schema() {
         Params::new().with("transition", Value::Transition(Transition::scale(0.5))),
         e,
     );
-    e = b("matchedGeometryEffect", Params::new().with("id", Value::String("a".into())), e);
+    e = b(
+        "matchedGeometryEffect",
+        Params::new().with("id", Value::String("a".into())),
+        e,
+    );
     e = b("ignoreReduceMotion", Params::new(), e);
     let donnees = b(
         "onAnimationEnd",

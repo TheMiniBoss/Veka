@@ -341,7 +341,12 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         | (ValueType::Transition, Value::Transition(_))
         | (
             ValueType::Any,
-            Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) | Value::Enum(_) | Value::Color(_),
+            Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::Enum(_)
+            | Value::Color(_),
         ) => true,
         (ValueType::Enum(names), Value::Enum(s) | Value::String(s)) => names.contains(&&**s),
         _ => false,
@@ -754,7 +759,12 @@ fn builtin_entries() -> Vec<Entry> {
             doc: "anime le sous-arbre quand `value` change",
             params: const {
                 &[
-                    p("spec", ValueType::Animation, false, "l'animation (absente : ne pas animer)"),
+                    p(
+                        "spec",
+                        ValueType::Animation,
+                        false,
+                        "l'animation (absente : ne pas animer)",
+                    ),
                     p("value", ValueType::Any, true, "la valeur surveillée"),
                 ]
             },
