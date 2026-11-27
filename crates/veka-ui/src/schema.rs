@@ -12,7 +12,7 @@ use std::sync::Arc;
 use veka_anima::{Animation, Transition};
 use veka_colora::{ColorScheme, Paint, Theme};
 use veka_foundation::{Color, WindowControl};
-use veka_graphics::CornerRadii;
+use veka_graphics::{CornerRadii, Shape};
 use veka_text::Weight;
 
 use crate::element::{Action, Element};
@@ -672,8 +672,27 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "fond",
-            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
-            build: |p, c| one(c).background(p.paint("paint").unwrap_or_default()),
+            params: const {
+                &[
+                    p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé"),
+                    p(
+                        "shape",
+                        ValueType::Enum(BACKGROUND_SHAPES),
+                        false,
+                        "forme du fond (rectangle par défaut)",
+                    ),
+                ]
+            },
+            build: |p, c| {
+                let paint = p.paint("paint").unwrap_or_default();
+                let shape = match p.enumeration("shape") {
+                    Some("capsule") => Shape::Capsule,
+                    Some("circle") => Shape::Circle,
+                    Some("ellipse") => Shape::Ellipse,
+                    _ => Shape::Rectangle,
+                };
+                one(c).background_shape(paint, shape)
+            },
         },
         Entry {
             name: "theme",
@@ -881,6 +900,7 @@ fn builtin_entries() -> Vec<Entry> {
 }
 
 const SCHEMES: &[&str] = &["light", "dark"];
+const BACKGROUND_SHAPES: &[&str] = &["rectangle", "capsule", "circle", "ellipse"];
 
 /// Un réglage de couleur : un seul paramètre `amount`.
 fn adjust(name: &'static str, doc: &'static str) -> Entry {

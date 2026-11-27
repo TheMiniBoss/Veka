@@ -21,6 +21,7 @@ Le plus récent en premier.
   `veka_matched_geometry_effect`, `veka_on_animation_end`, `veka_ignore_reduce_motion`, `veka_id`, les timelines
   (`VekaTimeline`, `veka_state_new_timeline`, `veka_timeline_*`). Exemple `examples/c/anima.c`.
 - L'exemple `anima` gagne une pastille à géométrie liée et une pulsation en timeline.
+- Schéma : `background` prend une forme (`shape` : rectangle, capsule, cercle, ellipse).
 - Une image d'avance au lieu de deux dans la chaîne d'affichage : un clic se voit plus tôt.
 
 ### Animations implicites et transitions (PR H)

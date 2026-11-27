@@ -90,8 +90,8 @@ static VekaElement *carte(VekaContext *cx, Anima *a) {
     bool o = veka_state_get_bool(cx, a->ouvert);
     VekaColor couleurs[2] = {veka_hex(o ? 0x5856D6 : 0x007AFF), veka_hex(o ? 0xFF2D55 : 0x00C7BE)};
     VekaPaint *degrade = veka_linear_gradient(couleurs, 2, VEKA_UNIT_TOP_LEADING, VEKA_UNIT_BOTTOM_TRAILING);
-    VekaElement *forme = veka_frame(veka_fill_paint(veka_rounded_rect(o ? 24 : 12), degrade), o ? 300 : 140,
-                                    o ? 120 : 64);
+    VekaElement *forme = veka_frame(veka_fill_paint(veka_rounded_rect(o ? 24.0f : 12.0f), degrade), o ? 300.0f : 140.0f,
+                                    o ? 120.0f : 64.0f);
     VekaAnimation douce = veka_animation_ease_in_out(0.25f);
     VekaElement *lignes[] = {
         veka_on_tap(forme, toucher_carte, a),
@@ -112,11 +112,17 @@ static VekaElement *liste(Anima *a) {
             veka_text(texte),
         };
         VekaElement *ligne = veka_padding(veka_hstack(8, contenu, 2), 8);
-        ligne = veka_background_paint(ligne, veka_token("Fill", VEKA_HIERARCHY_PRIMARY));
-        /* Arrive d'en haut (les lignes s'ajoutent en tête), part en se réduisant. */
+        /* Un fond en capsule, par le schéma : background(paint:, shape: "capsule"). */
+        VekaPaint *fond = veka_token("Fill", VEKA_HIERARCHY_PRIMARY);
+        VekaParam fond_params[] = {{"paint", veka_paint_value(fond)}, {"shape", veka_enum("capsule")}};
+        ligne = veka_modifier(ligne, "background", fond_params, 2);
+        veka_paint_free(fond);
+        /* Descend un peu en apparaissant (les lignes s'ajoutent en tête, sous les boutons), part en se
+         * réduisant. */
         VekaTransition *t = veka_transition_asymmetric(
-            veka_transition_combined(veka_transition_move(VEKA_EDGE_TOP), veka_transition_opacity()),
-            veka_transition_combined(veka_transition_scale(0.6f), veka_transition_opacity()));
+            veka_transition_combined(veka_transition_combined(veka_transition_offset(0, -12), veka_transition_scale(0.9f)),
+                                     veka_transition_opacity()),
+            veka_transition_combined(veka_transition_scale(0.8f), veka_transition_opacity()));
         lignes[i] = veka_id(veka_transition(ligne, t), a->ids[i]);
     }
     VekaElement *boutons[] = {veka_button("Ajouter", ajouter, a), veka_button("Retirer", retirer, a)};
@@ -129,8 +135,8 @@ static VekaElement *geometrie(VekaContext *cx, Anima *a) {
     bool d = veka_state_get_bool(cx, a->droite);
     VekaElement *pastille = veka_id(
         veka_matched_geometry_effect(
-            veka_frame(veka_fill_paint(veka_circle(), veka_token("Orange", VEKA_HIERARCHY_PRIMARY)), d ? 44 : 20,
-                       d ? 44 : 20),
+            veka_frame(veka_fill_paint(veka_circle(), veka_token("Orange", VEKA_HIERARCHY_PRIMARY)), d ? 44.0f : 20.0f,
+                       d ? 44.0f : 20.0f),
             "pastille"),
         d ? 2 : 1);
     VekaElement *rail = veka_id(veka_frame(veka_fill_paint(veka_capsule(), veka_token("Fill", VEKA_HIERARCHY_PRIMARY)),

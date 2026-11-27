@@ -37,9 +37,12 @@ fn liste() -> impl View {
             .background_shape(Token::Fill, Shape::Capsule)
             .id(i as i64)
             .transition(Transition::asymmetric(
-                // Arrive d'en haut (les lignes s'ajoutent en tête), part en se réduisant.
-                Transition::move_edge(Edge::Top).combined(Transition::opacity()),
-                Transition::scale(0.6).combined(Transition::opacity()),
+                // Descend un peu en apparaissant (les lignes s'ajoutent en tête, sous les boutons),
+                // part en se réduisant.
+                Transition::offset(0.0, -12.0)
+                    .combined(Transition::scale(0.9))
+                    .combined(Transition::opacity()),
+                Transition::scale(0.8).combined(Transition::opacity()),
             ))
         })
         .collect();

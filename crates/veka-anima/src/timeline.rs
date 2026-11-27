@@ -213,7 +213,8 @@ impl Playback {
                 break;
             }
             // Boucle : on repart du début (ou de la fin, à l'envers).
-            let rest = to - end;
+            // Un grand saut (application en veille…) ne rejoue pas chaque tour manqué : au plus un.
+            let rest = (to - end) % len;
             from = if self.direction > 0.0 { 0.0 } else { len };
             to = from + rest;
             // Un événement à 0 (ou à la fin) est rejoué à chaque tour.
@@ -300,8 +301,9 @@ mod tests {
 
         let mut p = Playback::new(tl().looping(true));
         p.play();
+        // Deux tours d'un coup : le tour manqué n'est pas rejoué.
         let ev = p.advance(4.6);
-        assert_eq!(ev, ["milieu", "fin", "milieu", "fin", "milieu"]);
+        assert_eq!(ev, ["milieu", "fin", "milieu"]);
         assert!(p.playing && (p.time - 0.6).abs() < 1e-4);
     }
 }

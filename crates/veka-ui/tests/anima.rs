@@ -490,3 +490,32 @@ fn anima_dans_le_schema() {
     assert_eq!(a.draw_list().to_string(), d.draw_list().to_string());
     assert_eq!(Value::Int(1).key(), Value::Float(1.0).key());
 }
+
+#[test]
+fn timeline_avant_la_premiere_heure() {
+    // L'hôte dessine (ou reçoit un événement) avant de donner l'heure, puis donne une heure très
+    // grande (le temps depuis le démarrage du PC) : la timeline part de là, sans rattraper.
+    thread_local! {
+        static BATTEMENTS: Cell<u32> = const { Cell::new(0) };
+    }
+    fn vue() -> impl View {
+        let t = TimelineState::playing(
+            Timeline::new()
+                .track("x", [Keyframe::new(0.0, 0.0), Keyframe::new(1.0, 1.0)])
+                .event(0.5, "b")
+                .looping(true),
+        );
+        t.on_event(|_| BATTEMENTS.with(|b| b.set(b.get() + 1)));
+        Rectangle().frame(10, 10)
+    }
+    let mut s = Surface::new(component(vue));
+    s.resize(Size::new(100.0, 100.0), 1.0);
+    s.frame();
+    s.frame();
+    at(&mut s, 1_000_000.0);
+    at(&mut s, 1_000_000.6);
+    assert_eq!(BATTEMENTS.with(|b| b.get()), 1);
+    // Un long saut (veille) : au plus un tour rejoué.
+    at(&mut s, 1_000_500.0);
+    assert!(BATTEMENTS.with(|b| b.get()) <= 3);
+}

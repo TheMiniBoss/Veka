@@ -90,6 +90,8 @@ pub struct Surface {
     now: f64,
     /// Les vues `.on_animation_end` dont le sous-arbre s'animait à l'image précédente.
     animating_watchers: Vec<NodeId>,
+    /// Vrai une fois que l'hôte a donné l'heure (`frame_at`) : avant, les timelines n'avancent pas.
+    clock: bool,
 }
 
 impl std::fmt::Debug for Surface {
@@ -128,6 +130,7 @@ impl Surface {
             regions_changed: false,
             now: 0.0,
             animating_watchers: Vec::new(),
+            clock: false,
         }
     }
 
@@ -235,6 +238,7 @@ impl Surface {
     /// avancent jusque-là.
     pub fn frame_at(&mut self, now: veka_foundation::Instant) -> &DrawList {
         self.now = veka_anima::seconds(now).max(self.now);
+        self.clock = true;
         self.frame()
     }
 
@@ -247,7 +251,9 @@ impl Surface {
     /// Les animations restent à l'heure de la dernière image (voir [`frame_at`](Self::frame_at)).
     pub fn frame(&mut self) -> &DrawList {
         let now = self.now;
-        crate::timeline::advance(self.id, now);
+        if self.clock {
+            crate::timeline::advance(self.id, now);
+        }
         let ticked = crate::anim::tick(&mut self.tree, now);
         self.needs_paint |= ticked.paint;
         self.needs_layout |= ticked.layout;
