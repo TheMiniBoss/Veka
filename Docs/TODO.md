@@ -3,7 +3,7 @@
 ## Pour finir l’étape 1
 - [ ] Essayer la plateforme macOS sur le Mac mini M2 (fenêtre, Retina, clics, 0 % CPU au repos) et l’exemple C avec clang.
 - [ ] Captures Windows et macOS dans `Docs/Screens/`.
-- [ ] Menu d’application minimal sur macOS (Quitter, ⌘Q).
+- [x] Menu d’application minimal sur macOS (Quitter, ⌘Q).
 - [ ] Ajouter `OFL.txt` dans `fonts/LTFlodeNeue/` (licence de la police).
 - [ ] Choisir la licence de Veka.
 
@@ -26,8 +26,7 @@
 ## Étape 4 (Anima)
 - [x] PR I : timelines, `matched_geometry_effect`, `.on_animation_end`, interface C et exemple C, schéma,
   « réduire les animations » de l'OS.
-- [ ] macOS : relire « Réduire les animations » dès qu'il change (aujourd'hui : quand la fenêtre redevient
-  active).
+- [x] macOS : relire « Réduire les animations » dès qu'il change.
 - [ ] `matched_geometry_effect` : fondu croisé entre la source et la cible, espaces de noms ; aujourd'hui la
   vue liée doit être la racine de ce qui apparaît (sinon la transition de la racine s'ajoute).
 - [ ] `.id()` dans le schéma (le C a `veka_id`, qui ne passe pas par le schéma).

@@ -11,16 +11,20 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2::{AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::runtime::{AnyClass, AnyObject, ProtocolObject};
+use objc2::{
+    AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel,
+};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSColor,
-    NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply,
+    NSBackingStoreType, NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu,
+    NSMenuItem, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask,
-    NSWindowTitleVisibility, NSWorkspace,
+    NSWindowTitleVisibility, NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
-    NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults,
+    NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize,
+    NSString, NSUserDefaults,
 };
 use raw_window_handle::{
     AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawWindowHandle,
@@ -61,6 +65,12 @@ struct WinData {
 #[derive(Debug)]
 struct ViewIvars {
     data: Rc<WinData>,
+    /// Le `CADisplayLink` de la vue (macOS 14+), créé à la première image demandée. Il cadence les
+    /// animations : `setNeedsDisplay` appelé pendant `drawRect:` est oublié par AppKit, donc une
+    /// animation qui redemande une image depuis son rendu s'arrêterait après la première.
+    link: RefCell<Option<Retained<AnyObject>>>,
+    /// Une image est demandée pour la prochaine synchronisation verticale.
+    wants_frame: Cell<bool>,
 }
 
 define_class!(
@@ -87,6 +97,18 @@ define_class!(
         fn draw_rect(&self, _dirty: NSRect) {
             push(PlatformEvent::RedrawRequested { window: self.id() });
             pump();
+        }
+
+        #[unsafe(method(vekaDisplayLinkFired:))]
+        fn display_link_fired(&self, _link: &AnyObject) {
+            if self.ivars().wants_frame.replace(false) {
+                push(PlatformEvent::RedrawRequested { window: self.id() });
+                pump();
+            }
+            // Rien de redemandé pendant le rendu : on arrête le lien (0 % de CPU au repos).
+            if !self.ivars().wants_frame.get() {
+                self.set_link_paused(true);
+            }
         }
 
         #[unsafe(method(setFrameSize:))]
@@ -185,7 +207,11 @@ fn other_button(event: &NSEvent) -> MouseButton {
 
 impl VekaView {
     fn new(mtm: MainThreadMarker, data: Rc<WinData>, frame: NSRect) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(ViewIvars { data });
+        let this = Self::alloc(mtm).set_ivars(ViewIvars {
+            data,
+            link: RefCell::new(None),
+            wants_frame: Cell::new(false),
+        });
         // SAFETY : `initWithFrame:` est l'initialiseur désigné de NSView.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
@@ -210,6 +236,60 @@ impl VekaView {
 
     fn id(&self) -> WindowId {
         self.ivars().data.id
+    }
+
+    /// Demande une image à la prochaine synchronisation verticale de l'écran de la fenêtre.
+    fn request_frame(&self) {
+        self.ivars().wants_frame.set(true);
+        if self.ivars().link.borrow().is_none() {
+            // SAFETY : `displayLinkWithTarget:selector:` (NSView, macOS 14) renvoie un
+            // CADisplayLink autoreleasé ; la cible (la vue) répond au sélecteur. Le lien retient la
+            // vue : il est invalidé à la fermeture (`invalidate_link`).
+            let has_link: bool =
+                unsafe { msg_send![self, respondsToSelector: sel!(displayLinkWithTarget:selector:)] };
+            let link: Option<Retained<AnyObject>> = if has_link {
+                unsafe { msg_send![self, displayLinkWithTarget: self, selector: sel!(vekaDisplayLinkFired:)] }
+            } else {
+                None
+            };
+            let Some(link) = link else {
+                // Sans lien (ancien macOS) : le dessin d'AppKit, en dehors de `drawRect:`.
+                let view = self.retain();
+                // SAFETY : la file principale existe toute la vie du processus.
+                unsafe {
+                    dispatch_async_f(
+                        &raw const _dispatch_main_q,
+                        Retained::into_raw(view).cast(),
+                        needs_display_on_main,
+                    )
+                };
+                return;
+            };
+            let run_loop = AnyClass::get(c"NSRunLoop").expect("NSRunLoop");
+            // SAFETY : `mainRunLoop` existe toujours ; `NSRunLoopCommonModes` est une constante de
+            // Foundation. Les modes communs gardent les animations pendant un redimensionnement.
+            unsafe {
+                let main: *mut AnyObject = msg_send![run_loop, mainRunLoop];
+                let _: () = msg_send![&*link, addToRunLoop: main, forMode: NSRunLoopCommonModes];
+            }
+            *self.ivars().link.borrow_mut() = Some(link);
+        }
+        self.set_link_paused(false);
+    }
+
+    fn set_link_paused(&self, paused: bool) {
+        if let Some(link) = self.ivars().link.borrow().as_ref() {
+            // SAFETY : `setPaused:` de CADisplayLink.
+            let _: () = unsafe { msg_send![&**link, setPaused: paused] };
+        }
+    }
+
+    /// Retire le lien de la boucle (il retient la vue).
+    fn invalidate_link(&self) {
+        if let Some(link) = self.ivars().link.borrow_mut().take() {
+            // SAFETY : `invalidate` de CADisplayLink.
+            let _: () = unsafe { msg_send![&*link, invalidate] };
+        }
     }
 
     fn update_size(&self) {
@@ -417,6 +497,26 @@ define_class!(
             push(PlatformEvent::Resumed);
             pump();
         }
+
+        /// ⌘Q, « Quitter » du Dock, fermeture de session : comme sur Windows, chaque fenêtre reçoit
+        /// une demande de fermeture et l'application décide ; la boucle s'arrête quand la dernière
+        /// est fermée. AppKit ne termine donc jamais le processus lui-même (les renderers sont
+        /// détruits proprement).
+        #[unsafe(method(applicationShouldTerminate:))]
+        fn should_terminate(&self, _sender: &NSApplication) -> NSApplicationTerminateReply {
+            request_close_all();
+            NSApplicationTerminateReply::TerminateCancel
+        }
+    }
+
+    impl AppDelegate {
+        /// « Réduire les animations », contraste… (Réglages > Accessibilité) ou couleur d'accent
+        /// changés pendant que l'application tourne.
+        #[unsafe(method(vekaSystemSettingsChanged:))]
+        fn system_settings_changed(&self, _notification: &NSNotification) {
+            refresh_appearance(MainThreadMarker::from(self));
+            pump();
+        }
     }
 );
 
@@ -424,8 +524,114 @@ impl AppDelegate {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(());
         // SAFETY : `init` de NSObject.
-        unsafe { msg_send![super(this), init] }
+        let this: Retained<Self> = unsafe { msg_send![super(this), init] };
+        let selector = sel!(vekaSystemSettingsChanged:);
+        // SAFETY : le délégué répond au sélecteur ; il vit jusqu'à la fin de `run`, où il est retiré
+        // des deux centres (`stop_observing`).
+        unsafe {
+            NSWorkspace::sharedWorkspace()
+                .notificationCenter()
+                .addObserver_selector_name_object(
+                    &this,
+                    selector,
+                    Some(NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification),
+                    None,
+                );
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                &this,
+                selector,
+                Some(NSSystemColorsDidChangeNotification),
+                None,
+            );
+        }
+        this
     }
+
+    fn stop_observing(&self) {
+        // SAFETY : retire l'observateur ajouté dans `new`.
+        unsafe {
+            NSWorkspace::sharedWorkspace()
+                .notificationCenter()
+                .removeObserver(self);
+            NSNotificationCenter::defaultCenter().removeObserver(self);
+        }
+    }
+}
+
+/// Demande la fermeture de toutes les fenêtres (voir `applicationShouldTerminate:`).
+fn request_close_all() {
+    let ids: Vec<WindowId> = RUNNER.with(|r| {
+        r.try_borrow()
+            .ok()
+            .and_then(|g| g.as_ref().map(|r| r.ctx.windows.keys().copied().collect()))
+            .unwrap_or_default()
+    });
+    for window in ids {
+        push(PlatformEvent::CloseRequested { window });
+    }
+    pump();
+}
+
+/// Le menu d'application minimal que macOS attend : sans lui, ni ⌘Q ni ⌘H ni ⌘W.
+fn install_menu(mtm: MainThreadMarker, app: &NSApplication) {
+    // Le nom du paquet .app s'il y en a un, sinon celui de l'exécutable.
+    let name = NSRunningApplication::currentApplication()
+        .localizedName()
+        .unwrap_or_else(|| NSProcessInfo::processInfo().processName())
+        .to_string();
+    let item = |title: &str, action: Option<objc2::runtime::Sel>, key: &str| {
+        // SAFETY : initialiseur désigné ; les actions sont des méthodes standard d'AppKit, envoyées
+        // à la chaîne de répondeurs.
+        unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(mtm),
+                &NSString::from_str(title),
+                action,
+                &NSString::from_str(key),
+            )
+        }
+    };
+    let submenu = |title: &str, items: Vec<Retained<NSMenuItem>>| {
+        let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str(title));
+        for i in &items {
+            menu.addItem(i);
+        }
+        let top = item(title, None, "");
+        top.setSubmenu(Some(&menu));
+        (top, menu)
+    };
+
+    let hide_others = item("Masquer les autres", Some(sel!(hideOtherApplications:)), "h");
+    hide_others.setKeyEquivalentModifierMask(NSEventModifierFlags::Command | NSEventModifierFlags::Option);
+    let (app_item, _) = submenu(
+        &name,
+        vec![
+            item(&format!("Masquer {name}"), Some(sel!(hide:)), "h"),
+            hide_others,
+            item("Tout afficher", Some(sel!(unhideAllApplications:)), ""),
+            NSMenuItem::separatorItem(mtm),
+            item(&format!("Quitter {name}"), Some(sel!(terminate:)), "q"),
+        ],
+    );
+    let full_screen = item("Plein écran", Some(sel!(toggleFullScreen:)), "f");
+    full_screen.setKeyEquivalentModifierMask(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
+    // `miniaturize:` et `zoom:` plutôt que `performMiniaturize:` / `performZoom:` : ces derniers
+    // simulent un clic sur les boutons, masqués avec `Chrome::Custom`.
+    let (window_item, window_menu) = submenu(
+        "Fenêtre",
+        vec![
+            item("Réduire", Some(sel!(miniaturize:)), "m"),
+            item("Zoom", Some(sel!(zoom:)), ""),
+            full_screen,
+            NSMenuItem::separatorItem(mtm),
+            item("Fermer", Some(sel!(performClose:)), "w"),
+        ],
+    );
+    let bar = NSMenu::new(mtm);
+    bar.addItem(&app_item);
+    bar.addItem(&window_item);
+    app.setMainMenu(Some(&bar));
+    app.setWindowsMenu(Some(&window_menu));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -491,12 +697,12 @@ impl PlatformWindow for MacWindow {
     }
 
     fn request_redraw(&self) {
-        self.view.setNeedsDisplay(true);
+        self.view.request_frame();
     }
 
     fn redraw_requester(&self) -> Box<dyn Fn() + 'static> {
         let view = self.view.clone();
-        Box::new(move || view.setNeedsDisplay(true))
+        Box::new(move || view.request_frame())
     }
 
     fn set_regions(&self, regions: &[WindowRegion]) {
@@ -627,6 +833,7 @@ impl PlatformContext for Ctx {
 
     fn close_window(&mut self, id: WindowId) {
         if let Some(w) = self.windows.remove(&id) {
+            w.view.invalidate_link();
             w.window.setDelegate(None);
             w.window.close();
         }
@@ -753,6 +960,16 @@ unsafe extern "C" {
     );
 }
 
+unsafe extern "C" {
+    static NSRunLoopCommonModes: &'static NSString;
+}
+
+extern "C" fn needs_display_on_main(view: *mut std::ffi::c_void) {
+    // SAFETY : `view` vient de `Retained::into_raw` dans `request_frame`.
+    let view = unsafe { Retained::from_raw(view.cast::<VekaView>()) }.expect("vue");
+    view.setNeedsDisplay(true);
+}
+
 extern "C" fn wake_on_main(_: *mut std::ffi::c_void) {
     push(PlatformEvent::Wake);
     pump();
@@ -766,6 +983,7 @@ impl Platform for MacPlatform {
         ns_app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         let delegate = AppDelegate::new(mtm);
         ns_app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        install_menu(mtm, &ns_app);
 
         let ctx = Ctx {
             mtm,
@@ -787,6 +1005,7 @@ impl Platform for MacPlatform {
             }
         }
         QUEUE.with(|q| q.borrow_mut().clear());
+        delegate.stop_observing();
         ns_app.setDelegate(None);
         Ok(())
     }

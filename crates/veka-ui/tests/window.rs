@@ -174,7 +174,7 @@ fn barre_mac() {
             RegionKind::Drag,
             RegionKind::Control(WindowControl::Close),
             RegionKind::Control(WindowControl::Minimize),
-            RegionKind::Control(WindowControl::Maximize),
+            RegionKind::Control(WindowControl::Fullscreen),
         ]
     );
     // Feux à gauche, 12 points.

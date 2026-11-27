@@ -20,8 +20,10 @@ fn vue() -> impl View {
         ],
     ]
     .padding(24)
+    // Le fond de fenêtre du thème : clair ou sombre comme le texte (un blanc fixe rendait le texte
+    // blanc du mode sombre illisible).
     .background_shape(
-        Color::rgba(1.0, 1.0, 1.0, 0.92),
+        Token::WindowBackground,
         Shape::RoundedRectangle(CornerRadii::all(16.0)),
     )
     .padding(16)
