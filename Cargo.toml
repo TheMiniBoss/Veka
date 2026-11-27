@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+authors = ["TheMiniBoss"]
+publish = false
+
+[workspace.dependencies]
+veka = { path = "crates/veka" }
+veka-foundation = { path = "crates/veka-foundation" }
+veka-graphics = { path = "crates/veka-graphics" }
+veka-text = { path = "crates/veka-text" }
+veka-ui = { path = "crates/veka-ui" }
+veka-platform = { path = "crates/veka-platform" }
+veka-render = { path = "crates/veka-render" }
+
+# `libm` plutôt que `std` : sans `std`, fontique ne lit aucun fichier (pas de memmap2 / libc).
+parley = { version = "0.13", default-features = false, features = ["libm"] }
+slotmap = "1.1"
+insta = "1.49"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev.package."*"]
+opt-level = 2
