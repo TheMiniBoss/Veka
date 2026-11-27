@@ -1,84 +1,98 @@
-// Des feux d'artifice écrits seulement en .vk : une horloge (`@Clock`), du hasard déterministe
-// (`random`), des maths (`cos`, `sin`) et des fonctions. `cargo run --example vk -- feux`
-//
-// VekaUI devait les écrire en C++ faute de tout cela dans son langage.
+// Des feux d'artifice écrits seulement en .vk, d'après un `Fireworks` SwiftUI (TimelineView +
+// Canvas) : une fusée monte avec sa traînée, éclate (éclair puis gerbe d'étincelles qui
+// s'ouvre, tombe un peu, scintille et s'éteint), et recommence. Rien d'autre qu'une horloge
+// (`@Clock`), des maths et des vues. `cargo run --example vk -- feux`
 
-// Une gerbe toutes les `periode` secondes ; chacune vit `vie` secondes.
-func periode() -> Float {
-    0.55
+// Le hasard du modèle SwiftUI : fract(sin(x × 12.9898) × 43758.5453), toujours le même pour x.
+func hasard(x: Float) -> Float {
+    let v = sin(x * 12.9898) * 43758.5453
+    v - Float(floor(v))
 }
 
-func vie() -> Float {
-    1.8
+func montee(p: Float) -> Float {
+    1 - (1 - p) * (1 - p)
 }
 
-// Ralentit vers la fin : les étincelles « s'accrochent » avant de tomber.
-func sortie(x: Float) -> Float {
-    let u = clamp(x, 0, 1)
-    1 - (1 - u) * (1 - u) * (1 - u)
-}
-
-// Une teinte vive pour la gerbe `b`.
-func teinte(b: Int, canal: Int) -> Float {
-    0.45 + 0.55 * random(b * 7 + canal)
-}
-
-view Gerbe {
-    @Param var b: Int = 0
-    @Param var age: Float = 0
-    @Param var particules: Int = 40
-    @Param var rayon: Float = 70
-
-    ZStack {
-        // L'éclair blanc du départ.
-        if age < 0.12 {
-            Circle()
-                .fill(.white)
-                .frame(18, 18)
-                .opacity(1 - age / 0.12)
-        }
-        ForEach(0..<particules) { i in
-            let angle = 2 * pi * Float(i) / Float(particules) + random(b * 1000 + i) * 0.3
-            let d = rayon * (0.7 + 0.3 * random(b * 2000 + i)) * sortie(age / 0.9)
-            // La pesanteur, et un scintillement.
-            let chute = 22 * age * age
-            let eclat = 0.6 + 0.4 * sin(age * 30 + Float(i))
-            Circle()
-                .fill(rgb(teinte(b, 0), teinte(b, 1), teinte(b, 2)))
-                .frame(4, 4)
-                .offset(cos(angle) * d, sin(angle) * d + chute)
-                .opacity(clamp((1 - age / vie()) * eclat, 0, 1))
-        }
-    }
-    .offset((random(b * 31) - 0.5) * 360, (random(b * 37) - 0.5) * 200 - 20)
-}
-
-view Feux {
+view FeuxDArtifice {
+    @Param var couleurs = [.green, .purple, .indigo, .red, .pink, .yellow, .Cyan, .white]
+    @Param var gerbes: Int = 6
+    @Param var etincelles: Int = 180
+    @Param var taille: Float = 1
+    @Param var ampleur: Float = 0.8
+    @Param var fusee: Float = 1
+    @Param var eclat: Float = 2
+    @Param var largeur: Float = 560
+    @Param var hauteur: Float = 100
     @Clock var t
-    @State var particules = 40
 
     ZStack {
-        Rectangle()
-            .fill(#0B1020)
-        ForEach(0..<4) { k in
-            let b = floor(t / periode()) - k
-            if b >= 0 {
-                Gerbe(b: b, age: t - Float(b) * periode(), particules: particules)
-            }
-        }
-        VStack {
-            Spacer()
-            HStack(spacing: 12) {
-                Button("Moins") {
-                    particules = max(8, particules - 8)
+        ForEach(0..<gerbes) { i in
+            let cycle = t / (fusee + eclat) + Float(i) * 0.37
+            let ecoule = (cycle - Float(floor(cycle))) * (fusee + eclat)
+            let base = Float(i)
+            let n = len(couleurs)
+            let c1 = couleurs[min(n - 1, Int(hasard(base + 1) * Float(n)))]
+            let c2 = couleurs[min(n - 1, Int(hasard(base + 2) * Float(n)))]
+            // Le point d'éclatement, depuis le centre du cadre.
+            let x = hasard(base + 3) * largeur - largeur / 2
+            let y = (0.1 + 0.8 * hasard(base + 4)) * hauteur - hauteur / 2
+            if ecoule < fusee {
+                // La fusée : tête blanche et traînée en dégradé, du bas vers le point.
+                let x0 = x + (hasard(base + 5) - 0.5) * largeur * 0.3
+                let y0 = hauteur / 2
+                let p = ecoule / fusee
+                let tete = montee(p)
+                let queue = montee(max(0, p - 0.3))
+                let hx = x0 + (x - x0) * tete
+                let hy = y0 + (y - y0) * tete
+                let qx = x0 + (x - x0) * queue
+                let qy = y0 + (y - y0) * queue
+                Capsule()
+                    .fill(LinearGradient([.clear, c1], from: .leading, to: .trailing))
+                    .frame(max(0.1, sqrt((hx - qx) * (hx - qx) + (hy - qy) * (hy - qy))), 0.9 * taille)
+                    .rotationEffect(atan2(hy - qy, hx - qx) * 180 / pi)
+                    .offset((hx + qx) / 2, (hy + qy) / 2)
+                Circle()
+                    .fill(.white)
+                    .frame(1.2 * taille, 1.2 * taille)
+                    .offset(hx, hy)
+            } else {
+                // L'éclatement.
+                let p = (ecoule - fusee) / eclat
+                let rayon = hauteur * ampleur * (0.4 + 0.3 * hasard(base + 6)) * (1 - pow(1 - p, 4))
+                let chute = p * p * hauteur * 0.07
+                if p < 0.15 {
+                    let r = hauteur * 0.35 * ampleur
+                    Circle()
+                        .fill(RadialGradient([.white, .clear], r))
+                        .frame(2 * r, 2 * r)
+                        .opacity(1 - p / 0.15)
+                        .offset(x, y)
                 }
-                Text("\(particules) étincelles")
-                    .foregroundColor(.white)
-                Button("Plus") {
-                    particules = min(160, particules + 8)
+                ForEach(0..<etincelles) { k in
+                    let v = hasard(base + Float(k) * 7.1)
+                    let angle = hasard(base + Float(k) * 3.3) * 2 * pi
+                    let d = rayon * pow(v, 0.3)
+                    let scintille = 0.4 + 0.6 * abs(sin(t * (6 + 12 * v) + v * 40))
+                    Circle()
+                        .fill(k % 3 == 0 ? c2 : c1)
+                        .frame(2 * taille, 2 * taille)
+                        .offset(x + cos(angle) * d, y + sin(angle) * d + chute)
+                        .opacity((1 - p) * scintille)
                 }
             }
-            .padding(16)
         }
     }
+    .frame(largeur, hauteur)
+}
+
+// La carte du modèle : les feux sur un fond noir arrondi.
+view Feux {
+    ZStack {
+        RoundedRectangle(30)
+            .fill(.black)
+            .frame(560, 100)
+        FeuxDArtifice(fusee: 1, eclat: 2)
+    }
+    .padding(16)
 }

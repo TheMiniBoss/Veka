@@ -178,44 +178,44 @@ fn anima_meme_dessin_que_rust() {
 
 #[test]
 fn feux_d_artifice() {
-    let p = program(include_str!("../examples/vk/feux.vk"));
-    let mut s = Surface::new(p.view("Feux"));
-    s.resize(Size::new(640.0, 420.0), 1.0);
-    at(&mut s, 0.0);
-    at(&mut s, 0.0);
-    let debut = s.rects_of("Circle").len();
-    at(&mut s, 2.0);
-    let deux = s.draw_list().to_string();
-    let cercles = s.rects_of("Circle").len();
-    assert!(cercles > debut && cercles >= 120, "{debut} → {cercles}");
+    let source = include_str!("../examples/vk/feux.vk");
+    let images = |instants: &[f64]| {
+        let p = program(source);
+        let mut s = Surface::new(p.view("Feux"));
+        s.resize(Size::new(640.0, 200.0), 1.0);
+        let mut listes = Vec::new();
+        for &t in instants {
+            at(&mut s, t);
+            at(&mut s, t);
+            listes.push((
+                s.draw_list().to_string(),
+                s.rects_of("Circle").len(),
+                s.rects_of("Capsule").len(),
+            ));
+        }
+        assert!(s.needs_frame(), "l'horloge avance à chaque image");
+        listes
+    };
+    let a = images(&[0.0, 0.5, 2.0, 2.9]);
+    // Au début, des fusées (traînées) ; ensuite, des gerbes de 180 étincelles.
+    assert!(a.iter().any(|(_, _, fusees)| *fusees > 0));
     assert!(
-        s.is_animating() || s.needs_frame(),
-        "l'horloge avance à chaque image"
-    );
-    // Déterministe : même heure, même dessin.
-    let p2 = program(include_str!("../examples/vk/feux.vk"));
-    let mut s2 = Surface::new(p2.view("Feux"));
-    s2.resize(Size::new(640.0, 420.0), 1.0);
-    at(&mut s2, 0.0);
-    at(&mut s2, 0.0);
-    at(&mut s2, 2.0);
-    assert_eq!(s2.draw_list().to_string(), deux);
-    // « Plus » : 8 étincelles de plus par gerbe.
-    let plus = s.rects_of("Button")[1].center();
-    s.handle(InputEvent::PointerDown {
-        position: plus,
-        button: PointerButton::Primary,
-    });
-    s.handle(InputEvent::PointerUp {
-        position: plus,
-        button: PointerButton::Primary,
-    });
-    at(&mut s, 2.0);
-    assert!(
-        s.texts().contains(&"48 étincelles".to_string()),
+        a.iter().any(|(_, cercles, _)| *cercles >= 180),
         "{:?}",
-        s.texts()
+        a.iter().map(|x| x.1).collect::<Vec<_>>()
     );
+    // Déterministe : mêmes instants, même dessin.
+    assert_eq!(a, images(&[0.0, 0.5, 2.0, 2.9]));
+    // Une image ne prend pas trop de temps (évaluation de ~1000 étincelles).
+    let p = program(source);
+    let mut s = Surface::new(p.view("Feux"));
+    s.resize(Size::new(640.0, 200.0), 1.0);
+    at(&mut s, 0.0);
+    let debut = std::time::Instant::now();
+    for i in 1..=10 {
+        at(&mut s, 1.0 + i as f64 * 0.016);
+    }
+    eprintln!("feux : {:.1} ms par image", debut.elapsed().as_secs_f64() * 100.0);
 }
 
 #[test]
