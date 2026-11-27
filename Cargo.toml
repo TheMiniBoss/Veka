@@ -14,6 +14,7 @@ publish = false
 veka = { path = "crates/veka" }
 veka-foundation = { path = "crates/veka-foundation" }
 veka-colora = { path = "crates/veka-colora" }
+veka-anima = { path = "crates/veka-anima" }
 veka-graphics = { path = "crates/veka-graphics" }
 veka-text = { path = "crates/veka-text" }
 veka-ui = { path = "crates/veka-ui" }

@@ -1,6 +1,6 @@
 # Veka : étape 4, Anima
 
-Statut : **à valider**. Fait suite à `VEKA_ETAPE3.md`. Reprend la conception d'Anima dans VekaUI (C++ phase 2 :
+Statut : **validé, en cours** (PR H). Fait suite à `VEKA_ETAPE3.md`. Reprend la conception d'Anima dans VekaUI (C++ phase 2 :
 `FVekaAnimationSpec`, `WithAnimation`, animations implicites, transitions, timelines, *matched geometry*), pas
 son code.
 
@@ -69,7 +69,7 @@ fn vue() -> impl View {
 - On les combine : `.delay(0.1)`, `.speed(2.0)`, `.repeat(3, aller_retour)`, `.repeat_forever(aller_retour)`.
 - `Transition::opacity()`, `scale(0.8)`, `slide()`, `move_edge(Edge::Top)`, `push(Edge::Bottom)`,
   `offset(x, y)`, `identity()`, `.combined(autre)`, `Transition::asymmetric(entree, sortie)`.
-- `.on_animation_end(|| ..)` : appelé quand les animations lancées par un changement sont toutes finies.
+- `.on_animation_end(|| ..)` : appelé quand les animations lancées par un changement sont toutes finies (PR I).
 
 ### 2.2 C
 
@@ -173,7 +173,14 @@ Chaque nœud animé garde deux versions de son primitive :
 À chaque image, l'ordonnanceur avance les animations, reconstruit l'affiché à partir des valeurs intermédiaires
 et marque le nœud à redessiner. Le hit-test et l'accessibilité utilisent l'affiché, comme on le voit à l'écran.
 
-### 4.3 Ce qui change dans les crates
+### 4.3 Limites de la PR H
+
+- `offset`, `scale_effect` et `rotation_effect` ne déplacent que le dessin : la zone qui reçoit le pointeur
+  reste celle du layout (comme une transition en cours).
+- Le texte change de couleur en refaisant son layout à chaque image de l'animation (sa couleur est dans sa mise
+  en page) : correct, mais plus coûteux qu'une forme.
+
+### 4.4 Ce qui change dans les crates
 
 | Crate | Changement |
 |---|---|

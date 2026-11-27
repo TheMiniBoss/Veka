@@ -2,6 +2,7 @@
 //! le layout calculé, et n'est mis à jour que là où les `Element` ont changé.
 
 use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use slotmap::{SlotMap, new_key_type};
@@ -9,6 +10,7 @@ use veka_foundation::{Rect, Size};
 use veka_graphics::DrawList;
 use veka_text::TextSystem;
 
+use crate::anim::NodeAnims;
 use crate::element::{Element, ElementKind, Key};
 use crate::env::Environment;
 use crate::primitive::{LayoutCx, PaintCx, Primitive, Proposal};
@@ -33,9 +35,29 @@ pub(crate) struct Node {
     pub parent: Option<NodeId>,
     pub state: Box<dyn Any>,
     pub env: Rc<Environment>,
+    /// Le rectangle affiché (celui qu'on dessine et qui reçoit le pointeur). Pendant une animation
+    /// de layout, il va de l'ancien rectangle vers `layout_rect`.
     pub rect: Rect,
+    /// Le rectangle calculé par le dernier layout.
+    pub layout_rect: Rect,
+    /// `layout_rect` au dernier passage d'Anima (`None` : nœud tout juste inséré).
+    pub last_layout: Option<Rect>,
+    /// Le primitive affiché pendant une animation de valeurs (sinon : `prim`).
+    pub shown: Option<Rc<dyn Primitive>>,
+    /// Le primitive d'avant, s'il a été remplacé depuis le dernier passage d'Anima.
+    pub prev: Option<Rc<dyn Primitive>>,
+    /// Le nœud sort de l'arbre : il n'a plus de place ni de pointeur, il est encore dessiné le temps
+    /// de sa transition.
+    pub leaving: bool,
     /// Mesures de l'image en cours.
     pub cache: Vec<(Proposal, Size)>,
+}
+
+impl Node {
+    /// Le primitive à dessiner.
+    pub fn shown(&self) -> &Rc<dyn Primitive> {
+        self.shown.as_ref().unwrap_or(&self.prim)
+    }
 }
 
 /// Le primitive d'une vue composée : transparent, il contient le résultat de la vue.
@@ -52,6 +74,8 @@ pub(crate) struct Tree {
     pub surface: u32,
     /// Nombre de nœuds créés depuis le début (pour les tests de réutilisation).
     pub created: usize,
+    /// Les animations en cours, par nœud.
+    pub anims: HashMap<NodeId, NodeAnims>,
 }
 
 impl Tree {
@@ -60,6 +84,7 @@ impl Tree {
             nodes: SlotMap::with_key(),
             surface,
             created: 0,
+            anims: HashMap::new(),
         }
     }
 
@@ -93,6 +118,11 @@ impl Tree {
             state,
             env: Rc::new(Environment::default()),
             rect: Rect::ZERO,
+            layout_rect: Rect::ZERO,
+            last_layout: None,
+            shown: None,
+            prev: None,
+            leaving: false,
             cache: Vec::new(),
         });
         self.created += 1;
@@ -107,6 +137,7 @@ impl Tree {
 
     /// Supprime un nœud, son sous-arbre et leurs états.
     pub fn remove(&mut self, id: NodeId) {
+        self.anims.remove(&id);
         if let Some(node) = self.nodes.remove(id) {
             if let Some(c) = &node.component {
                 state::drop_states(&c.hooks);
@@ -115,6 +146,26 @@ impl Tree {
                 self.remove(child);
             }
         }
+    }
+
+    /// Retire un nœud de la liste de son parent, puis le supprime.
+    pub fn detach(&mut self, id: NodeId) {
+        if let Some(p) = self.nodes.get(id).and_then(|n| n.parent)
+            && let Some(parent) = self.nodes.get_mut(p)
+        {
+            parent.children.retain(|&c| c != id);
+        }
+        self.remove(id);
+    }
+
+    /// Les enfants qui ne sont pas en train de sortir.
+    pub fn live_children(&self, id: NodeId) -> Vec<NodeId> {
+        self.nodes[id]
+            .children
+            .iter()
+            .copied()
+            .filter(|&c| !self.nodes[c].leaving)
+            .collect()
     }
 
     /// Ré-évalue une vue composée et met à jour son contenu.
@@ -144,7 +195,12 @@ impl Tree {
     fn update(&mut self, id: NodeId, element: Element) {
         match element.kind {
             ElementKind::Primitive { prim, children } => {
-                self.nodes[id].prim = prim;
+                let node = &mut self.nodes[id];
+                let old = std::mem::replace(&mut node.prim, prim);
+                // Le premier remplacement depuis le dernier passage d'Anima garde l'ancien.
+                if node.prev.is_none() {
+                    node.prev = Some(old);
+                }
                 self.reconcile_children(id, children);
             }
             ElementKind::Component { render, .. } => {
@@ -159,33 +215,55 @@ impl Tree {
 
     /// Réconcilie les enfants : même type + même position (ou même `.id()`) = nœud réutilisé.
     pub fn reconcile_children(&mut self, id: NodeId, elements: Vec<Element>) {
-        let mut old = std::mem::take(&mut self.nodes[id].children);
-        let mut new = Vec::with_capacity(elements.len());
+        let all = std::mem::take(&mut self.nodes[id].children);
+        // Ceux qui sortent déjà ne comptent plus : ils gardent seulement leur place à l'écran.
+        let mut leaving: Vec<(usize, NodeId)> = all
+            .iter()
+            .enumerate()
+            .filter(|&(_, &o)| self.nodes[o].leaving)
+            .map(|(i, &o)| (i, o))
+            .collect();
+        let mut old: Vec<(usize, NodeId)> = all
+            .iter()
+            .enumerate()
+            .filter(|&(_, &o)| !self.nodes[o].leaving)
+            .map(|(i, &o)| (i, o))
+            .collect();
+        let mut new = Vec::with_capacity(elements.len() + leaving.len());
         for (i, element) in elements.into_iter().enumerate() {
             let type_id = element_type(&element);
             let found = match &element.key {
-                Some(k) => old.iter().position(|o| self.nodes[*o].key.as_ref() == Some(k)),
+                Some(k) => old
+                    .iter()
+                    .position(|&(_, o)| o != NodeId::default() && self.nodes[o].key.as_ref() == Some(k)),
                 None => old
                     .get(i)
-                    .and_then(|o| self.nodes.get(*o))
+                    .and_then(|&(_, o)| self.nodes.get(o))
                     .and_then(|n| n.key.is_none().then_some(i)),
             };
-            let reuse = found.filter(|&j| self.nodes.get(old[j]).is_some_and(|n| n.type_id == type_id));
+            let reuse = found.filter(|&j| self.nodes.get(old[j].1).is_some_and(|n| n.type_id == type_id));
             match reuse {
                 Some(j) => {
-                    let node = old[j];
+                    let node = old[j].1;
                     // Garde la place (positions des suivants) : remplacé par une valeur invalide.
-                    old[j] = NodeId::default();
+                    old[j].1 = NodeId::default();
                     self.update(node, element);
                     new.push(node);
                 }
                 None => new.push(self.insert(element, Some(id))),
             }
         }
-        for o in old {
+        // Les autres sortent : Anima décide ensuite s'ils disparaissent tout de suite ou avec une
+        // transition.
+        for (i, o) in old {
             if o != NodeId::default() {
-                self.remove(o);
+                self.nodes[o].leaving = true;
+                leaving.push((i, o));
             }
+        }
+        leaving.sort_by_key(|&(i, _)| i);
+        for (i, o) in leaving {
+            new.insert(i.min(new.len()), o);
         }
         self.nodes[id].children = new;
     }
@@ -194,7 +272,7 @@ impl Tree {
     pub fn resolve_env(&mut self, id: NodeId, parent: &Rc<Environment>) {
         let node = &mut self.nodes[id];
         let mut env = (**parent).clone();
-        node.env = if node.prim.update_env(&mut env) {
+        node.env = if node.shown().update_env(&mut env) {
             Rc::new(env)
         } else {
             parent.clone()
@@ -225,12 +303,20 @@ pub(crate) fn measure(tree: &mut Tree, text: &mut TextSystem, id: NodeId, propos
 }
 
 pub(crate) fn place(tree: &mut Tree, text: &mut TextSystem, id: NodeId, rect: Rect) {
-    tree.nodes[id].rect = rect;
+    // Le rectangle affiché est mis à jour par Anima, juste après le layout.
+    tree.nodes[id].layout_rect = rect;
     let prim = tree.nodes[id].prim.clone();
     prim.place(&mut LayoutCx { tree, text, node: id }, rect);
 }
 
 pub(crate) fn paint(tree: &Tree, list: &mut DrawList, id: NodeId) {
     let node = &tree.nodes[id];
-    node.prim.paint(&mut PaintCx { tree, list, node: id }, node.rect);
+    let frame = tree.anims.get(&id).and_then(|a| a.transition_frame(node.rect));
+    let pops = match frame {
+        Some(f) => crate::anim::push_frame(list, &f, node.rect),
+        None => 0,
+    };
+    node.shown()
+        .paint(&mut PaintCx { tree, list, node: id }, node.rect);
+    crate::anim::pop(list, pops);
 }

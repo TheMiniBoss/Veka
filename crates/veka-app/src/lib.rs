@@ -251,7 +251,9 @@ impl Host {
                 let Some(w) = self.windows.get_mut(&window) else {
                     return;
                 };
-                let list = w.surface.frame();
+                // L'heure de la plateforme : les animations avancent jusque-là. Tant qu'une animation
+                // tourne, `needs_frame` reste vrai et on redessine à chaque synchronisation verticale.
+                let list = w.surface.frame_at(ctx.now());
                 let result = w.renderer.render(list);
                 if let Some(regions) = w.surface.take_regions_if_changed() {
                     ctx.window(window).set_regions(&regions);

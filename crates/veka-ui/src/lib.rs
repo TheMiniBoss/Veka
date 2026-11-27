@@ -24,6 +24,7 @@
 //! Ce module ne dépend d'aucune API système : la fenêtre, la souris et le dessin passent par
 //! [`Surface`], que l'hôte (app native, moteur de jeu…) alimente.
 
+mod anim;
 mod element;
 mod env;
 mod layout;
@@ -40,8 +41,10 @@ pub use element::{Action, Element, Key, View, component};
 pub use env::{Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
-pub use state::State;
+pub use state::{State, with_animation};
 pub use surface::{InputEvent, PointerButton, Surface};
+pub use veka_anima as anima;
+pub use veka_anima::{Animation, Curve, Edge, Repeat, Transition, TransitionEffect};
 pub use veka_colora as colora;
 pub use veka_colora::{
     AngularGradient, ColorAdjust, ColorScheme, ColorSpace, EllipticalGradient, Gradient, Hierarchy, Ink,
@@ -66,5 +69,6 @@ pub mod prelude {
         MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface, Theme, Token,
         UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
+    pub use crate::{Animation, Edge, Transition, with_animation};
     pub use crate::{HStack, VStack, ZStack};
 }

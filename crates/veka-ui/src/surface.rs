@@ -86,6 +86,8 @@ pub struct Surface {
     captured: Option<NodeId>,
     regions: Vec<WindowRegion>,
     regions_changed: bool,
+    /// L'heure de la dernière image, en secondes (donnée par l'hôte, voir `frame_at`).
+    now: f64,
 }
 
 impl std::fmt::Debug for Surface {
@@ -122,6 +124,7 @@ impl Surface {
             captured: None,
             regions: Vec::new(),
             regions_changed: false,
+            now: 0.0,
         }
     }
 
@@ -201,7 +204,19 @@ impl Surface {
 
     /// Vrai si une nouvelle image est nécessaire. Faux au repos : l'hôte ne dessine rien.
     pub fn needs_frame(&self) -> bool {
-        self.needs_layout || self.needs_paint || state::has_dirty(self.id)
+        self.needs_layout || self.needs_paint || state::has_dirty(self.id) || self.is_animating()
+    }
+
+    /// Vrai tant qu'une animation tourne : l'hôte doit alors redessiner à chaque image.
+    pub fn is_animating(&self) -> bool {
+        !self.tree.anims.is_empty()
+    }
+
+    /// Comme [`frame`](Self::frame), à l'heure `now` (celle de la plateforme) : les animations
+    /// avancent jusque-là.
+    pub fn frame_at(&mut self, now: veka_foundation::Instant) -> &DrawList {
+        self.now = veka_anima::seconds(now).max(self.now);
+        self.frame()
     }
 
     /// Nombre total de nœuds créés depuis le début (sert aux tests : un nœud réutilisé n'est pas recréé).
@@ -210,7 +225,13 @@ impl Surface {
     }
 
     /// Ré-évalue les vues dont l'état a changé, refait le layout si besoin et produit la liste de dessin.
+    /// Les animations restent à l'heure de la dernière image (voir [`frame_at`](Self::frame_at)).
     pub fn frame(&mut self) -> &DrawList {
+        let now = self.now;
+        let ticked = crate::anim::tick(&mut self.tree, now);
+        self.needs_paint |= ticked.paint;
+        self.needs_layout |= ticked.layout;
+        let mut spec = None;
         let mut dirty = state::take_dirty(self.id);
         while !dirty.is_empty() {
             // Les plus hauts d'abord : ré-évaluer un parent ré-évalue ses enfants.
@@ -221,6 +242,7 @@ impl Surface {
                 }
             }
             self.needs_layout = true;
+            spec = spec.or(state::take_transaction(self.id));
             // Une vue a pu changer un état pendant son évaluation.
             dirty = state::take_dirty(self.id);
         }
@@ -234,6 +256,7 @@ impl Surface {
                 Proposal::exact(self.size),
             );
             tree::place(&mut self.tree, &mut self.text, self.root, rect);
+            crate::anim::after_layout(&mut self.tree, self.root, spec, now);
             self.needs_layout = false;
             self.needs_paint = true;
             self.revalidate_pointer();
@@ -355,10 +378,11 @@ impl Surface {
         out
     }
 
+    /// Parcourt l'arbre affiché, sans les nœuds qui sortent.
     fn walk(&self, id: NodeId, f: &mut dyn FnMut(&tree::Node)) {
         let node = &self.tree.nodes[id];
         f(node);
-        for &c in &node.children {
+        for c in self.tree.live_children(id) {
             self.walk(c, f);
         }
     }
@@ -382,7 +406,7 @@ impl Surface {
         fn walk(tree: &Tree, id: NodeId, p: Point) -> Option<NodeId> {
             let node = &tree.nodes[id];
             if node.prim.hit_children() {
-                for &c in node.children.iter().rev() {
+                for c in tree.live_children(id).into_iter().rev() {
                     if let Some(h) = walk(tree, c, p) {
                         return Some(h);
                     }
@@ -430,7 +454,7 @@ impl Surface {
                         rect,
                         kind: RegionKind::Drag,
                     });
-                    for &child in &node.children {
+                    for child in tree.live_children(id) {
                         collect(tree, child, true, out);
                     }
                     return;
@@ -447,7 +471,7 @@ impl Surface {
                     return;
                 }
             }
-            for &child in &node.children {
+            for child in tree.live_children(id) {
                 collect(tree, child, in_drag, out);
             }
         }
@@ -461,10 +485,11 @@ impl Surface {
 
     /// Après un nouveau layout, le nœud survolé peut avoir disparu.
     fn revalidate_pointer(&mut self) {
-        if self.hovered.is_some_and(|h| !self.tree.nodes.contains_key(h)) {
+        let alive = |tree: &Tree, h: NodeId| tree.nodes.get(h).is_some_and(|n| !n.leaving);
+        if self.hovered.is_some_and(|h| !alive(&self.tree, h)) {
             self.hovered = None;
         }
-        if self.captured.is_some_and(|h| !self.tree.nodes.contains_key(h)) {
+        if self.captured.is_some_and(|h| !alive(&self.tree, h)) {
             self.captured = None;
         }
     }

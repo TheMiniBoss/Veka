@@ -93,6 +93,25 @@ pub trait Primitive: Any {
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
     }
+
+    /// Les valeurs animables (Anima) : nombres et couleurs, comme `animatableData` de SwiftUI. Quand
+    /// elles changent dans une animation, Veka les interpole et dessine
+    /// [`with_animatable`](Self::with_animatable). `None` : tout change d'un coup.
+    ///
+    /// Seules les valeurs qui ne changent pas la taille ont leur place ici : le layout, lui, s'anime
+    /// de lui-même (les rectangles des nœuds).
+    fn animatable(&self, _env: &Environment) -> Option<veka_anima::AnimatableData> {
+        None
+    }
+
+    /// Le même primitive, avec des valeurs intermédiaires (lues dans l'ordre d'écriture).
+    fn with_animatable(
+        &self,
+        _env: &Environment,
+        _data: &veka_anima::AnimatableData,
+    ) -> Option<std::rc::Rc<dyn Primitive>> {
+        None
+    }
 }
 
 /// Contexte de mesure et de placement.
@@ -103,8 +122,9 @@ pub struct LayoutCx<'a> {
 }
 
 impl LayoutCx<'_> {
+    /// Les enfants à mesurer et placer (sans ceux qui sont en train de sortir).
     pub fn children(&self) -> Vec<NodeId> {
-        self.tree.nodes[self.node].children.clone()
+        self.tree.live_children(self.node)
     }
 
     pub fn env(&self) -> &Environment {
@@ -158,9 +178,16 @@ impl PaintCx<'_> {
             .expect("type d'état du primitive")
     }
 
+    /// Dessine les enfants. Ceux qui entrent ou sortent (transition en cours) passent au-dessus de
+    /// leurs frères : une ligne qui glisse ne disparaît pas sous ses voisines.
     pub fn paint_children(&mut self) {
-        for &child in &self.tree.nodes[self.node].children {
-            crate::tree::paint(self.tree, self.list, child);
+        let children = &self.tree.nodes[self.node].children;
+        let moving = |c: &NodeId| self.tree.anims.get(c).is_some_and(|a| a.in_transition());
+        for child in children.iter().filter(|c| !moving(c)) {
+            crate::tree::paint(self.tree, self.list, *child);
+        }
+        for child in children.iter().filter(|c| moving(c)) {
+            crate::tree::paint(self.tree, self.list, *child);
         }
     }
 }

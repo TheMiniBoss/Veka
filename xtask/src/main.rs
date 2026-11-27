@@ -11,6 +11,7 @@ use std::process::{Command, ExitCode};
 const CORE: &[&str] = &[
     "veka-foundation",
     "veka-colora",
+    "veka-anima",
     "veka-graphics",
     "veka-text",
     "veka-ui",

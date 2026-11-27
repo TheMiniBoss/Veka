@@ -23,7 +23,14 @@
 - [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
 - [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
 
+## Étape 4 (Anima)
+- [ ] PR I : timelines, `matched_geometry_effect`, `.on_animation_end`, interface C et exemple C, schéma,
+  « réduire les animations » de l'OS.
+- [ ] Pointeur : suivre `offset`, `scale_effect` et `rotation_effect` (aujourd'hui : zone du layout).
+- [ ] Couleur du texte animée sans refaire son layout.
+- [ ] Chiffres qui défilent (`content_transition`), morphing de formes.
+
 ## Plus tard
-- [ ] Anima (animations), effets (`Backdrop`, verre).
+- [ ] Effets (`Backdrop`, verre).
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).
 - [ ] Liaisons C++, C#, Unreal, Unity sur `veka.h`.
