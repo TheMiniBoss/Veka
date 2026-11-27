@@ -98,9 +98,13 @@ impl Element {
         }
     }
 
-    /// Enveloppe cet élément dans `prim` (c'est ainsi que sont faits les modifiers).
-    pub fn wrap(self, prim: impl Primitive) -> Self {
-        Element::new(prim, vec![self])
+    /// Enveloppe cet élément dans `prim` (c'est ainsi que sont faits les modifiers). L'identité
+    /// (`.id()`) passe à l'enveloppe : c'est elle qui est rangée parmi les frères.
+    pub fn wrap(mut self, prim: impl Primitive) -> Self {
+        let key = self.key.take();
+        let mut e = Element::new(prim, vec![self]);
+        e.key = key;
+        e
     }
 
     /// Identité explicite parmi les frères.

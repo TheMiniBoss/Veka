@@ -10,6 +10,7 @@ publish.workspace = true
 veka-foundation.workspace = true
 veka-graphics.workspace = true
 veka-colora.workspace = true
+veka-anima.workspace = true
 veka-text.workspace = true
 slotmap.workspace = true
 

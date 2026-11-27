@@ -2,11 +2,15 @@
 
 #![allow(non_snake_case)]
 
+mod anima;
 mod button;
 mod modifiers;
 mod shape;
 mod text;
 
+pub use anima::{
+    AnimationPrim, OffsetPrim, OpacityPrim, RotationPrim, ScaleEffectPrim, TransitionPrim, value_key,
+};
 pub use button::{ButtonPrim, ButtonState};
 pub use modifiers::{Background, EnvModifier, Length, TapGesture};
 pub use shape::ShapePrim;

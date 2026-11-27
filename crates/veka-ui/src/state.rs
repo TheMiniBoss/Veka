@@ -17,6 +17,8 @@ use std::rc::Rc;
 
 use slotmap::{SlotMap, new_key_type};
 
+use veka_anima::Animation;
+
 use crate::tree::NodeId;
 
 new_key_type! {
@@ -50,6 +52,32 @@ thread_local! {
     static DIRTY: RefCell<Vec<Owner>> = const { RefCell::new(Vec::new()) };
     static WAKERS: RefCell<HashMap<u32, Rc<dyn Fn()>>> = RefCell::new(HashMap::new());
     static NEXT_SURFACE: Cell<u32> = const { Cell::new(1) };
+    /// La spec du `with_animation` en cours.
+    static TRANSACTION: Cell<Option<Animation>> = const { Cell::new(None) };
+    /// La spec avec laquelle animer la prochaine image de chaque surface.
+    static PENDING: RefCell<HashMap<u32, Animation>> = RefCell::new(HashMap::new());
+}
+
+/// Exécute `f` ; ce que changent les états modifiés dedans s'anime avec `spec` (layout, couleurs,
+/// opacité…, entrées et sorties de vues). Comme `withAnimation` de SwiftUI.
+///
+/// ```
+/// # use veka_ui::prelude::*;
+/// # fn vue() -> impl View {
+/// let ouvert = State::new(false);
+/// Button("Ouvrir", move || with_animation(Animation::bouncy(), || ouvert.set(true)))
+/// # }
+/// ```
+pub fn with_animation<R>(spec: Animation, f: impl FnOnce() -> R) -> R {
+    let prev = TRANSACTION.with(|t| t.replace(Some(spec)));
+    let r = f();
+    TRANSACTION.with(|t| t.set(prev));
+    r
+}
+
+/// La spec à appliquer à la prochaine image de `surface` (et l'oublie).
+pub(crate) fn take_transaction(surface: u32) -> Option<Animation> {
+    PENDING.with(|p| p.borrow_mut().remove(&surface))
 }
 
 pub(crate) fn new_surface_id() -> u32 {
@@ -138,6 +166,9 @@ pub(crate) fn has_dirty(surface: u32) -> bool {
 }
 
 fn mark_dirty(owner: Owner) {
+    if let Some(spec) = TRANSACTION.with(|t| t.get()) {
+        PENDING.with(|p| p.borrow_mut().insert(owner.surface, spec));
+    }
     let first = DIRTY.with(|d| {
         let mut d = d.borrow_mut();
         let first = !d.iter().any(|o| o.surface == owner.surface);

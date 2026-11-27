@@ -76,6 +76,64 @@ impl Primitive for EnvModifier {
         }
         true
     }
+
+    fn animatable(&self, env: &Environment) -> Option<veka_anima::AnimatableData> {
+        let mut d = veka_anima::AnimatableData::new();
+        match self {
+            EnvModifier::Foreground(p) | EnvModifier::Accent(p) => {
+                d.mark(if matches!(self, EnvModifier::Foreground(_)) {
+                    1
+                } else {
+                    2
+                });
+                super::anima::push_paint(&mut d, &env.resolve_unadjusted(p));
+            }
+            EnvModifier::ColorAdjust(a) => {
+                let (tag, v) = adjust_parts(*a);
+                d.mark(10 + tag).push(v);
+            }
+            _ => return None,
+        }
+        Some(d)
+    }
+
+    fn with_animatable(
+        &self,
+        env: &Environment,
+        data: &veka_anima::AnimatableData,
+    ) -> Option<std::rc::Rc<dyn Primitive>> {
+        let mut r = data.reader();
+        let m = match self {
+            EnvModifier::Foreground(p) => {
+                EnvModifier::Foreground(super::anima::read_paint(&env.resolve_unadjusted(p), &mut r))
+            }
+            EnvModifier::Accent(p) => {
+                EnvModifier::Accent(super::anima::read_paint(&env.resolve_unadjusted(p), &mut r))
+            }
+            EnvModifier::ColorAdjust(a) => {
+                let v = r.f32();
+                EnvModifier::ColorAdjust(match a {
+                    ColorAdjust::Brightness(_) => ColorAdjust::Brightness(v),
+                    ColorAdjust::Contrast(_) => ColorAdjust::Contrast(v),
+                    ColorAdjust::Saturation(_) => ColorAdjust::Saturation(v),
+                    ColorAdjust::HueRotation(_) => ColorAdjust::HueRotation(v),
+                    ColorAdjust::Grayscale(_) => ColorAdjust::Grayscale(v),
+                })
+            }
+            _ => return None,
+        };
+        Some(std::rc::Rc::new(m))
+    }
+}
+
+fn adjust_parts(a: ColorAdjust) -> (u64, f32) {
+    match a {
+        ColorAdjust::Brightness(v) => (0, v),
+        ColorAdjust::Contrast(v) => (1, v),
+        ColorAdjust::Saturation(v) => (2, v),
+        ColorAdjust::HueRotation(v) => (3, v),
+        ColorAdjust::Grayscale(v) => (4, v),
+    }
 }
 
 /// Fond : une forme remplie derrière le contenu, à sa taille.
@@ -94,6 +152,24 @@ impl Primitive for Background {
         let paint = cx.env().resolve(&self.paint);
         cx.list().fill(self.shape, rect, paint);
         cx.paint_children();
+    }
+
+    fn animatable(&self, env: &Environment) -> Option<veka_anima::AnimatableData> {
+        let mut d = veka_anima::AnimatableData::new();
+        super::anima::push_shape(&mut d, &self.shape);
+        super::anima::push_paint(&mut d, &env.resolve_unadjusted(&self.paint));
+        Some(d)
+    }
+
+    fn with_animatable(
+        &self,
+        env: &Environment,
+        data: &veka_anima::AnimatableData,
+    ) -> Option<std::rc::Rc<dyn Primitive>> {
+        let mut r = data.reader();
+        let shape = super::anima::read_shape(self.shape, &mut r);
+        let paint = super::anima::read_paint(&env.resolve_unadjusted(&self.paint), &mut r);
+        Some(std::rc::Rc::new(Background { paint, shape }))
     }
 }
 

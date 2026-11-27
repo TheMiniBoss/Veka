@@ -2,6 +2,21 @@
 
 Le plus récent en premier.
 
+## Étape 4 — Anima
+
+### Animations implicites et transitions (PR H)
+- Nouveau crate `veka-anima` (cœur) : `Animation` (linéaire, *ease*, circulaires, Bézier cubique, ressorts
+  analytiques, préréglages `smooth` / `snappy` / `bouncy`, délai, vitesse, répétition, aller-retour),
+  `Animator` (un ressort interrompu garde sa vitesse), `Transition` (fondu, échelle, glissement, poussée,
+  décalage, combinées, asymétriques).
+- `with_animation(spec, || ..)` et `.animation(spec, valeur)` : layout, couleurs (en Oklab), dégradés, rayons,
+  réglages de couleur, opacité, décalage, échelle et rotation s'animent ; les vues entrent et sortent avec
+  `.transition()`.
+- Nouveaux modifiers `.opacity()`, `.offset()`, `.scale_effect()`, `.rotation_effect()`.
+- `Surface::frame_at(heure)` : le temps vient de l'hôte ; veka-app redessine seulement pendant une animation.
+- `.id()` passe aux modifiers qui l'enveloppent (une ligne identifiée garde son identité avec `.transition()`).
+- Exemple `anima`, tests image par image.
+
 ## Étape 3 — Colora
 
 ### Interface C, schéma et macOS (PR G)

@@ -138,6 +138,16 @@ impl Environment {
         self.palette().resolve(paint)
     }
 
+    /// La peinture sans jeton, **sans** les réglages de couleur (ce qu'Anima interpole : les réglages
+    /// sont appliqués ensuite, au dessin).
+    pub fn resolve_unadjusted(&self, paint: &Paint) -> Paint {
+        Palette {
+            matrix: &ColorMatrix::IDENTITY,
+            ..self.palette()
+        }
+        .resolve(paint)
+    }
+
     /// Couleur unie (moyenne d'un dégradé), résolue.
     pub fn color(&self, paint: &Paint) -> Color {
         self.palette().color(paint)
