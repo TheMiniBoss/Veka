@@ -89,3 +89,32 @@ fn zstack_superpose() {
         s.rects_of("Rectangle")[0].center()
     );
 }
+
+#[test]
+fn spacer_laisse_la_place_au_texte() {
+    // Le Spacer passe après le texte : le texte tient sur une ligne s'il y a la place.
+    let titre = "Veka — fenêtre transparente";
+    let seul = layout(Text(titre), 2000.0, 400.0).rects_of("Text")[0];
+    let s = layout(
+        HStack![Text(titre), Spacer(), Rectangle().frame(46, 32)],
+        seul.width() + 46.0 + 40.0,
+        400.0,
+    );
+    let t = s.rects_of("Text")[0];
+    assert_eq!(t.height(), seul.height());
+    assert_eq!(s.rects_of("Rectangle")[0].max_x(), seul.width() + 86.0);
+}
+
+#[test]
+fn bouton_dans_une_pile_reste_sur_une_ligne() {
+    // Arrondis de calcul : la place exacte donnée au bouton ne doit pas le faire passer à la ligne.
+    let seul = layout(Button("Clics : 0", || {}), 2000.0, 400.0).rects_of("Text")[0];
+    for largeur in [300.0, 333.3, 360.0, 401.7] {
+        let s = layout(
+            VStack![HStack![spacing: 12; Circle().frame(64, 64), Button("Clics : 0", || {})]],
+            largeur,
+            400.0,
+        );
+        assert_eq!(s.rects_of("Text")[0].height(), seul.height(), "largeur {largeur}");
+    }
+}

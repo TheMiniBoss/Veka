@@ -3,7 +3,7 @@
 use std::ffi::{c_char, c_void};
 
 use veka_app::App;
-use veka_platform::{Size, WindowDesc};
+use veka_platform::{Chrome, Size, WindowDesc};
 use veka_ui::Element;
 use veka_ui::schema::Params;
 
@@ -75,6 +75,101 @@ pub unsafe extern "C" fn veka_app_add_window(
         let title = unsafe { string(title, "titre") }?;
         let app = unsafe { &mut *app };
         let desc = WindowDesc::new(title).size(Size::new(width, height));
+        app.app = std::mem::take(&mut app.app).window_with(desc, window_view(setup, body, user));
+        Ok(0)
+    })
+}
+
+/// Décoration d'une fenêtre.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VekaChrome {
+    /// Barre et boutons du système.
+    System,
+    /// Barre du système masquée (macOS garde ses feux).
+    Hidden,
+    /// Aucune décoration du système : Veka dessine tout.
+    Custom,
+}
+
+/// Tous les réglages d'une fenêtre.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct VekaWindowDesc {
+    pub title: *const c_char,
+    /// Taille du contenu, en points.
+    pub width: f32,
+    pub height: f32,
+    /// Taille minimale (0 : aucune).
+    pub min_width: f32,
+    pub min_height: f32,
+    pub resizable: bool,
+    pub chrome: VekaChrome,
+    /// `VEKA_CHROME_CUSTOM` : fond transparent.
+    pub transparent: bool,
+    /// `VEKA_CHROME_CUSTOM` : ombre du système.
+    pub shadow: bool,
+    /// `VEKA_CHROME_CUSTOM` : rayon des coins, en points.
+    pub corner_radius: f32,
+    /// Largeur des bords de redimensionnement, en points (0 : 6 points).
+    pub resize_margin: f32,
+}
+
+/// Réglages par défaut : 480 × 320, redimensionnable, décoration du système.
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_window_desc_default(title: *const c_char) -> VekaWindowDesc {
+    VekaWindowDesc {
+        title,
+        width: 480.0,
+        height: 320.0,
+        min_width: 0.0,
+        min_height: 0.0,
+        resizable: true,
+        chrome: VekaChrome::System,
+        transparent: false,
+        shadow: true,
+        corner_radius: 8.0,
+        resize_margin: 6.0,
+    }
+}
+
+/// Ajoute une fenêtre avec tous ses réglages. Renvoie 0, ou -1 en cas d'erreur.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_app_add_window_ex(
+    app: *mut VekaApp,
+    desc: *const VekaWindowDesc,
+    setup: VekaSetupFn,
+    body: VekaBodyFn,
+    user: *mut c_void,
+) -> i32 {
+    guard(-1, || {
+        if app.is_null() || desc.is_null() {
+            return Err("application ou réglages NULL".into());
+        }
+        if body.is_none() {
+            return Err("veka_app_add_window_ex : body NULL".into());
+        }
+        // SAFETY : contrat de l'API.
+        let (app, d) = unsafe { (&mut *app, *desc) };
+        let title = unsafe { string(d.title, "titre") }?;
+        let mut desc = WindowDesc::new(title)
+            .size(Size::new(d.width, d.height))
+            .resizable(d.resizable)
+            .chrome(match d.chrome {
+                VekaChrome::System => Chrome::System,
+                VekaChrome::Hidden => Chrome::Hidden,
+                VekaChrome::Custom => Chrome::Custom {
+                    transparent: d.transparent,
+                    shadow: d.shadow,
+                    corner_radius: d.corner_radius,
+                },
+            });
+        if d.min_width > 0.0 || d.min_height > 0.0 {
+            desc = desc.min_size(Size::new(d.min_width, d.min_height));
+        }
+        if d.resize_margin > 0.0 {
+            desc = desc.resize_margin(d.resize_margin);
+        }
         app.app = std::mem::take(&mut app.app).window_with(desc, window_view(setup, body, user));
         Ok(0)
     })

@@ -21,6 +21,14 @@ impl<W: HasDisplayHandle + ?Sized> HasDisplayHandle for ByRef<'_, W> {
     }
 }
 
+/// Options de la surface d'une fenêtre.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SurfaceOptions {
+    /// La fenêtre laisse voir ce qui est derrière là où rien n'est dessiné (alpha prémultiplié).
+    /// Sur Windows, la présentation passe par DirectComposition.
+    pub transparent: bool,
+}
+
 /// Renderer d'une fenêtre.
 pub struct WindowRenderer {
     gpu: Gpu,
@@ -50,7 +58,21 @@ impl WindowRenderer {
         frame: FrameInfo,
     ) -> Result<Self, RenderError> {
         // SAFETY : garanti par l'appelant (la fenêtre vit plus longtemps que le renderer).
-        unsafe { pollster::block_on(Self::new_async(window, frame)) }
+        unsafe { Self::with_options(window, frame, SurfaceOptions::default()) }
+    }
+
+    /// Comme [`new`](Self::new), avec des options.
+    ///
+    /// # Safety
+    ///
+    /// Comme [`new`](Self::new).
+    pub unsafe fn with_options<W: HasWindowHandle + HasDisplayHandle + ?Sized>(
+        window: &W,
+        frame: FrameInfo,
+        options: SurfaceOptions,
+    ) -> Result<Self, RenderError> {
+        // SAFETY : garanti par l'appelant.
+        unsafe { pollster::block_on(Self::new_async_with(window, frame, options)) }
     }
 
     /// Version asynchrone (nécessaire sur le web).
@@ -62,7 +84,25 @@ impl WindowRenderer {
         window: &W,
         frame: FrameInfo,
     ) -> Result<Self, RenderError> {
-        let instance = Gpu::default_instance();
+        // SAFETY : comme ci-dessus.
+        unsafe { Self::new_async_with(window, frame, SurfaceOptions::default()).await }
+    }
+
+    /// Version asynchrone de [`with_options`](Self::with_options).
+    ///
+    /// # Safety
+    ///
+    /// Comme [`new`](Self::new).
+    pub async unsafe fn new_async_with<W: HasWindowHandle + HasDisplayHandle + ?Sized>(
+        window: &W,
+        frame: FrameInfo,
+        options: SurfaceOptions,
+    ) -> Result<Self, RenderError> {
+        let instance = if options.transparent {
+            Gpu::transparent_instance()
+        } else {
+            Gpu::default_instance()
+        };
         // SAFETY : la fenêtre reste valide tant que le renderer existe (contrat de la fonction).
         let target =
             unsafe { wgpu::SurfaceTargetUnsafe::from_display_and_window(&ByRef(window), &ByRef(window)) }
@@ -78,7 +118,18 @@ impl WindowRenderer {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
-        let alpha_mode = caps.alpha_modes[0];
+        let alpha_mode = if options.transparent {
+            // Le painter produit de l'alpha prémultiplié.
+            [
+                wgpu::CompositeAlphaMode::PreMultiplied,
+                wgpu::CompositeAlphaMode::PostMultiplied,
+            ]
+            .into_iter()
+            .find(|m| caps.alpha_modes.contains(m))
+            .ok_or_else(|| RenderError::Other("surface transparente non prise en charge".into()))?
+        } else {
+            caps.alpha_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,

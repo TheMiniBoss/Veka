@@ -49,7 +49,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
     WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SIZE, WNDCLASSEXW, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
+    WM_RBUTTONUP, WM_SIZE, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW,
+    WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -206,14 +207,6 @@ struct Ctx {
 
 impl PlatformContext for Ctx {
     fn create_window(&mut self, desc: WindowDesc) -> Result<WindowId> {
-        if let Chrome::Custom {
-            transparent: true, ..
-        } = desc.chrome
-        {
-            return Err(PlatformError::Unsupported(
-                "fenêtres transparentes : pas encore sur Windows (prochaine étape)".into(),
-            ));
-        }
         let custom = desc.chrome != Chrome::System;
         let id = WindowId(self.next_id);
         self.next_id += 1;
@@ -222,7 +215,12 @@ impl PlatformContext for Ctx {
         } else {
             WS_OVERLAPPEDWINDOW & !(WS_THICKFRAME | WS_MAXIMIZEBOX)
         };
-        let ex_style = WINDOW_EX_STYLE(0);
+        // Fenêtre transparente : pas de surface GDI, le contenu vient de DirectComposition (wgpu).
+        let ex_style = if desc.chrome.is_transparent() {
+            WS_EX_NOREDIRECTIONBITMAP
+        } else {
+            WINDOW_EX_STYLE(0)
+        };
         // SAFETY : appel sans pointeur.
         let dpi = unsafe { GetDpiForSystem() };
         let data = Rc::new(WinData {

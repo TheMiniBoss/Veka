@@ -1,4 +1,4 @@
-# L'exemple compteur en C.
+# Les exemples en C.
 #
 #   cmake -S examples/c -B build/c
 #   cmake --build build/c
@@ -41,18 +41,20 @@ if(WIN32)
 endif()
 add_dependencies(veka veka_cargo)
 
-add_executable(compteur compteur.c)
-target_link_libraries(compteur PRIVATE veka)
-if(MSVC)
-    target_compile_options(compteur PRIVATE /W4 /utf-8)
-else()
-    target_compile_options(compteur PRIVATE -Wall -Wextra -pedantic)
-endif()
-
-if(WIN32)
-    # La DLL à côté de l'exécutable.
-    add_custom_command(TARGET compteur POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${VEKA_LIB}" "$<TARGET_FILE_DIR:compteur>")
-else()
-    set_target_properties(compteur PROPERTIES BUILD_RPATH "${VEKA_LIB_DIR}")
-endif()
+# Les exemples : compteur (étape 1) et fenetre_perso (étape 2).
+foreach(exemple compteur fenetre_perso)
+    add_executable(${exemple} ${exemple}.c)
+    target_link_libraries(${exemple} PRIVATE veka)
+    if(MSVC)
+        target_compile_options(${exemple} PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(${exemple} PRIVATE -Wall -Wextra -pedantic)
+    endif()
+    if(WIN32)
+        # La DLL à côté de l'exécutable.
+        add_custom_command(TARGET ${exemple} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${VEKA_LIB}" "$<TARGET_FILE_DIR:${exemple}>")
+    else()
+        set_target_properties(${exemple} PROPERTIES BUILD_RPATH "${VEKA_LIB_DIR}")
+    endif()
+endforeach()

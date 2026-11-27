@@ -203,3 +203,34 @@ fn schema_construit_la_barre() {
     );
     assert!(e.is_ok());
 }
+
+#[test]
+fn barre_maison_deplace_par_le_vide() {
+    // Comme `fenetre_transparente` : l'espace libre entre le titre et ✕ déplace la fenêtre.
+    fn vue() -> Element {
+        VStack![spacing: 16;
+            HStack![
+                Text("Veka — fenêtre transparente").font(Font::Headline),
+                Spacer(),
+                WindowButtonWith(WindowControl::Close, TitleBarStyle::Windows),
+            ]
+            .window_drag_area(),
+            Text("Tout autour, c'est le bureau."),
+        ]
+        .padding(24)
+        .padding(16)
+    }
+    let mut s = Surface::new(component(vue));
+    s.resize(Size::new(440.0, 240.0), 1.0);
+    s.frame();
+    let regions = s.take_regions_if_changed().expect("régions");
+    let barre = regions
+        .iter()
+        .find(|r| r.kind == RegionKind::Drag)
+        .expect("zone")
+        .rect;
+    // Entre le titre et le bouton, au milieu de la barre.
+    let p = Point::new(300.0, barre.y() + barre.height() / 2.0);
+    let kind = regions.iter().rev().find(|r| r.rect.contains(p)).map(|r| r.kind);
+    assert_eq!(kind, Some(RegionKind::Drag));
+}

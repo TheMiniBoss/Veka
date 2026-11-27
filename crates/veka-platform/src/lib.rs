@@ -67,6 +67,26 @@ impl Chrome {
             corner_radius: 8.0,
         }
     }
+
+    /// `Custom` transparent : le bureau se voit là où Veka ne dessine rien.
+    pub const fn transparent() -> Self {
+        Chrome::Custom {
+            transparent: true,
+            shadow: false,
+            corner_radius: 0.0,
+        }
+    }
+
+    /// La fenêtre laisse voir ce qui est derrière elle.
+    pub const fn is_transparent(&self) -> bool {
+        matches!(
+            self,
+            Chrome::Custom {
+                transparent: true,
+                ..
+            }
+        )
+    }
 }
 
 /// Ce qu'il faut pour créer une fenêtre.

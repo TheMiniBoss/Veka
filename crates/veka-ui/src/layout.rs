@@ -113,10 +113,26 @@ impl Stack {
                 })
                 .collect();
         };
+        // Comme SwiftUI, les Spacers passent après les autres enfants : on leur réserve leur longueur
+        // minimale, puis ils se partagent ce qui reste.
+        let spacer: Vec<bool> = children.iter().map(|&c| cx.child_name(c) == "Spacer").collect();
+        let spacer_min: Vec<f32> = children
+            .iter()
+            .zip(&spacer)
+            .map(|(&c, &is)| {
+                if is {
+                    main_of(axis, cx.measure(c, make_proposal(axis, Some(0.0), cross)))
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let mut reserved: f32 = spacer_min.iter().sum();
         // Flexibilité = taille maximale - taille minimale sur l'axe principal.
         let mut order: Vec<(usize, f32)> = children
             .iter()
             .enumerate()
+            .filter(|&(i, _)| !spacer[i])
             .map(|(i, &c)| {
                 let lo = main_of(axis, cx.measure(c, make_proposal(axis, Some(0.0), cross)));
                 let hi = main_of(
@@ -127,12 +143,19 @@ impl Stack {
             })
             .collect();
         order.sort_by(|a, b| a.1.total_cmp(&b.1));
+        order.extend((0..n).filter(|&i| spacer[i]).map(|i| (i, f32::INFINITY)));
+        let others = n - spacer.iter().filter(|&&b| b).count();
         let mut remaining = (main - spacing).max(0.0);
         let mut sizes = vec![Size::ZERO; n];
         for (k, &(i, _)) in order.iter().enumerate() {
-            let share = remaining / (n - k) as f32;
+            let share = if spacer[i] {
+                reserved -= spacer_min[i];
+                (remaining / (n - k) as f32).max(spacer_min[i])
+            } else {
+                ((remaining - reserved).max(0.0)) / (others - k) as f32
+            };
             let mut s = cx.measure(children[i], make_proposal(axis, Some(share), cross));
-            if cx.child_name(children[i]) == "Spacer" {
+            if spacer[i] {
                 // Un Spacer ne prend aucune place sur l'axe croisé d'une pile.
                 s = make_size(axis, main_of(axis, s), 0.0);
             }

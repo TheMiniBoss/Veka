@@ -14,18 +14,21 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSEvent,
-    NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
-    NSWindowDelegate, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSColor,
+    NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults,
+};
 use raw_window_handle::{
     AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawWindowHandle,
     WindowHandle,
 };
 use veka_platform::{
     Chrome, Instant, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent,
-    PlatformWindow, Point, Result, Size, WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowDesc, WindowId, WindowInfo,
+    WindowRegion,
 };
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
@@ -45,6 +48,10 @@ struct WinData {
     scale: Cell<f32>,
     size: Cell<Size>,
     regions: RefCell<Vec<WindowRegion>>,
+    /// La vue dessine sa propre barre (`Chrome::Hidden` ou `Chrome::Custom`).
+    custom: bool,
+    /// Dernier état envoyé à l'application.
+    info: Cell<WindowInfo>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -129,6 +136,9 @@ define_class!(
 
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
+            if self.drag_window(event) {
+                return;
+            }
             self.button(event, MouseButton::Primary, true);
         }
 
@@ -216,6 +226,42 @@ impl VekaView {
         Point::new(p.x as f32, p.y as f32)
     }
 
+    /// Clic dans une zone de déplacement : AppKit déplace la fenêtre, le double-clic suit le réglage
+    /// du système (agrandir ou réduire). Renvoie `true` si le clic est pris.
+    fn drag_window(&self, event: &NSEvent) -> bool {
+        let data = &self.ivars().data;
+        if !data.custom {
+            return false;
+        }
+        let p = self.position(event);
+        let kind = data
+            .regions
+            .borrow()
+            .iter()
+            .rev()
+            .find(|r| r.rect.contains(p))
+            .map(|r| r.kind);
+        if kind != Some(RegionKind::Drag) {
+            return false;
+        }
+        let Some(window) = self.window() else {
+            return false;
+        };
+        if event.clickCount() == 2 {
+            let action = NSUserDefaults::standardUserDefaults()
+                .stringForKey(&NSString::from_str("AppleActionOnDoubleClick"))
+                .map(|s| s.to_string());
+            match action.as_deref() {
+                Some("Minimize") => window.miniaturize(None),
+                Some("None") => {}
+                _ => window.zoom(None),
+            }
+        } else {
+            window.performWindowDragWithEvent(event);
+        }
+        true
+    }
+
     fn moved(&self, event: &NSEvent) {
         push(PlatformEvent::PointerMoved {
             window: self.id(),
@@ -247,7 +293,7 @@ fn pixels(size: Size, scale: f32) -> (u32, u32) {
 
 #[derive(Debug)]
 struct DelegateIvars {
-    id: WindowId,
+    data: Rc<WinData>,
 }
 
 define_class!(
@@ -266,7 +312,7 @@ define_class!(
         fn window_should_close(&self, _sender: &NSWindow) -> bool {
             // C'est l'application qui décide de fermer.
             push(PlatformEvent::CloseRequested {
-                window: self.ivars().id,
+                window: self.ivars().data.id,
             });
             pump();
             false
@@ -275,18 +321,70 @@ define_class!(
         #[unsafe(method(windowWillClose:))]
         fn window_will_close(&self, _notification: &NSNotification) {
             push(PlatformEvent::WindowClosed {
-                window: self.ivars().id,
+                window: self.ivars().data.id,
             });
             pump();
+        }
+
+        #[unsafe(method(windowDidResize:))]
+        fn did_resize(&self, notification: &NSNotification) {
+            self.state_changed(notification);
+        }
+
+        #[unsafe(method(windowDidBecomeKey:))]
+        fn did_become_key(&self, notification: &NSNotification) {
+            self.state_changed(notification);
+        }
+
+        #[unsafe(method(windowDidResignKey:))]
+        fn did_resign_key(&self, notification: &NSNotification) {
+            self.state_changed(notification);
+        }
+
+        #[unsafe(method(windowDidEnterFullScreen:))]
+        fn did_enter_full_screen(&self, notification: &NSNotification) {
+            self.state_changed(notification);
+        }
+
+        #[unsafe(method(windowDidExitFullScreen:))]
+        fn did_exit_full_screen(&self, notification: &NSNotification) {
+            self.state_changed(notification);
         }
     }
 );
 
+fn window_info(window: &NSWindow) -> WindowInfo {
+    WindowInfo {
+        maximized: window.isZoomed(),
+        fullscreen: window.styleMask().contains(NSWindowStyleMask::FullScreen),
+        active: window.isKeyWindow(),
+    }
+}
+
 impl WindowDelegate {
-    fn new(mtm: MainThreadMarker, id: WindowId) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(DelegateIvars { id });
+    fn new(mtm: MainThreadMarker, data: Rc<WinData>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(DelegateIvars { data });
         // SAFETY : `init` de NSObject.
         unsafe { msg_send![super(this), init] }
+    }
+
+    /// Envoie le nouvel état de la fenêtre s'il a changé.
+    fn state_changed(&self, notification: &NSNotification) {
+        let Some(object) = notification.object() else {
+            return;
+        };
+        let Ok(window) = object.downcast::<NSWindow>() else {
+            return;
+        };
+        let info = window_info(&window);
+        let data = &self.ivars().data;
+        if info != data.info.replace(info) {
+            push(PlatformEvent::WindowStateChanged {
+                window: data.id,
+                info,
+            });
+            pump();
+        }
     }
 }
 
@@ -397,11 +495,7 @@ impl PlatformWindow for MacWindow {
     }
 
     fn info(&self) -> WindowInfo {
-        WindowInfo {
-            maximized: self.window.isZoomed(),
-            fullscreen: self.window.styleMask().contains(NSWindowStyleMask::FullScreen),
-            active: self.window.isKeyWindow(),
-        }
+        window_info(&self.window)
     }
 
     fn perform(&self, action: WindowAction) {
@@ -414,6 +508,36 @@ impl PlatformWindow for MacWindow {
     }
 }
 
+/// Barre transparente pour `Hidden`, feux masqués en plus pour `Custom`.
+fn decorate(window: &NSWindow, chrome: Chrome) {
+    let Chrome::Custom {
+        transparent, shadow, ..
+    } = chrome
+    else {
+        if chrome == Chrome::Hidden {
+            window.setTitlebarAppearsTransparent(true);
+            window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+        }
+        return;
+    };
+    window.setTitlebarAppearsTransparent(true);
+    window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+    for b in [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ] {
+        if let Some(button) = window.standardWindowButton(b) {
+            button.setHidden(true);
+        }
+    }
+    window.setHasShadow(shadow);
+    if transparent {
+        window.setOpaque(false);
+        window.setBackgroundColor(Some(&NSColor::clearColor()));
+    }
+}
+
 struct Ctx {
     mtm: MainThreadMarker,
     windows: HashMap<WindowId, MacWindow>,
@@ -423,11 +547,6 @@ struct Ctx {
 
 impl PlatformContext for Ctx {
     fn create_window(&mut self, desc: WindowDesc) -> Result<WindowId> {
-        if desc.chrome != Chrome::System {
-            return Err(PlatformError::Unsupported(
-                "Chrome::Hidden et Chrome::Custom arrivent juste après l'étape 1".into(),
-            ));
-        }
         let mtm = self.mtm;
         let id = WindowId(self.next_id);
         self.next_id += 1;
@@ -436,6 +555,12 @@ impl PlatformContext for Ctx {
             NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Miniaturizable;
         if desc.resizable {
             style |= NSWindowStyleMask::Resizable;
+        }
+        // La fenêtre reste « titrée » pour garder bords, ombre, coins et plein écran du système ;
+        // le contenu passe simplement sous la barre.
+        let custom = desc.chrome != Chrome::System;
+        if custom {
+            style |= NSWindowStyleMask::FullSizeContentView;
         }
         let rect = NSRect::new(
             NSPoint::new(0.0, 0.0),
@@ -458,16 +583,19 @@ impl PlatformContext for Ctx {
         if let Some(min) = desc.min_size {
             window.setContentMinSize(NSSize::new(min.width as f64, min.height as f64));
         }
+        decorate(&window, desc.chrome);
 
         let data = Rc::new(WinData {
             id,
             scale: Cell::new(window.backingScaleFactor() as f32),
             size: Cell::new(desc.size),
             regions: RefCell::new(Vec::new()),
+            custom,
+            info: Cell::new(window_info(&window)),
         });
         let view = VekaView::new(mtm, data.clone(), rect);
         window.setContentView(Some(&view));
-        let delegate = WindowDelegate::new(mtm, id);
+        let delegate = WindowDelegate::new(mtm, data.clone());
         window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         window.center();
         window.makeKeyAndOrderFront(None);

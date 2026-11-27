@@ -46,6 +46,9 @@ impl TextState {
     }
 }
 
+/// Écart de largeur (en points) en dessous duquel un texte reste sur une ligne.
+const FIT_TOLERANCE: f32 = 0.01;
+
 impl Primitive for TextPrim {
     fn name(&self) -> &'static str {
         "Text"
@@ -62,7 +65,8 @@ impl Primitive for TextPrim {
             match p.width {
                 // Assez de place (ou taille idéale) : une seule ligne.
                 None => natural.size,
-                Some(w) if w >= natural.size.width => natural.size,
+                // Tolérance : la largeur rendue par le parent peut différer d'un arrondi.
+                Some(w) if w + FIT_TOLERANCE >= natural.size.width => natural.size,
                 Some(w) => st.layout(text, &self.content, &style, Some(w)).size,
             }
         })
@@ -72,7 +76,7 @@ impl Primitive for TextPrim {
         cx.state_and_text(|st: &mut TextState, text, env| {
             let style = env.text_style();
             let natural = st.layout(text, &self.content, &style, None);
-            let l = if rect.width() + 0.01 >= natural.size.width {
+            let l = if rect.width() + FIT_TOLERANCE >= natural.size.width {
                 natural
             } else {
                 st.layout(text, &self.content, &style, Some(rect.width()))
