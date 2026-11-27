@@ -78,6 +78,17 @@ pub trait Primitive: Any {
         EventResult::default()
     }
 
+    /// Si `false`, les enfants ne reçoivent jamais le pointeur : ce primitive le prend pour eux
+    /// (un bouton de fenêtre qui contient une icône, par exemple).
+    fn hit_children(&self) -> bool {
+        true
+    }
+
+    /// Ce que ce primitive représente pour la fenêtre (zone de déplacement, bouton de fenêtre).
+    fn window_region(&self) -> Option<veka_foundation::RegionKind> {
+        None
+    }
+
     /// État propre au nœud (survol, cache de texte…), créé une fois à l'insertion du nœud.
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())

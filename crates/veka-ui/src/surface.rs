@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use veka_foundation::{Point, Rect, Size};
+use veka_foundation::{Point, Rect, RegionKind, Size, WindowAction, WindowInfo, WindowRegion};
 use veka_graphics::{DrawList, Shape};
 use veka_text::TextSystem;
 
@@ -82,6 +82,8 @@ pub struct Surface {
     needs_paint: bool,
     hovered: Option<NodeId>,
     captured: Option<NodeId>,
+    regions: Vec<WindowRegion>,
+    regions_changed: bool,
 }
 
 impl std::fmt::Debug for Surface {
@@ -116,6 +118,8 @@ impl Surface {
             needs_paint: true,
             hovered: None,
             captured: None,
+            regions: Vec::new(),
+            regions_changed: false,
         }
     }
 
@@ -129,8 +133,39 @@ impl Surface {
     }
 
     pub fn set_environment(&mut self, env: Environment) {
-        self.env = Rc::new(env);
+        let window = self.env.window;
+        self.env = Rc::new(Environment { window, ..env });
         self.needs_layout = true;
+    }
+
+    /// L'état de la fenêtre (agrandie, active…), lu par les vues dans `Environment::window`.
+    pub fn set_window_info(&mut self, info: WindowInfo) {
+        if self.env.window != info {
+            self.env = Rc::new(Environment {
+                window: info,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    pub fn window_info(&self) -> WindowInfo {
+        self.env.window
+    }
+
+    /// Les zones de la fenêtre (déplacement, boutons) issues du dernier layout, en points.
+    pub fn regions(&self) -> &[WindowRegion] {
+        &self.regions
+    }
+
+    /// Les zones, seulement si elles ont changé depuis le dernier appel.
+    pub fn take_regions_if_changed(&mut self) -> Option<Vec<WindowRegion>> {
+        std::mem::take(&mut self.regions_changed).then(|| self.regions.clone())
+    }
+
+    /// Les actions sur la fenêtre demandées par les vues (boutons de fenêtre…), à exécuter par l'hôte.
+    pub fn take_window_actions(&mut self) -> Vec<WindowAction> {
+        crate::window::take_actions()
     }
 
     /// Taille en points logiques et échelle d'affichage (2.0 sur un écran Retina, 1.5 à 150 %…).
@@ -188,6 +223,7 @@ impl Surface {
             self.needs_layout = false;
             self.needs_paint = true;
             self.revalidate_pointer();
+            self.update_regions();
         }
         if self.needs_paint {
             self.list.clear();
@@ -331,9 +367,11 @@ impl Surface {
     pub(crate) fn hit_test(&self, p: Point) -> Option<NodeId> {
         fn walk(tree: &Tree, id: NodeId, p: Point) -> Option<NodeId> {
             let node = &tree.nodes[id];
-            for &c in node.children.iter().rev() {
-                if let Some(h) = walk(tree, c, p) {
-                    return Some(h);
+            if node.prim.hit_children() {
+                for &c in node.children.iter().rev() {
+                    if let Some(h) = walk(tree, c, p) {
+                        return Some(h);
+                    }
                 }
             }
             node.prim
@@ -359,6 +397,52 @@ impl Surface {
         }
         actions.extend(r.action);
         r.handled
+    }
+
+    fn update_regions(&mut self) {
+        fn collect(tree: &Tree, id: NodeId, in_drag: bool, out: &mut Vec<WindowRegion>) {
+            let node = &tree.nodes[id];
+            let rect = node.rect;
+            match node.prim.window_region() {
+                Some(RegionKind::Control(c)) => {
+                    out.push(WindowRegion {
+                        rect,
+                        kind: RegionKind::Control(c),
+                    });
+                    return;
+                }
+                Some(RegionKind::Drag) => {
+                    out.push(WindowRegion {
+                        rect,
+                        kind: RegionKind::Drag,
+                    });
+                    for &child in &node.children {
+                        collect(tree, child, true, out);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+            if in_drag && node.prim.hit_shape().is_some() {
+                // Une vue interactive dans une zone de déplacement garde le pointeur.
+                out.push(WindowRegion {
+                    rect,
+                    kind: RegionKind::Client,
+                });
+                if !node.prim.hit_children() {
+                    return;
+                }
+            }
+            for &child in &node.children {
+                collect(tree, child, in_drag, out);
+            }
+        }
+        let mut regions = Vec::new();
+        collect(&self.tree, self.root, false, &mut regions);
+        if regions != self.regions {
+            self.regions = regions;
+            self.regions_changed = true;
+        }
     }
 
     /// Après un nouveau layout, le nœud survolé peut avoir disparu.

@@ -21,13 +21,16 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use veka_platform::{
-    MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowDesc, WindowId,
+    MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowId,
 };
 use veka_render::{FrameInfo, RenderError, Renderer};
 use veka_render_wgpu::WindowRenderer;
 use veka_ui::{Element, InputEvent, PointerButton, Surface, View, component};
 
-pub use veka_platform::{Chrome, Size};
+pub use veka_platform::{Chrome, Size, WindowDesc};
+
+/// Les réglages d'une fenêtre : `Window::new("Titre").size(…).chrome(Chrome::custom())`.
+pub type Window = WindowDesc;
 
 /// Erreur au lancement de l'application.
 #[derive(Debug)]
@@ -157,6 +160,7 @@ impl Host {
         let mut surface = Surface::new(root);
         surface.resize(window.size(), window.scale());
         surface.set_waker(window.redraw_requester());
+        surface.set_window_info(window.info());
         let (width, height) = window.pixel_size();
         let frame = FrameInfo {
             width,
@@ -191,8 +195,13 @@ impl Host {
             return;
         };
         w.surface.handle(event);
+        let actions = w.surface.take_window_actions();
         if w.surface.needs_frame() {
             ctx.window(id).request_redraw();
+        }
+        // Après le traitement : une action peut fermer la fenêtre.
+        for action in actions {
+            ctx.window(id).perform(action);
         }
     }
 
@@ -235,7 +244,11 @@ impl Host {
                     return;
                 };
                 let list = w.surface.frame();
-                match w.renderer.render(list) {
+                let result = w.renderer.render(list);
+                if let Some(regions) = w.surface.take_regions_if_changed() {
+                    ctx.window(window).set_regions(&regions);
+                }
+                match result {
                     Ok(()) => {
                         if self.exit_after_first_frame {
                             ctx.exit();
@@ -250,6 +263,14 @@ impl Host {
                 }
                 if w.surface.needs_frame() {
                     ctx.window(window).request_redraw();
+                }
+            }
+            PlatformEvent::WindowStateChanged { window, info } => {
+                if let Some(w) = self.windows.get_mut(&window) {
+                    w.surface.set_window_info(info);
+                    if w.surface.needs_frame() {
+                        ctx.window(window).request_redraw();
+                    }
                 }
             }
             PlatformEvent::CloseRequested { window } => self.close(ctx, window),

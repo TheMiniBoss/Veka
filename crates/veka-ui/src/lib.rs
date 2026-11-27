@@ -34,6 +34,7 @@ mod state;
 mod surface;
 mod tree;
 pub mod views;
+pub mod window;
 
 pub use element::{Action, Element, Key, View, component};
 pub use env::{Environment, Font};
@@ -41,16 +42,22 @@ pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
 pub use state::State;
 pub use surface::{InputEvent, PointerButton, Surface};
-pub use veka_foundation::{Color, Insets, Point, Rect, Size};
+pub use veka_foundation::{
+    Color, Insets, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo, WindowRegion,
+};
 pub use veka_graphics::{CornerRadii, DrawList, Shape};
 pub use veka_text::Weight;
 
 /// Tout ce qu'il faut pour écrire des vues : `use veka_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::views::*;
+    pub use crate::window::{
+        TitleBar, TitleBarStyle, TitleBarWith, WindowActionExt, WindowButton, WindowButtonWith,
+        perform_window_action,
+    };
     pub use crate::{
         Alignment, Axis, Color, Element, Environment, Font, Insets, Key, Point, Rect, Shape, Size, State,
-        Surface, View, Weight, component,
+        Surface, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
     pub use crate::{HStack, VStack, ZStack};
 }
