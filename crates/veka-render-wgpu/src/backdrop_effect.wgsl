@@ -134,7 +134,7 @@ fn effect_fs(i: EffectOut) -> @location(0) vec4f {
     var flow = vec2f(0.0);
     if (i.flow.x > 0.0) {
         let q = px * i.flow.y;
-        let t = i.flow.z;
+        let t = i.flow.z * 2.2;
         flow.x = sin(q.y * 6.2832 + t * 1.3) + 0.5 * sin((q.x + q.y) * 9.1 - t * 2.1);
         flow.y = cos(q.x * 6.2832 - t * 1.7) + 0.5 * cos((q.x - q.y) * 8.3 + t * 1.9);
         let d_px = d / w;
@@ -315,8 +315,10 @@ fn glass_fs(i: GlassOut) -> @location(0) vec4f {
         let inner = i.p3.y * 0.14 * (1.0 - t);
 
         // Anneau sombre juste à l'intérieur du bord (27).
-        let band = exp(-max(-dist, 0.0) / max(bezel * 0.22, 1.0));
-        let ring = i.p3.x * 0.45 * band;
+        // Un trait fin et net tout au bord, puis une ombre plus large qui s'estompe vers l'intérieur.
+        let inside = max(-dist, 0.0);
+        let band = 0.6 * exp(-inside / max(bezel * 0.12, 1.0)) + 0.4 * exp(-inside / max(bezel * 0.45, 1.0));
+        let ring = clamp(i.p3.x * 0.9 * band, 0.0, 0.6);
         col = (col + vec3f(inner)) * (1.0 - ring);
 
         // Reflet : un trait vif tout au bord, tourné vers la lumière (le pointeur, sinon en haut à gauche).
@@ -327,7 +329,13 @@ fn glass_fs(i: GlassOut) -> @location(0) vec4f {
         let facing = clamp(dot(n, to_light), 0.0, 1.0);
         let back = clamp(dot(n, -to_light), 0.0, 1.0);
         let edge = exp(-max(-dist, 0.0) / 1.6);
-        let spec = i.p2.x * (edge * (0.25 + 0.75 * facing + 0.35 * back) + 0.18 * pow(rim, 3.0) * facing);
+        var spec = i.p2.x * (edge * (0.25 + 0.75 * facing + 0.35 * back) + 0.18 * pow(rim, 3.0) * facing);
+        // Verre interactif : une lueur douce sous le pointeur, et le bord le plus proche s'allume.
+        if (i.light.z > 0.5) {
+            let r = max(min(i.rect.z, i.rect.w) * ps * 0.6, 24.0);
+            let near = exp(-dot(i.light.xy - px, i.light.xy - px) / (r * r));
+            spec += i.p2.x * (0.16 * near + 0.9 * edge * near);
+        }
 
         // Prémultiplié : corps, puis lumière (et anneau) là où le fond est transparent.
         let glow = spec + inner * (1.0 - body_a);

@@ -81,7 +81,7 @@ view Panneau {
 }
 
 view Carte {
-    @State var clarte = 2
+    @State var clarte = 1
 
     VStack(spacing: 10) {
         Text("Liquid Glass")
@@ -103,7 +103,7 @@ view Goutte {
     Text("Eau")
         .font(.headline)
         .frame(110, 110)
-        .liquidDistortion(strength: 6, scale: 90, shape: .circle)
+        .liquidDistortion(strength: 10, scale: 90, shape: .circle)
         .glass(style: .clear, shape: .circle)
 }
 

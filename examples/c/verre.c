@@ -9,13 +9,13 @@
 #include "veka.h"
 
 typedef struct {
-    VekaState *clarte; /* 0 = teinté, 1 = par défaut, 2 = clair */
+    VekaState *clarte; /* 0 = teinté, 1 = par défaut (au départ), 2 = clair */
     VekaState *serre;
 } Verre;
 
 static void setup(VekaContext *cx, void *user) {
     Verre *v = user;
-    v->clarte = veka_state_new_int(cx, 2);
+    v->clarte = veka_state_new_int(cx, 1);
     v->serre = veka_state_new_bool(cx, false);
 }
 
@@ -80,7 +80,7 @@ static VekaElement *goutte(void) {
     VekaGlass g = veka_glass_clear();
     g.shape = VEKA_BACKDROP_SHAPE_CIRCLE;
     VekaElement *eau = veka_frame(veka_font(veka_text("Eau"), VEKA_FONT_HEADLINE), 110, 110);
-    eau = veka_liquid_distortion(eau, 6, 90, 1, VEKA_BACKDROP_SHAPE_CIRCLE, 0);
+    eau = veka_liquid_distortion(eau, 10, 90, 1, VEKA_BACKDROP_SHAPE_CIRCLE, 0);
     return veka_glass(eau, &g, NULL);
 }
 

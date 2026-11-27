@@ -101,7 +101,7 @@ pub fn barre() -> impl View {
 
 /// Une carte en verre clair : le bord tord le fond, le reflet suit le pointeur.
 pub fn carte() -> impl View {
-    let clarte = State::new(2usize);
+    let clarte = State::new(1usize);
     let niveaux = [0.0f32, 0.4, 0.9];
     let noms = ["Teinté", "Par défaut", "Clair"];
     let c = clarte.get();
@@ -127,7 +127,7 @@ pub fn goutte() -> impl View {
     Text("Eau")
         .font(Font::Headline)
         .frame(110, 110)
-        .liquid_distortion(6.0, 90.0, 1.0, Shape::Circle)
+        .liquid_distortion(10.0, 90.0, 1.0, Shape::Circle)
         .glass_with(Glass::clear().shape(Shape::Circle))
 }
 
