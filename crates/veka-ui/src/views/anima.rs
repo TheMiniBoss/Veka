@@ -409,6 +409,12 @@ impl Element {
         self.wrap(TransitionPrim { transition })
     }
 
+    /// Anime ce sous-arbre normalement même si le système demande de réduire les animations (à
+    /// réserver aux mouvements qui portent du sens, comme une jauge).
+    pub fn ignore_reduce_motion(self) -> Element {
+        self.wrap(super::EnvModifier::IgnoreReduceMotion)
+    }
+
     /// Relie cette vue aux autres vues de même `id` : quand l'une disparaît et qu'une autre apparaît
     /// dans la même animation, la nouvelle part de la place et de la taille de l'ancienne (qui est
     /// retirée tout de suite). Comme `matchedGeometryEffect` de SwiftUI, sans espace de noms.

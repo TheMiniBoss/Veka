@@ -169,6 +169,7 @@ impl Host {
         surface.set_window_info(window.info());
         let appearance = ctx.appearance();
         surface.set_system_appearance(appearance.scheme, appearance.accent);
+        surface.set_reduce_motion(appearance.reduce_motion);
         let (width, height) = window.pixel_size();
         let frame = FrameInfo {
             width,
@@ -287,6 +288,7 @@ impl Host {
                 for (&id, w) in self.windows.iter_mut() {
                     w.surface
                         .set_system_appearance(appearance.scheme, appearance.accent);
+                    w.surface.set_reduce_motion(appearance.reduce_motion);
                     if w.surface.needs_frame() {
                         ctx.window(id).request_redraw();
                     }

@@ -384,3 +384,36 @@ fn geometrie_liee_et_fin_d_animation() {
     at(&mut s, 12.0);
     assert_eq!(FINS.with(|f| f.get()), 1);
 }
+
+#[test]
+fn reduire_les_animations() {
+    let mut s = surface(component(vue_largeur));
+    s.set_reduce_motion(true);
+    at(&mut s, 10.0);
+    with_animation(Animation::linear(1.0), || largeur().set(200.0));
+    at(&mut s, 10.0);
+    assert_eq!(width(&s), 200.0, "le layout ne s'anime pas");
+    assert!(!s.is_animating());
+
+    // Les transitions ne gardent que le fondu.
+    let mut s = surface(component(vue_liste));
+    s.set_reduce_motion(true);
+    at(&mut s, 10.0);
+    with_animation(Animation::linear(1.0), || LISTE.with(|c| c.get()).unwrap().set(3));
+    at(&mut s, 10.0);
+    at(&mut s, 10.5);
+    assert_eq!(opacites(&s).len(), 1, "le fondu reste");
+    assert!(transforms(&s).is_empty(), "pas de glissement");
+
+    // `.ignore_reduce_motion()` : animé quand même.
+    fn vue() -> impl View {
+        component(vue_largeur).ignore_reduce_motion()
+    }
+    let mut s = surface(component(vue));
+    s.set_reduce_motion(true);
+    at(&mut s, 10.0);
+    with_animation(Animation::linear(1.0), || largeur().set(200.0));
+    at(&mut s, 10.0);
+    at(&mut s, 10.5);
+    assert!((width(&s) - 150.0).abs() < 0.01, "{}", width(&s));
+}

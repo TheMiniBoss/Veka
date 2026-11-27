@@ -15,7 +15,7 @@ use veka_graphics::{DrawCommand, DrawList};
 use crate::tree::{NodeId, Tree};
 use std::collections::HashMap;
 
-use crate::views::{AnimationPrim, MatchedGeometryPrim, TransitionPrim};
+use crate::views::{AnimationPrim, MatchedGeometryPrim, OffsetPrim, RotationPrim, ScaleEffectPrim, TransitionPrim};
 
 /// Ce qui s'anime sur un nœud.
 #[derive(Default)]
@@ -179,8 +179,9 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
             node.shown = None;
             node.layout_rect
         };
+        let reduce = tree.nodes[id].env.reduces_motion();
         let mut matched = false;
-        if let Some(s) = spec
+        if let Some(s) = spec.filter(|_| !reduce)
             && let Some(k) = matched_key(tree, id)
             && let Some(src) = cx.sources.get_mut(&k)
             && !src.2
@@ -199,7 +200,7 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
             && tree.nodes[id].parent.is_some()
             && let Some(s) = spec
         {
-            let effects = transition_of(&tree.nodes[id].prim).insertion;
+            let effects = reduced(transition_of(&tree.nodes[id].prim).insertion, reduce);
             if !effects.is_empty() {
                 tree.anims.entry(id).or_default().transition = Some(TransitionAnim {
                     animator: Animator::new(s, now, vec![0.0], vec![1.0], None),
@@ -215,8 +216,17 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
         return;
     }
 
-    animate_values(tree, id, spec, now);
-    animate_rect(tree, id, spec, now);
+    // « Réduire les animations » : rien ne se déplace ni ne change de taille ; couleurs et opacité
+    // s'animent toujours.
+    let reduce = tree.nodes[id].env.reduces_motion();
+    let moves = {
+        let p = &tree.nodes[id].prim;
+        downcast::<OffsetPrim>(p).is_some()
+            || downcast::<ScaleEffectPrim>(p).is_some()
+            || downcast::<RotationPrim>(p).is_some()
+    };
+    animate_values(tree, id, spec.filter(|_| !(reduce && moves)), now);
+    animate_rect(tree, id, spec.filter(|_| !reduce), now);
 
     for c in tree.nodes[id].children.clone() {
         if tree.nodes[c].leaving {
@@ -239,7 +249,8 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
 }
 
 fn start_removal(tree: &mut Tree, id: NodeId, spec: Option<Animation>, now: f64, gone: &mut Vec<NodeId>) {
-    let effects = transition_of(&tree.nodes[id].prim).removal;
+    let reduce = tree.nodes[id].env.reduces_motion();
+    let effects = reduced(transition_of(&tree.nodes[id].prim).removal, reduce);
     let Some(s) = spec.filter(|_| !effects.is_empty()) else {
         gone.push(id);
         return;
@@ -253,6 +264,17 @@ fn start_removal(tree: &mut Tree, id: NodeId, spec: Option<Animation>, now: f64,
         removal: true,
         progress: from,
     });
+}
+
+/// Sous « Réduire les animations », une transition ne garde que son fondu.
+fn reduced(effects: Vec<TransitionEffect>, reduce: bool) -> Vec<TransitionEffect> {
+    if !reduce {
+        return effects;
+    }
+    effects
+        .into_iter()
+        .filter(|e| matches!(e, TransitionEffect::Opacity | TransitionEffect::Blur(_)))
+        .collect()
 }
 
 fn transition_of(prim: &Rc<dyn crate::Primitive>) -> Transition {

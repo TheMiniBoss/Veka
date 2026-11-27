@@ -142,7 +142,12 @@ impl Surface {
 
     pub fn set_environment(&mut self, env: Environment) {
         let window = self.env.window;
-        self.env = Rc::new(Environment { window, ..env });
+        let reduce_motion = self.env.reduce_motion;
+        self.env = Rc::new(Environment {
+            window,
+            reduce_motion,
+            ..env
+        });
         self.needs_layout = true;
     }
 
@@ -163,6 +168,17 @@ impl Surface {
             self.env = Rc::new(Environment {
                 color_scheme: scheme,
                 system_accent: accent,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    /// Le réglage « Réduire les animations » du système, donné par l'hôte.
+    pub fn set_reduce_motion(&mut self, reduce: bool) {
+        if self.env.reduce_motion != reduce {
+            self.env = Rc::new(Environment {
+                reduce_motion: reduce,
                 ..(*self.env).clone()
             });
             self.needs_layout = true;

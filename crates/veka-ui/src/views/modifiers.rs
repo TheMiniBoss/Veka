@@ -34,6 +34,8 @@ pub enum EnvModifier {
     Theme(ThemeRef),
     ColorScheme(ColorScheme),
     ColorAdjust(ColorAdjust),
+    /// `.ignore_reduce_motion()`.
+    IgnoreReduceMotion,
 }
 
 impl EnvModifier {
@@ -52,6 +54,7 @@ impl EnvModifier {
                 ColorAdjust::HueRotation(_) => "hueRotation",
                 ColorAdjust::Grayscale(_) => "grayscale",
             },
+            EnvModifier::IgnoreReduceMotion => "ignoreReduceMotion",
         }
     }
 }
@@ -73,6 +76,7 @@ impl Primitive for EnvModifier {
             EnvModifier::Theme(t) => env.theme = Some(t.clone()),
             EnvModifier::ColorScheme(s) => env.color_scheme = *s,
             EnvModifier::ColorAdjust(a) => env.adjust(*a),
+            EnvModifier::IgnoreReduceMotion => env.ignore_reduce_motion = true,
         }
         true
     }
