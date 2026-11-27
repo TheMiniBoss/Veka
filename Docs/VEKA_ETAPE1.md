@@ -365,6 +365,37 @@ pub trait Renderer {
 
 ---
 
+### 8.4 Fenêtres personnalisées (sans barre ni boutons du système)
+
+Une fenêtre peut être **entièrement dessinée par Veka** : pas de barre de titre ni de boutons Windows / macOS,
+c'est l'interface Veka qui fait la barre, les boutons fermer / réduire / agrandir et les bords.
+
+```rust
+Window::new("Veka").chrome(Chrome::Custom { transparent: true, shadow: true, corner_radius: 12.0 })
+```
+
+| `Chrome` | Résultat |
+|---|---|
+| `System` (défaut) | barre et boutons de l'OS |
+| `Hidden` | macOS : barre transparente, contenu sous la barre, boutons « feux » gardés ou masqués ; Windows : barre masquée, bordure gardée |
+| `Custom` | aucune décoration de l'OS ; fond transparent possible, ombre et coins arrondis demandés à l'OS |
+
+Côté vues, des modifiers disent à la plateforme ce que représente chaque zone :
+
+- `.window_drag_area()` : la zone déplace la fenêtre (double-clic = agrandir, comme l'OS) ;
+- `.window_control(Close | Minimize | Maximize | Fullscreen)` : un bouton Veka quelconque qui pilote la fenêtre ;
+- les bords redimensionnent la fenêtre (marge réglable).
+
+Ces zones sont envoyées au trait `Platform` sous forme de **régions** (pas d'appel système dans le cœur). Elles
+permettent à l'OS de garder ses comportements natifs : sur Windows, la plateforme répond « bouton agrandir » au
+système pour la zone correspondante, ce qui garde les **dispositions d'ancrage** (Snap Layouts) de Windows 11 au
+survol ; sur macOS, plein écran et ancrage restent ceux du système.
+
+Limite de winit : il sait retirer les décorations, rendre la fenêtre transparente, la déplacer et la
+redimensionner depuis Veka, et masquer les boutons macOS ; il ne sait pas répondre au système sur les zones
+(Snap Layouts) ni régler les coins arrondis de Windows 11. Ces deux points passent par un petit ajout natif
+dans `veka-platform-winit` (Win32 / DWM via le handle de la fenêtre), sans toucher au cœur.
+
 ## 9. Interface C (veka-ffi)
 
 ### 9.1 Principes
@@ -467,6 +498,7 @@ Compilation : `cmake` sur les deux OS (MSVC sous Windows, clang sous macOS), li�
 | 4 | Police par défaut de l'étape 1 | **Inter embarquée (OFL)**, rendu identique partout ; LT Flode Neue après vérif de licence | polices du système (Segoe UI / SF Pro) via `Platform` |
 | 5 | Rendu des formes | **SDF analytique maison** dans wgpu (même SDF que le hit-test et le futur verre, shaders entièrement à nous) | Vello (rendu 2D complet, mais modèle et shaders imposés, plus dur à porter vers Unreal / Unity) |
 | 6 | Modèle de l'API C | **Vue avec fonction `body` ré-appelée + état géré par Veka** (même modèle que Rust) | arbre impératif (créer / modifier / supprimer des widgets à la main) |
+| 7 | Fenêtres personnalisées | **API et régions prévues dans `Platform` dès l'étape 1**, `Chrome::Custom` construit **juste après** l'étape 1 (l'exemple compteur garde la barre système) | tout construire dans l'étape 1 |
 
 Questions ouvertes (ne bloquent pas l'étape 1) :
 
