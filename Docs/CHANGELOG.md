@@ -10,6 +10,10 @@ Le plus récent en premier.
 - macOS : menu d'application (Masquer ⌘H, Masquer les autres ⌥⌘H, Quitter ⌘Q ; Fenêtre : Réduire ⌘M, Zoom,
   Plein écran ⌃⌘F, Fermer ⌘W). Quitter (menu, Dock) demande la fermeture de chaque fenêtre, comme sur Windows.
 - macOS : « Réduire les animations » et la couleur d'accent sont relus dès qu'ils changent dans les Réglages.
+- Barre de titre au style Mac : le feu vert passe en plein écran (convention de macOS) et chaque feu montre son
+  symbole au survol (×, −, flèches). Le menu porte le nom du paquet `.app` quand il y en a un.
+- Exemple `fenetre_transparente` : la carte prend le fond de fenêtre du thème (le blanc fixe rendait le texte
+  illisible en mode sombre).
 
 ## Étape 6 — Liquid Glass
 

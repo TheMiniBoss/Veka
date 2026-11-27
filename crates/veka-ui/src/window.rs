@@ -330,6 +330,68 @@ fn paint_mac_light(
         env.adjusted(Color::Black.with_alpha(0.12)),
         0.5,
     );
+    if st.hovered {
+        paint_mac_glyph(cx, rect, control, env);
+    }
+}
+
+/// Le symbole sombre qu'affiche un feu de macOS au survol : ×, −, ou les deux flèches du plein écran.
+fn paint_mac_glyph(cx: &mut PaintCx<'_>, rect: Rect, control: WindowControl, env: &Environment) {
+    let ink = env.adjusted(Color::Black.with_alpha(0.55));
+    let c = rect.center();
+    let s = rect.size.width / 12.0;
+    let list = cx.list();
+    let rotated = |list: &mut veka_graphics::DrawList, angle: f32, r: Rect| {
+        let t = Transform2D::translation(-c.x, -c.y)
+            .then(&Transform2D::rotation(angle.to_radians()))
+            .then(&Transform2D::translation(c.x, c.y));
+        list.push(DrawCommand::PushTransform(t));
+        list.fill(Shape::Rectangle, r, ink);
+        list.push(DrawCommand::PopTransform);
+    };
+    match control {
+        WindowControl::Close => {
+            for angle in [45.0_f32, -45.0] {
+                rotated(
+                    list,
+                    angle,
+                    Rect::new(c.x - 3.5 * s, c.y - 0.6 * s, 7.0 * s, 1.2 * s),
+                );
+            }
+        }
+        WindowControl::Minimize => {
+            list.fill(
+                Shape::Rectangle,
+                Rect::new(c.x - 3.5 * s, c.y - 0.6 * s, 7.0 * s, 1.2 * s),
+                ink,
+            );
+        }
+        WindowControl::Maximize => {
+            list.fill(
+                Shape::Rectangle,
+                Rect::new(c.x - 3.5 * s, c.y - 0.6 * s, 7.0 * s, 1.2 * s),
+                ink,
+            );
+            list.fill(
+                Shape::Rectangle,
+                Rect::new(c.x - 0.6 * s, c.y - 3.5 * s, 1.2 * s, 7.0 * s),
+                ink,
+            );
+        }
+        WindowControl::Fullscreen => {
+            // Deux coins pleins, en haut à gauche et en bas à droite, comme les flèches d'Apple.
+            let k = 3.2 * s;
+            let g = 0.6 * s;
+            for (dx, dy) in [(-1.0_f32, -1.0_f32), (1.0, 1.0)] {
+                let ox = if dx < 0.0 { c.x - g - k } else { c.x + g };
+                let oy = if dy < 0.0 { c.y - g - k } else { c.y + g };
+                let corner_x = if dx < 0.0 { ox } else { ox + k - 1.2 * s };
+                let corner_y = if dy < 0.0 { oy } else { oy + k - 1.2 * s };
+                list.fill(Shape::Rectangle, Rect::new(ox, corner_y, k, 1.2 * s), ink);
+                list.fill(Shape::Rectangle, Rect::new(corner_x, oy, 1.2 * s, k), ink);
+            }
+        }
+    }
 }
 
 /// Un bouton de fenêtre au style du système.
@@ -424,7 +486,8 @@ pub fn TitleBarWith(title: impl Into<String>, style: TitleBarStyle) -> Element {
                     vec![
                         WindowButtonWith(WindowControl::Close, style),
                         WindowButtonWith(WindowControl::Minimize, style),
-                        WindowButtonWith(WindowControl::Maximize, style),
+                        // Le feu vert de macOS passe en plein écran (⌥ pour agrandir viendra avec le clavier).
+                        WindowButtonWith(WindowControl::Fullscreen, style),
                         Element::new(Spacer { min_length: 0.0 }, vec![]),
                     ],
                 )

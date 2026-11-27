@@ -18,9 +18,9 @@ use objc2::{
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply,
     NSBackingStoreType, NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu,
-    NSMenuItem, NSResponder, NSSystemColorsDidChangeNotification, NSTrackingArea, NSTrackingAreaOptions,
-    NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
-    NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
+    NSMenuItem, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask,
+    NSWindowTitleVisibility, NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
     NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize,
@@ -574,7 +574,11 @@ fn request_close_all() {
 
 /// Le menu d'application minimal que macOS attend : sans lui, ni ⌘Q ni ⌘H ni ⌘W.
 fn install_menu(mtm: MainThreadMarker, app: &NSApplication) {
-    let name = NSProcessInfo::processInfo().processName().to_string();
+    // Le nom du paquet .app s'il y en a un, sinon celui de l'exécutable.
+    let name = NSRunningApplication::currentApplication()
+        .localizedName()
+        .unwrap_or_else(|| NSProcessInfo::processInfo().processName())
+        .to_string();
     let item = |title: &str, action: Option<objc2::runtime::Sel>, key: &str| {
         // SAFETY : initialiseur désigné ; les actions sont des méthodes standard d'AppKit, envoyées
         // à la chaîne de répondeurs.
