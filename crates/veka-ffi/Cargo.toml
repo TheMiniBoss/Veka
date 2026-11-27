@@ -5,8 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
+description = "Interface C de Veka : veka.dll / libveka.dylib et include/veka.h."
+
+[lib]
+# `veka.dll` / `libveka.dylib` / `libveka.so`, et la version statique.
+name = "veka"
+crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+veka-foundation.workspace = true
+veka-ui.workspace = true
+veka-platform.workspace = true
+veka-app.workspace = true
 
 [lints]
 workspace = true

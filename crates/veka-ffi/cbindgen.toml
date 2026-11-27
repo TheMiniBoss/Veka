@@ -1,0 +1,22 @@
+language = "C"
+header = """/*
+ * veka.h : interface C de Veka.
+ *
+ * Fichier généré par `cargo xtask header` (cbindgen) : ne pas modifier à la main.
+ * Règles : voir crates/veka-ffi/src/lib.rs (propriété des éléments, erreurs, fil).
+ */"""
+include_guard = "VEKA_H"
+cpp_compat = true
+usize_is_size_t = true
+style = "both"
+documentation = true
+documentation_style = "c99"
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
+no_includes = true
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"
+
+[export]
+include = ["VekaValue", "VekaParam"]

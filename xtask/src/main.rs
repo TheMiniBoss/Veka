@@ -2,6 +2,8 @@
 //!
 //! - `check-core` : vérifie que le cœur de Veka ne dépend d'aucune API système et qu'il compile
 //!   pour WebAssembly (règle n° 1 de `Docs/VEKA_ETAPE1.md` §3).
+//! - `header` : régénère `crates/veka-ffi/include/veka.h` avec cbindgen.
+//! - `header --check` : échoue si `veka.h` n'est pas à jour (CI).
 
 use std::process::{Command, ExitCode};
 
@@ -31,8 +33,9 @@ const FORBIDDEN: &[&str] = &[
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("check-core") => check_core(),
+        Some("header") => header(std::env::args().nth(2).as_deref() == Some("--check")),
         _ => {
-            eprintln!("usage : cargo xtask check-core");
+            eprintln!("usage : cargo xtask check-core | header [--check]");
             ExitCode::FAILURE
         }
     }
@@ -81,4 +84,48 @@ fn check_core() -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+fn header(check: bool) -> ExitCode {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("racine du dépôt");
+    let krate = root.join("crates/veka-ffi");
+    let path = krate.join("include/veka.h");
+    let config = match cbindgen::Config::from_file(krate.join("cbindgen.toml")) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cbindgen.toml : {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let bindings = match cbindgen::Builder::new()
+        .with_crate(&krate)
+        .with_config(config)
+        .generate()
+    {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("cbindgen : {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut generated = Vec::new();
+    bindings.write(&mut generated);
+    if check {
+        let current = std::fs::read(&path).unwrap_or_default();
+        if current != generated {
+            eprintln!(
+                "✗ {} n'est pas à jour : lancez `cargo xtask header`",
+                path.display()
+            );
+            return ExitCode::FAILURE;
+        }
+        println!("✓ veka.h est à jour");
+    } else {
+        std::fs::create_dir_all(path.parent().unwrap()).expect("dossier include");
+        std::fs::write(&path, generated).expect("écriture de veka.h");
+        println!("✓ {} régénéré", path.display());
+    }
+    ExitCode::SUCCESS
 }

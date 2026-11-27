@@ -249,6 +249,24 @@ impl<T: 'static> State<T> {
     }
 }
 
+impl<T> State<T> {
+    /// La poignée sous forme d'entier, pour la passer à travers une interface C.
+    #[doc(hidden)]
+    pub fn to_bits(self) -> u64 {
+        slotmap::Key::data(&self.key).as_ffi()
+    }
+
+    /// Retrouve une poignée créée par [`to_bits`](Self::to_bits). Une poignée périmée ou d'un autre
+    /// type fait paniquer à l'usage, sans comportement indéfini.
+    #[doc(hidden)]
+    pub fn from_bits(bits: u64) -> Self {
+        Self {
+            key: slotmap::KeyData::from_ffi(bits).into(),
+            _t: PhantomData,
+        }
+    }
+}
+
 impl<T: Clone + 'static> State<T> {
     pub fn get(&self) -> T {
         self.with(T::clone)

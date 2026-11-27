@@ -35,6 +35,15 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: cargo run --example compteur
+      - name: Exemple C (CMake)
+        run: |
+          cmake -S examples/c -B build/c
+          cmake --build build/c
+      - name: Exemple C (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: build/c/Debug/compteur.exe
 
   core:
     name: Cœur sans OS + WebAssembly
@@ -45,3 +54,5 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask check-core
+      - name: veka.h à jour
+        run: cargo xtask header --check
