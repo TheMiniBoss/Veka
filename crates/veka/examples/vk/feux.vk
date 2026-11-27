@@ -92,6 +92,10 @@ view Feux {
         RoundedRectangle(30)
             .fill(.black)
             .frame(560, 100)
+        // Liseré : sans lui la carte se fond dans une fenêtre sombre.
+        RoundedRectangle(30)
+            .stroke(.gray, lineWidth: 1)
+            .frame(560, 100)
         FeuxDArtifice(fusee: 1, eclat: 2)
     }
     .padding(16)
