@@ -38,6 +38,10 @@ impl NodeAnims {
         self.rect.is_none() && self.values.is_none() && self.transition.is_none()
     }
 
+    pub(crate) fn in_transition(&self) -> bool {
+        self.transition.is_some()
+    }
+
     /// L'état de la transition en cours, pour une vue affichée dans `rect`.
     pub(crate) fn transition_frame(&self, rect: Rect) -> Option<TransitionFrame> {
         let t = self.transition.as_ref()?;

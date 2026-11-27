@@ -36,7 +36,11 @@ fn liste() -> impl View {
             .padding_hv(12.0, 6.0)
             .background_shape(Token::Fill, Shape::Capsule)
             .id(i as i64)
-            .transition(Transition::push(Edge::Bottom).combined(Transition::scale(0.8)))
+            .transition(Transition::asymmetric(
+                // Arrive d'en haut (les lignes s'ajoutent en tête), part en se réduisant.
+                Transition::move_edge(Edge::Top).combined(Transition::opacity()),
+                Transition::scale(0.6).combined(Transition::opacity()),
+            ))
         })
         .collect();
     VStack![spacing: 8;

@@ -178,9 +178,16 @@ impl PaintCx<'_> {
             .expect("type d'état du primitive")
     }
 
+    /// Dessine les enfants. Ceux qui entrent ou sortent (transition en cours) passent au-dessus de
+    /// leurs frères : une ligne qui glisse ne disparaît pas sous ses voisines.
     pub fn paint_children(&mut self) {
-        for &child in &self.tree.nodes[self.node].children {
-            crate::tree::paint(self.tree, self.list, child);
+        let children = &self.tree.nodes[self.node].children;
+        let moving = |c: &NodeId| self.tree.anims.get(c).is_some_and(|a| a.in_transition());
+        for child in children.iter().filter(|c| !moving(c)) {
+            crate::tree::paint(self.tree, self.list, *child);
+        }
+        for child in children.iter().filter(|c| moving(c)) {
+            crate::tree::paint(self.tree, self.list, *child);
         }
     }
 }
