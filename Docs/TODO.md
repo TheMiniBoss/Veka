@@ -56,6 +56,12 @@
 - [ ] Forme prise du fond ou du découpage de la vue (aujourd'hui : paramètre `shape`).
 - [ ] Mesurer le coût GPU (requêtes de temps) et l'afficher dans l'exemple.
 
+## Étape 7 (un `.vk` rapide)
+- [x] PR N : cœur optimisé en debug, gains côté interface, allocations de l'interpréteur, mesure et `VEKA_STATS`.
+- [ ] PR O : interpréteur compilé au chargement (cases, schéma résolu, constantes, fermetures), fonctions pures
+  mémorisées. Cibles : feux ≤ 4 ms en debug, ≤ 1,5 ms en release.
+- [ ] Plus tard : ne pas réévaluer les sous-arbres qui ne lisent pas l'horloge.
+
 ## Plus tard
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).
 - [ ] Liaisons C++, C#, Unreal, Unity sur `veka.h`.

@@ -83,18 +83,46 @@ pub(crate) struct Cx {
 impl Cx {
     /// Un contexte sans vue (thèmes, valeurs initiales).
     pub fn root(shared: Rc<Shared>, host: Rc<Host>, views: ViewFn) -> Self {
+        Self::bare(shared, host, views, Rc::new(RefCell::new(Vec::new())))
+    }
+
+    /// Comme [`root`](Self::root), avec la liste des rappels de timeline donnée.
+    fn bare(shared: Rc<Shared>, host: Rc<Host>, views: ViewFn, tl_handlers: TimelineHandlers) -> Self {
+        // Les parties vides sont partagées : un appel de fonction (souvent, à chaque image) n'alloue pas.
+        struct Empty {
+            vars: Rc<Vars>,
+            name: Rc<str>,
+            slots: Rc<HashMap<String, SlotVal>>,
+            handlers: Rc<HashMap<String, Handler>>,
+        }
+        thread_local! {
+            static EMPTY: Empty = Empty {
+                vars: Rc::new(Vars::new()),
+                name: Rc::from(""),
+                slots: Rc::new(HashMap::new()),
+                handlers: Rc::new(HashMap::new()),
+            };
+        }
+        let (vars, name, slots, handlers) = EMPTY.with(|e| {
+            (
+                e.vars.clone(),
+                e.name.clone(),
+                e.slots.clone(),
+                e.handlers.clone(),
+            )
+        });
         Cx {
             shared,
             vars: None,
-            pre: Rc::new(Vars::new()),
+            pre: vars.clone(),
             locals: Vec::new(),
             views,
             host,
-            view: Rc::from(""),
-            params: Rc::new(Vars::new()),
-            slots: Rc::new(HashMap::new()),
-            handlers: Rc::new(HashMap::new()),
-            tl_handlers: Rc::new(RefCell::new(Vec::new())),
+            view: name,
+            params: vars,
+            slots,
+            handlers,
+            tl_handlers,
             depth: 0,
         }
     }
@@ -351,24 +379,31 @@ impl Cx {
                 ),
             ));
         }
-        let mut cx = Cx::root(self.shared.clone(), self.host.clone(), self.views.clone());
+        // Une fonction ne relève pas de rappels : elle partage la liste de l'appelant (sans allouer).
+        let mut cx = Cx::bare(
+            self.shared.clone(),
+            self.host.clone(),
+            self.views.clone(),
+            self.tl_handlers.clone(),
+        );
+        cx.locals.reserve(f.params.len() + f.body.len());
         cx.depth = self.depth + 1;
         for ((name, ty), (label, v)) in f.params.iter().zip(args) {
-            if label.as_ref().is_some_and(|l| l != name) {
+            if label.as_ref().is_some_and(|l| **l != **name) {
                 return Err(err(
                     span,
                     format!("`{}` : paramètre `{name}` attendu ici", f.name),
                 ));
             }
             let v = check_type(ty, v, span)?;
-            cx.locals.push((Rc::from(name.as_str()), v));
+            cx.locals.push((name.clone(), v));
         }
         let mut result = Val::Unit;
         for st in &f.body {
             match st {
                 Stmt::Let { name, value, .. } => {
                     let v = cx.eval(value)?;
-                    cx.locals.push((Rc::from(name.as_str()), v));
+                    cx.locals.push((name.clone(), v));
                 }
                 Stmt::Expr(e) => result = cx.eval(e)?,
                 Stmt::If { span, .. } | Stmt::Assign { span, .. } | Stmt::Emit { span, .. } => {
@@ -430,7 +465,7 @@ impl Cx {
                 }
                 Stmt::Let { name, value, .. } => {
                     let v = self.eval(value)?;
-                    self.locals.push((Rc::from(name.as_str()), v));
+                    self.locals.push((name.clone(), v));
                 }
                 Stmt::Assign { span, .. } | Stmt::Emit { span, .. } => {
                     return Err(err(
@@ -480,10 +515,10 @@ impl Cx {
         for (i, v) in items.into_iter().enumerate() {
             let mark = self.locals.len();
             if let Some(p) = body.params.first() {
-                self.locals.push((Rc::from(p.as_str()), v));
+                self.locals.push((p.clone(), v));
             }
             if let Some(p) = body.params.get(1) {
-                self.locals.push((Rc::from(p.as_str()), Val::Int(i as i64)));
+                self.locals.push((p.clone(), Val::Int(i as i64)));
             }
             let r = self.body(&body.body);
             self.locals.truncate(mark);
@@ -583,7 +618,7 @@ impl Cx {
     fn handler(&self, c: &Closure) -> Handler {
         let cx = self.clone();
         let body = Rc::new(c.body.clone());
-        let param = c.params.first().map(|p| Rc::<str>::from(p.as_str()));
+        let param = c.params.first().cloned();
         Rc::new(move |v| {
             let mut cx = cx.clone();
             if let Some(p) = &param {
@@ -872,7 +907,7 @@ impl Cx {
                 }
                 Stmt::Let { name, value, .. } => {
                     let v = self.eval(value)?;
-                    self.locals.push((Rc::from(name.as_str()), v));
+                    self.locals.push((name.clone(), v));
                 }
                 Stmt::Emit { name, value, span } => {
                     let declared = self
