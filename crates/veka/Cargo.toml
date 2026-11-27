@@ -1,0 +1,17 @@
+[package]
+name = "veka"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Veka : bibliothèque d'interface utilisateur pour Windows et macOS, utilisable partout."
+
+[dependencies]
+veka-foundation.workspace = true
+veka-graphics.workspace = true
+veka-text.workspace = true
+veka-ui.workspace = true
+
+[lints]
+workspace = true

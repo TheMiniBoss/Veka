@@ -1,0 +1,20 @@
+[package]
+name = "veka-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+veka-foundation.workspace = true
+veka-graphics.workspace = true
+parley.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["default-fonts"]
+## Embarque LT Flode Neue (licence SIL OFL) : rendu identique partout, sans police du système.
+default-fonts = []
