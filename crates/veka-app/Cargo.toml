@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 veka-foundation.workspace = true
 veka-ui.workspace = true
+veka-lang.workspace = true
 veka-platform.workspace = true
 veka-render.workspace = true
 veka-render-wgpu.workspace = true

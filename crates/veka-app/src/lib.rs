@@ -14,18 +14,30 @@
 //! App::new().window("Bonjour", bonjour).run().unwrap();
 //! ```
 //!
+//! Une fenêtre peut aussi venir d'un fichier `.vk` : [`App::window_vk`]. En debug, le fichier est
+//! relu dès qu'il change (voir [`App::hot_reload`]) ; une erreur s'affiche en bandeau, l'ancienne
+//! version reste à l'écran.
+//!
 //! Avec `VEKA_EXIT_AFTER_FIRST_FRAME=1`, l'application se ferme après sa première image (CI).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime};
+
+use veka_lang::{Diagnostic, Program};
 
 use veka_platform::{
     MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowId,
 };
 use veka_render::{FrameInfo, RenderError, Renderer};
 use veka_render_wgpu::{SurfaceOptions, WindowRenderer};
-use veka_ui::{Color, Element, InputEvent, PointerButton, Surface, View, component};
+use veka_ui::{
+    Axis, Color, Element, Font, InputEvent, PointerButton, State, Surface, View, component, views,
+};
 
 pub use veka_platform::{Chrome, Size, WindowDesc};
 
@@ -51,9 +63,98 @@ impl std::fmt::Display for AppError {
 impl std::error::Error for AppError {}
 
 /// Une application Veka : une ou plusieurs fenêtres, chacune avec sa vue racine.
-#[derive(Default)]
 pub struct App {
     windows: Vec<(WindowDesc, Element)>,
+    files: Vec<VkFile>,
+    hot_reload: bool,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            windows: Vec::new(),
+            files: Vec::new(),
+            hot_reload: cfg!(debug_assertions),
+        }
+    }
+}
+
+/// Un fichier `.vk` affiché : son programme, et de quoi redessiner son bandeau d'erreurs.
+struct VkFile {
+    path: PathBuf,
+    program: Program,
+    banner: Banner,
+}
+
+/// Les erreurs à afficher par-dessus une vue `.vk`.
+#[derive(Clone, Default)]
+struct Banner {
+    errors: Rc<RefCell<Vec<String>>>,
+    /// L'état du bandeau, connu après sa première évaluation.
+    state: Rc<Cell<Option<State<u32>>>>,
+}
+
+impl Banner {
+    fn set(&self, errors: Vec<String>) {
+        if *self.errors.borrow() == errors {
+            return;
+        }
+        for e in &errors {
+            eprintln!("Veka .vk : {e}");
+        }
+        *self.errors.borrow_mut() = errors;
+        if let Some(s) = self.state.get()
+            && s.is_alive()
+        {
+            s.update(|g| *g += 1);
+        }
+    }
+
+    /// La vue, avec le bandeau en haut quand il y a des erreurs. L'arbre garde la même forme
+    /// avec ou sans bandeau : la vue (et ses états) n'est pas recréée.
+    fn wrap(&self, content: impl Fn() -> Element + 'static) -> Element {
+        let banner = self.clone();
+        component(move || {
+            let generation = State::new(0u32);
+            banner.state.set(Some(generation));
+            let _ = generation.get();
+            let errors = banner.errors.borrow();
+            let overlay = if errors.is_empty() {
+                Vec::new()
+            } else {
+                let lines: Vec<Element> = errors
+                    .iter()
+                    .take(5)
+                    .map(|e| {
+                        views::Text(e.clone())
+                            .font(Font::Footnote)
+                            .foreground(Color::White)
+                    })
+                    .collect();
+                let bandeau = views::stack(Axis::Vertical, Some(4.0), lines)
+                    .padding(12)
+                    .background(Color::Red);
+                vec![bandeau, views::Spacer()]
+            };
+            views::stack(
+                Axis::Depth,
+                None,
+                vec![content(), views::stack(Axis::Vertical, Some(0.0), overlay)],
+            )
+        })
+    }
+}
+
+fn messages(errors: &[Diagnostic]) -> Vec<String> {
+    errors
+        .iter()
+        .filter(|d| d.is_error())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn modified(path: &PathBuf) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 impl std::fmt::Debug for App {
@@ -88,6 +189,44 @@ impl App {
         self
     }
 
+    /// Ajoute une fenêtre qui affiche la vue `view` du fichier `.vk` `path` (le titre est le nom
+    /// de la vue). Le fichier est lu tout de suite ; un fichier illisible ou faux s'affiche en erreur.
+    pub fn window_vk(self, path: impl Into<PathBuf>, view: &str) -> Self {
+        self.window_vk_with(WindowDesc::new(view), path, view)
+    }
+
+    /// Comme [`window_vk`](Self::window_vk), avec tous les réglages de la fenêtre.
+    pub fn window_vk_with(mut self, desc: WindowDesc, path: impl Into<PathBuf>, view: &str) -> Self {
+        let path = path.into();
+        let (program, errors) = match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                let p = Program::new(&source);
+                let e = messages(&p.errors());
+                (p, e)
+            }
+            Err(e) => (Program::new(""), vec![format!("{} : {e}", path.display())]),
+        };
+        let banner = Banner::default();
+        banner.set(errors);
+        let root = {
+            let (program, view) = (program.clone(), view.to_string());
+            banner.wrap(move || program.view(&view))
+        };
+        self.windows.push((desc, root));
+        self.files.push(VkFile {
+            path,
+            program,
+            banner,
+        });
+        self
+    }
+
+    /// Relit les fichiers `.vk` quand ils changent. Par défaut : oui en debug, non en release.
+    pub fn hot_reload(mut self, on: bool) -> Self {
+        self.hot_reload = on;
+        self
+    }
+
     /// Ouvre les fenêtres avec la plateforme de l'OS et tourne jusqu'à la fermeture de la dernière.
     pub fn run(self) -> Result<(), AppError> {
         #[cfg(windows)]
@@ -110,6 +249,11 @@ impl App {
             windows: HashMap::new(),
             error: None,
             exit_after_first_frame,
+            watch: Watch {
+                files: self.files,
+                changed: Vec::new(),
+                on: self.hot_reload,
+            },
         };
         platform
             .run(Box::new(Reporter {
@@ -146,6 +290,86 @@ struct Host {
     windows: HashMap<WindowId, HostWindow>,
     error: Option<AppError>,
     exit_after_first_frame: bool,
+    watch: Watch,
+}
+
+/// Le rechargement à chaud : un fil surveille la date des fichiers et réveille la boucle.
+struct Watch {
+    files: Vec<VkFile>,
+    /// Un drapeau par fichier, levé par le fil de surveillance.
+    changed: Vec<Arc<AtomicBool>>,
+    on: bool,
+}
+
+impl Watch {
+    fn start(&mut self, ctx: &dyn PlatformContext) {
+        if !self.on || self.files.is_empty() {
+            return;
+        }
+        let Some(waker) = ctx.waker() else { return };
+        self.changed = self
+            .files
+            .iter()
+            .map(|_| Arc::new(AtomicBool::new(false)))
+            .collect();
+        let watched: Vec<(PathBuf, Arc<AtomicBool>)> = self
+            .files
+            .iter()
+            .zip(&self.changed)
+            .map(|(f, c)| (f.path.clone(), c.clone()))
+            .collect();
+        let spawned = std::thread::Builder::new()
+            .name("veka-vk-watch".into())
+            .spawn(move || {
+                let mut dates: Vec<Option<SystemTime>> = watched.iter().map(|(p, _)| modified(p)).collect();
+                loop {
+                    std::thread::sleep(Duration::from_millis(250));
+                    let mut wake = false;
+                    for ((path, flag), date) in watched.iter().zip(dates.iter_mut()) {
+                        let now = modified(path);
+                        if now != *date {
+                            *date = now;
+                            flag.store(true, Ordering::Release);
+                        }
+                        // Toujours en attente (réveil perdu) : on redemande.
+                        wake |= flag.load(Ordering::Acquire);
+                    }
+                    if wake {
+                        waker();
+                    }
+                }
+            });
+        if spawned.is_err() {
+            eprintln!("Veka .vk : rechargement à chaud indisponible (fil non créé)");
+        }
+    }
+
+    /// Relit les fichiers signalés.
+    fn reload(&self) {
+        for (file, flag) in self.files.iter().zip(&self.changed) {
+            if !flag.swap(false, Ordering::AcqRel) {
+                continue;
+            }
+            match std::fs::read_to_string(&file.path) {
+                // Un éditeur peut vider le fichier avant de l'écrire : on attend la suite.
+                Ok(source) if source.trim().is_empty() => {}
+                Ok(source) => match file.program.reload(&source) {
+                    Ok(()) => file.banner.set(Vec::new()),
+                    Err(errors) => file.banner.set(messages(&errors)),
+                },
+                Err(e) => file.banner.set(vec![format!("{} : {e}", file.path.display())]),
+            }
+        }
+    }
+
+    /// Une erreur dans une action `.vk` (après un clic…).
+    fn runtime_errors(&self) {
+        if let Some(d) = Program::take_runtime_error() {
+            for f in &self.files {
+                f.banner.set(vec![d.to_string()]);
+            }
+        }
+    }
 }
 
 impl Host {
@@ -204,6 +428,8 @@ impl Host {
             return;
         };
         w.surface.handle(event);
+        self.watch.runtime_errors();
+        let w = self.windows.get_mut(&id).expect("fenêtre ouverte");
         let actions = w.surface.take_window_actions();
         if w.surface.needs_frame() {
             ctx.window(id).request_redraw();
@@ -226,6 +452,15 @@ impl Host {
                 }
                 if self.windows.is_empty() {
                     ctx.exit();
+                }
+                self.watch.start(ctx);
+            }
+            PlatformEvent::Wake => {
+                self.watch.reload();
+                for (&id, w) in self.windows.iter() {
+                    if w.surface.needs_frame() {
+                        ctx.window(id).request_redraw();
+                    }
                 }
             }
             PlatformEvent::WindowResized {

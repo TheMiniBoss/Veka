@@ -1310,6 +1310,7 @@ name = "veka-app"
 version = "0.1.0"
 dependencies = [
  "veka-foundation",
+ "veka-lang",
  "veka-platform",
  "veka-platform-macos",
  "veka-platform-windows",

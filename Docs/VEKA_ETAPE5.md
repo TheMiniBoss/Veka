@@ -1,6 +1,6 @@
 # Veka : étape 5, le langage `.vk`
 
-Statut : **à valider**. Fait suite à `VEKA_ETAPE4.md`. Reprend le langage de VekaUI (`VekaLang` : `view`, `@State`,
+Statut : **validé** (les 8 choix recommandés) ; PR J faite, PR K à venir. Fait suite à `VEKA_ETAPE4.md`. Reprend le langage de VekaUI (`VekaLang` : `view`, `@State`,
 `@Param`, `@Slot`, `@Event`, `model`, `ForEach`, `withAnimation`, `emit`) et la leçon des feux d'artifice (écrits
 en C++ faute de `random`, `cos` et d'horloge dans le langage). On garde la conception et la syntaxe, pas le code.
 
@@ -192,6 +192,9 @@ view Coeur {
   - `App::window_vk`, rechargement à chaud et bandeau d'erreur ;
   - `compteur.vk`, `colora.vk` et `anima.vk`, avec les tests « même liste de dessin » ;
   - essais sur le PC.
+  - Fait. Écarts : les thèmes dans le fichier sont arrivés dès la PR J ; `.blue` (minuscule) est la couleur
+    fixe `Color::Blue`, `.Blue` le jeton ; `.colorScheme(.system)` suit le parent ; le rechargement se règle
+    sur l'app (`App::hot_reload(false)`) ; la pulsation en timeline d'`anima.vk` attend la PR K.
 - **PR K** :
   - composants (`@Param`, `@Slot`, `@Event`, `.on`), `import`, `model` ;
   - fonctions de l'utilisateur, bibliothèque maths, `random`, `@Clock` ;
@@ -200,7 +203,7 @@ view Coeur {
   - les feux d'artifice en `.vk` ;
   - essais sur le PC.
 
-## 6. Choix à valider
+## 6. Choix (validés)
 
 1. **Syntaxe** : *recommandé* = celle de VekaUI, proche de SwiftUI (`view`, `@State`, modifiers en `.nom(…)`), en
    gardant les fichiers de VekaUI lisibles à quelques noms près. Autre possibilité : un format de données (JSON,

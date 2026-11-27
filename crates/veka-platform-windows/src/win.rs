@@ -30,6 +30,7 @@ use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient, ValidateRect
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForSystem, GetDpiForWindow,
@@ -43,12 +44,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetMessageW, GetWindowLongW, HTBOTTOM,
     HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTTOP,
     HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
-    PostMessageW, PostQuitMessage, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED, SM_CXFRAME,
-    SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    PostMessageW, PostQuitMessage, PostThreadMessageW, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED,
+    SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
-    TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
+    TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED,
+    WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE,
     WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
     WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WNDCLASSEXW,
@@ -57,6 +58,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{HSTRING, PCWSTR, w};
 
 const CLASS: PCWSTR = w!("VekaWindow");
+/// Message de fil (sans fenêtre) : un `Waker` a été appelé.
+const WM_VEKA_WAKE: u32 = WM_APP + 1;
 const BASE_DPI: f32 = 96.0;
 
 /// La plateforme Windows. `WindowsPlatform::new().run(app)` ouvre la boucle.
@@ -205,6 +208,7 @@ struct Ctx {
     windows: HashMap<WindowId, Win32Window>,
     next_id: u64,
     frequency: i64,
+    thread: u32,
 }
 
 impl PlatformContext for Ctx {
@@ -314,6 +318,14 @@ impl PlatformContext for Ctx {
 
     fn appearance(&self) -> Appearance {
         APPEARANCE.with(|a| a.get())
+    }
+
+    fn waker(&self) -> Option<veka_platform::Waker> {
+        let thread = self.thread;
+        // SAFETY : message sans pointeur ; un fil terminé fait simplement échouer l'appel.
+        Some(std::sync::Arc::new(move || unsafe {
+            let _ = PostThreadMessageW(thread, WM_VEKA_WAKE, WPARAM(0), LPARAM(0));
+        }))
     }
 }
 
@@ -539,6 +551,7 @@ impl Platform for WindowsPlatform {
                 windows: HashMap::new(),
                 next_id: 1,
                 frequency: frequency.max(1),
+                thread: GetCurrentThreadId(),
             };
             APPEARANCE.with(|a| a.set(read_appearance()));
             RUNNER.with(|r| *r.borrow_mut() = Some(Runner { app, ctx }));
@@ -551,8 +564,12 @@ impl Platform for WindowsPlatform {
                 if got.0 == 0 || got.0 == -1 {
                     break;
                 }
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+                if msg.hwnd.is_invalid() && msg.message == WM_VEKA_WAKE {
+                    push(PlatformEvent::Wake);
+                } else {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
                 pump();
             }
 

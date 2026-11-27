@@ -35,6 +35,13 @@
 - [ ] Couleur du texte animée sans refaire son layout.
 - [ ] Chiffres qui défilent (`content_transition`), morphing de formes.
 
+## Étape 5 (le langage `.vk`)
+- [x] PR J : parseur, imprimeur, interpréteur, `App::window_vk`, rechargement à chaud, exemples.
+- [ ] PR K : `@Param`, `@Slot`, `@Event` / `.on`, `import`, `model`, fonctions, maths, `random`, `@Clock`,
+  timelines dans le fichier, interface C, feux d'artifice en `.vk`.
+- [ ] Indexation (`tableau[i]`), tuples ou structures pour `ForEach`.
+- [ ] Rechargement : surveiller le dossier (événements du système) plutôt que la date toutes les 250 ms.
+
 ## Plus tard
 - [ ] Effets (`Backdrop`, verre).
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).
