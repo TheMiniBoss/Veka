@@ -112,17 +112,36 @@ fn barre_de_titre_hors_ecran() {
     let scale = 2.0;
     let mut surface = Surface::new(component(fenetre_perso));
     surface.resize(Size::new(480.0, 200.0), scale);
-    surface.set_window_info(WindowInfo { active: true, ..WindowInfo::default() });
+    surface.set_window_info(WindowInfo {
+        active: true,
+        ..WindowInfo::default()
+    });
     let list = surface.frame().clone();
-    let img = render_to_rgba(&gpu, &list, FrameInfo { width: 960, height: 400, scale });
+    let img = render_to_rgba(
+        &gpu,
+        &list,
+        FrameInfo {
+            width: 960,
+            height: 400,
+            scale,
+        },
+    );
     if let Ok(path) = std::env::var("VEKA_DUMP_BARRE") {
         std::fs::write(path, &img).unwrap();
     }
     // La croix de fermeture passe par le centre du bouton : pixel sombre.
     let fermer = surface.regions()[3].rect;
     let [r, g, b, _] = pixel(&img, 960, scale, fermer.center());
-    assert!((r as u32 + g as u32 + b as u32) < 300, "croix dessinée au centre ({r}, {g}, {b})");
+    assert!(
+        (r as u32 + g as u32 + b as u32) < 300,
+        "croix dessinée au centre ({r}, {g}, {b})"
+    );
     // Un peu à côté de la croix : le fond.
-    let [r, _, _, _] = pixel(&img, 960, scale, Point::new(fermer.origin.x + 4.0, fermer.center().y));
+    let [r, _, _, _] = pixel(
+        &img,
+        960,
+        scale,
+        Point::new(fermer.origin.x + 4.0, fermer.center().y),
+    );
     assert!(r > 200);
 }
