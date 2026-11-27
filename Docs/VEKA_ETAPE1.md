@@ -1,7 +1,7 @@
 # Veka — Étape 1 : document de conception
 
-> **Statut : proposition, en attente de validation.** Aucun code n'est écrit avant ton accord.
-> Les choix à valider sont regroupés au §12 ; chacun a une recommandation.
+> **Statut : choix 1, 3, 4, 5, 6 validés le 2026-11-27 ; choix 2 et 7 en discussion.** Aucun code n'est écrit avant
+> la validation complète. Voir §12.
 
 | | |
 |---|---|
@@ -250,9 +250,11 @@ autre thread ; la mise en page du texte est pure et parallélisable plus tard. P
   produire des commandes `Glyphs` dans la liste de dessin.
 - La **rastérisation** des glyphes n'est **pas** dans le cœur : la liste de dessin donne (police, glyphe, taille,
   position) et chaque renderer rastérise comme il veut (wgpu : `swash` + atlas ; Unreal : ses propres outils).
-- **Police** à l'étape 1 : une police libre **embarquée** (Inter, licence OFL) — choix n° 4. Résultat identique
-  sur Windows, macOS et dans les tests Linux. LT Flode Neue la remplacera quand la licence sera vérifiée ; les
-  polices du système passeront par un service de `Platform` (pas d'accès direct aux dossiers de l'OS dans le cœur).
+- **Police** : **LT Flode Neue**, embarquée (licence SIL Open Font License, confirmée par TheMiniBoss le
+  2026-11-27). Rendu identique sur Windows, macOS et dans les tests Linux. Faces reprises de
+  `Veka-Unreal/Resources/Fonts/LTFlodeNeue` ; l'OFL impose de livrer le texte de la licence avec la police
+  (`fonts/LTFlodeNeue/OFL.txt`) et interdit de vendre la police seule. Les polices du système passeront plus tard
+  par un service de `Platform` (pas d'accès direct aux dossiers de l'OS dans le cœur).
 
 ---
 
@@ -484,7 +486,7 @@ Compilation : `cmake` sur les deux OS (MSVC sous Windows, clang sous macOS), li�
 | Pureté du cœur | `cargo tree` : aucune dépendance système dans les crates du cœur | CI |
 | Rendu | image de l'exemple rendue hors écran par wgpu, comparée avec tolérance | CI Windows / macOS (adaptateur logiciel si pas de GPU) |
 | FFI | build CMake de `compteur.c` + lancement « une image » | CI Windows / macOS |
-| À l'œil | fenêtre réelle, clics, Retina / 150 % | ton PC (et ton Mac si tu en as un) |
+| À l'œil | fenêtre réelle, clics, Retina / 150 % | PC Windows et Mac mini M2 |
 
 ---
 
@@ -495,15 +497,18 @@ Compilation : `cmake` sur les deux OS (MSVC sous Windows, clang sous macOS), li�
 | 1 | Organisation du code | **Workspace multi-crates** + façade `veka` (la séparation cœur / OS est garantie par les dépendances) | une seule crate avec des modules (plus simple, mais rien n'empêche le cœur d'appeler l'OS) |
 | 2 | Couche Platform de l'étape 1 | **winit** derrière le trait `Platform` (Windows + macOS tout de suite) | Win32 + AppKit écrits à la main dès maintenant (plus de contrôle, 3 à 4 fois plus de travail) |
 | 3 | Texte | **Parley** (Linebender) pour shaping + mise en page, **swash** pour la rastérisation | cosmic-text (très utilisé aussi, API moins orientée texte riche) |
-| 4 | Police par défaut de l'étape 1 | **Inter embarquée (OFL)**, rendu identique partout ; LT Flode Neue après vérif de licence | polices du système (Segoe UI / SF Pro) via `Platform` |
+| 4 | Police par défaut de l'étape 1 | **LT Flode Neue embarquée** (OFL, confirmé) | polices du système (Segoe UI / SF Pro) via `Platform` |
 | 5 | Rendu des formes | **SDF analytique maison** dans wgpu (même SDF que le hit-test et le futur verre, shaders entièrement à nous) | Vello (rendu 2D complet, mais modèle et shaders imposés, plus dur à porter vers Unreal / Unity) |
 | 6 | Modèle de l'API C | **Vue avec fonction `body` ré-appelée + état géré par Veka** (même modèle que Rust) | arbre impératif (créer / modifier / supprimer des widgets à la main) |
 | 7 | Fenêtres personnalisées | **API et régions prévues dans `Platform` dès l'étape 1**, `Chrome::Custom` construit **juste après** l'étape 1 (l'exemple compteur garde la barre système) | tout construire dans l'étape 1 |
 
-Questions ouvertes (ne bloquent pas l'étape 1) :
+**Décidé (2026-11-27)** : 1, 3, 4 (LT Flode Neue, OFL), 5, 6 selon la recommandation.
+**En discussion** : 2 (Platform) et 7 (fenêtres personnalisées).
 
-- **Machines de test** : ton PC Windows pour l'essai à l'œil ; as-tu un Mac, ou la CI macOS suffit-elle pour l'instant ?
-- **Licence de Veka** (MIT / Apache-2.0, ou propriétaire) : à décider avant toute diffusion ; ça ne change pas le code.
+Questions ouvertes :
+
+- **Machines de test** : un PC Windows et un **Mac mini M2** → essais à l'œil sur les deux, en plus de la CI.
+- **Licence de Veka** : pas encore choisie ; à décider avant toute diffusion, ça ne change pas le code.
 
 ---
 
