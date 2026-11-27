@@ -46,6 +46,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "objc2-core-foundation",
+    "NSAccessibility",
     "NSAppearance",
     "NSApplication",
     "NSButton",
@@ -61,6 +62,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSTrackingArea",
     "NSView",
     "NSWindow",
+    "NSWorkspace",
 ] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",

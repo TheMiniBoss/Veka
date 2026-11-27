@@ -21,6 +21,9 @@ pub struct Appearance {
     pub scheme: ColorScheme,
     /// Couleur d'accent, si le système en a une.
     pub accent: Option<Color>,
+    /// « Réduire les animations » (macOS : Accessibilité > Affichage ; Windows : Accessibilité >
+    /// Effets visuels > Effets d'animation désactivés).
+    pub reduce_motion: bool,
 }
 
 /// Erreur d'une plateforme.

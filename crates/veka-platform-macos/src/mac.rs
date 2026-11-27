@@ -17,7 +17,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSColor,
     NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask,
-    NSWindowTitleVisibility,
+    NSWindowTitleVisibility, NSWorkspace,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults,
@@ -694,7 +694,12 @@ fn read_appearance(mtm: MainThreadMarker) -> Appearance {
                 c.blueComponent() as f32,
             )
         });
-    Appearance { scheme, accent }
+    let reduce_motion = NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
+    Appearance {
+        scheme,
+        accent,
+        reduce_motion,
+    }
 }
 
 /// Relit l'apparence ; prévient l'application si elle a changé.

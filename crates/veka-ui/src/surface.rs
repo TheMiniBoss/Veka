@@ -88,6 +88,10 @@ pub struct Surface {
     regions_changed: bool,
     /// L'heure de la dernière image, en secondes (donnée par l'hôte, voir `frame_at`).
     now: f64,
+    /// Les vues `.on_animation_end` dont le sous-arbre s'animait à l'image précédente.
+    animating_watchers: Vec<NodeId>,
+    /// Vrai une fois que l'hôte a donné l'heure (`frame_at`) : avant, les timelines n'avancent pas.
+    clock: bool,
 }
 
 impl std::fmt::Debug for Surface {
@@ -125,6 +129,8 @@ impl Surface {
             regions: Vec::new(),
             regions_changed: false,
             now: 0.0,
+            animating_watchers: Vec::new(),
+            clock: false,
         }
     }
 
@@ -139,7 +145,12 @@ impl Surface {
 
     pub fn set_environment(&mut self, env: Environment) {
         let window = self.env.window;
-        self.env = Rc::new(Environment { window, ..env });
+        let reduce_motion = self.env.reduce_motion;
+        self.env = Rc::new(Environment {
+            window,
+            reduce_motion,
+            ..env
+        });
         self.needs_layout = true;
     }
 
@@ -160,6 +171,17 @@ impl Surface {
             self.env = Rc::new(Environment {
                 color_scheme: scheme,
                 system_accent: accent,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    /// Le réglage « Réduire les animations » du système, donné par l'hôte.
+    pub fn set_reduce_motion(&mut self, reduce: bool) {
+        if self.env.reduce_motion != reduce {
+            self.env = Rc::new(Environment {
+                reduce_motion: reduce,
                 ..(*self.env).clone()
             });
             self.needs_layout = true;
@@ -209,13 +231,14 @@ impl Surface {
 
     /// Vrai tant qu'une animation tourne : l'hôte doit alors redessiner à chaque image.
     pub fn is_animating(&self) -> bool {
-        !self.tree.anims.is_empty()
+        !self.tree.anims.is_empty() || crate::timeline::has_playing(self.id)
     }
 
     /// Comme [`frame`](Self::frame), à l'heure `now` (celle de la plateforme) : les animations
     /// avancent jusque-là.
     pub fn frame_at(&mut self, now: veka_foundation::Instant) -> &DrawList {
         self.now = veka_anima::seconds(now).max(self.now);
+        self.clock = true;
         self.frame()
     }
 
@@ -228,6 +251,9 @@ impl Surface {
     /// Les animations restent à l'heure de la dernière image (voir [`frame_at`](Self::frame_at)).
     pub fn frame(&mut self) -> &DrawList {
         let now = self.now;
+        if self.clock {
+            crate::timeline::advance(self.id, now);
+        }
         let ticked = crate::anim::tick(&mut self.tree, now);
         self.needs_paint |= ticked.paint;
         self.needs_layout |= ticked.layout;
@@ -267,7 +293,51 @@ impl Surface {
             tree::paint(&self.tree, &mut self.list, self.root);
             self.needs_paint = false;
         }
+        for a in self.finished_animations() {
+            a.call();
+        }
         &self.list
+    }
+
+    /// Les rappels `.on_animation_end` dont le sous-arbre vient d'arrêter de s'animer.
+    fn finished_animations(&mut self) -> Vec<crate::Action> {
+        if self.tree.anims.is_empty() && self.animating_watchers.is_empty() {
+            return Vec::new();
+        }
+        fn animating(tree: &Tree, id: NodeId) -> bool {
+            tree.anims.contains_key(&id) || tree.nodes[id].children.iter().any(|&c| animating(tree, c))
+        }
+        fn visit(
+            tree: &Tree,
+            id: NodeId,
+            now: &mut Vec<NodeId>,
+            before: &[NodeId],
+            out: &mut Vec<crate::Action>,
+        ) {
+            let node = &tree.nodes[id];
+            if let Some(w) =
+                (node.prim.as_ref() as &dyn std::any::Any).downcast_ref::<crate::views::AnimationEndPrim>()
+            {
+                if animating(tree, id) {
+                    now.push(id);
+                } else if before.contains(&id) {
+                    out.push(w.action.clone());
+                }
+            }
+            for &c in &node.children {
+                visit(tree, c, now, before, out);
+            }
+        }
+        let before = std::mem::take(&mut self.animating_watchers);
+        let mut out = Vec::new();
+        visit(
+            &self.tree,
+            self.root,
+            &mut self.animating_watchers,
+            &before,
+            &mut out,
+        );
+        out
     }
 
     /// La dernière liste produite par [`frame`](Self::frame).
@@ -500,6 +570,7 @@ impl Drop for Surface {
         let root = self.root;
         self.tree.remove(root);
         state::set_waker(self.id, None);
+        crate::timeline::forget(self.id);
         let _ = state::take_dirty(self.id);
     }
 }

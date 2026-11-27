@@ -24,8 +24,13 @@
 - [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
 
 ## Étape 4 (Anima)
-- [ ] PR I : timelines, `matched_geometry_effect`, `.on_animation_end`, interface C et exemple C, schéma,
+- [x] PR I : timelines, `matched_geometry_effect`, `.on_animation_end`, interface C et exemple C, schéma,
   « réduire les animations » de l'OS.
+- [ ] macOS : relire « Réduire les animations » dès qu'il change (aujourd'hui : quand la fenêtre redevient
+  active).
+- [ ] `matched_geometry_effect` : fondu croisé entre la source et la cible, espaces de noms ; aujourd'hui la
+  vue liée doit être la racine de ce qui apparaît (sinon la transition de la racine s'ajoute).
+- [ ] `.id()` dans le schéma (le C a `veka_id`, qui ne passe pas par le schéma).
 - [ ] Pointeur : suivre `offset`, `scale_effect` et `rotation_effect` (aujourd'hui : zone du layout).
 - [ ] Couleur du texte animée sans refaire son layout.
 - [ ] Chiffres qui défilent (`content_transition`), morphing de formes.

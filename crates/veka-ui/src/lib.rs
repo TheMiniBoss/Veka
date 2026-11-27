@@ -33,6 +33,7 @@ mod primitive;
 pub mod schema;
 mod state;
 mod surface;
+mod timeline;
 mod tree;
 pub mod views;
 pub mod window;
@@ -43,8 +44,9 @@ pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
 pub use state::{State, with_animation};
 pub use surface::{InputEvent, PointerButton, Surface};
+pub use timeline::TimelineState;
 pub use veka_anima as anima;
-pub use veka_anima::{Animation, Curve, Edge, Repeat, Transition, TransitionEffect};
+pub use veka_anima::{Animation, Curve, Edge, Keyframe, Repeat, Timeline, Transition, TransitionEffect};
 pub use veka_colora as colora;
 pub use veka_colora::{
     AngularGradient, ColorAdjust, ColorScheme, ColorSpace, EllipticalGradient, Gradient, Hierarchy, Ink,
@@ -69,6 +71,6 @@ pub mod prelude {
         MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface, Theme, Token,
         UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
-    pub use crate::{Animation, Edge, Transition, with_animation};
+    pub use crate::{Animation, Curve, Edge, Keyframe, Timeline, TimelineState, Transition, with_animation};
     pub use crate::{HStack, VStack, ZStack};
 }

@@ -4,6 +4,26 @@ Le plus récent en premier.
 
 ## Étape 4 — Anima
 
+### Timelines, géométrie liée, interface C (PR I)
+- Timelines : `Timeline` (pistes à images clés `Keyframe`, événements nommés, durée, boucle, vitesse) et
+  `TimelineState` dans une vue (`playing`, `play`, `pause`, `stop`, `seek`, `reverse`, `value`, `on_event`).
+  La surface les fait avancer à chaque image ; au repos, plus aucune image.
+- `.matched_geometry_effect(id)` : une vue qui apparaît part de la place et de la taille de celle, de même
+  `id`, qui disparaît dans la même animation.
+- `.on_animation_end(|| ..)` : appelé quand les animations d'un sous-arbre sont finies.
+- « Réduire les animations » de Windows (effets d'animation) et de macOS (Accessibilité) : le layout et les
+  déplacements ne s'animent plus, les transitions gardent leur fondu ; `.ignore_reduce_motion()` pour s'en
+  passer ; `Surface::set_reduce_motion`.
+- Schéma : `opacity`, `offset`, `scaleEffect`, `rotationEffect`, `animation`, `transition`,
+  `matchedGeometryEffect`, `ignoreReduceMotion`, `onAnimationEnd` ; valeurs `Animation` et `Transition`.
+- Interface C : `VekaAnimation` (par valeur) et ses constructeurs, `veka_with_animation`, `veka_animation`,
+  `VekaTransition` et `veka_transition`, `veka_opacity` / `offset` / `scale_effect` / `rotation_effect`,
+  `veka_matched_geometry_effect`, `veka_on_animation_end`, `veka_ignore_reduce_motion`, `veka_id`, les timelines
+  (`VekaTimeline`, `veka_state_new_timeline`, `veka_timeline_*`). Exemple `examples/c/anima.c`.
+- L'exemple `anima` gagne une pastille à géométrie liée et une pulsation en timeline.
+- Schéma : `background` prend une forme (`shape` : rectangle, capsule, cercle, ellipse).
+- Une image d'avance au lieu de deux dans la chaîne d'affichage : un clic se voit plus tôt.
+
 ### Animations implicites et transitions (PR H)
 - Nouveau crate `veka-anima` (cœur) : `Animation` (linéaire, *ease*, circulaires, Bézier cubique, ressorts
   analytiques, préréglages `smooth` / `snappy` / `bouncy`, délai, vitesse, répétition, aller-retour),

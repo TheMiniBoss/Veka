@@ -1,6 +1,6 @@
 # Veka : étape 4, Anima
 
-Statut : **validé, en cours** (PR H). Fait suite à `VEKA_ETAPE3.md`. Reprend la conception d'Anima dans VekaUI (C++ phase 2 :
+Statut : **validé, en cours** (PR H fusionnée, PR I en essai). Fait suite à `VEKA_ETAPE3.md`. Reprend la conception d'Anima dans VekaUI (C++ phase 2 :
 `FVekaAnimationSpec`, `WithAnimation`, animations implicites, transitions, timelines, *matched geometry*), pas
 son code.
 
@@ -180,7 +180,20 @@ et marque le nœud à redessiner. Le hit-test et l'accessibilité utilisent l'af
 - Le texte change de couleur en refaisant son layout à chaque image de l'animation (sa couleur est dans sa mise
   en page) : correct, mais plus coûteux qu'une forme.
 
-### 4.4 Ce qui change dans les crates
+### 4.4 PR I
+
+- **Timelines** : une `Playback` (temps, sens, lecture) gardée comme un état ; la surface tient la liste des
+  timelines en lecture, les fait avancer de l'écart entre deux images, appelle `on_event` pour chaque événement
+  franchi et ré-évalue la vue qui les lit. La première image après `play` ne fait que noter l'heure.
+- **Géométrie liée** : avant le parcours d'Anima, on note les vues `matched_geometry_effect` qui viennent de
+  quitter l'arbre (rectangle affiché). Une vue insérée avec la même clé part de ce rectangle par une
+  transformation (translation et échelle), ce qui entraîne ses enfants ; la source est retirée tout de suite.
+  Sans correspondance, la source sort normalement.
+- **Réduire les animations** : `Environment::reduce_motion` vient de l'OS ; les rectangles, `offset`,
+  `scale_effect` et `rotation_effect` ne s'animent plus et les transitions ne gardent que leur fondu ; une
+  géométrie liée devient un fondu croisé. `.ignore_reduce_motion()` lève la règle pour un sous-arbre.
+
+### 4.5 Ce qui change dans les crates
 
 | Crate | Changement |
 |---|---|

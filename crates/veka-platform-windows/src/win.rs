@@ -44,8 +44,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTTOP,
     HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
     PostMessageW, PostQuitMessage, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED, SM_CXFRAME,
-    SM_CXPADDEDBORDER, SM_CYFRAME, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, SetWindowTextW, ShowWindow,
+    SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
     TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_CAPTURECHANGED, WM_CLOSE,
     WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE,
@@ -442,7 +443,23 @@ fn read_appearance() -> Appearance {
             ((v >> 16) & 0xFF) as f32 / 255.0,
         )
     });
-    Appearance { scheme, accent }
+    // Effets d'animation : désactivés = réduire les animations.
+    let mut animations = windows::core::BOOL(1);
+    // SAFETY : `animations` est un BOOL valide pendant l'appel.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some(&mut animations as *mut _ as *mut c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    let reduce_motion = ok.is_ok() && !animations.as_bool();
+    Appearance {
+        scheme,
+        accent,
+        reduce_motion,
+    }
 }
 
 /// Barre de titre du système sombre ou claire, comme les applications.

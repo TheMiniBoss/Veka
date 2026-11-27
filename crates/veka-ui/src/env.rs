@@ -103,6 +103,10 @@ pub struct Environment {
     pub system_accent: Option<Color>,
     /// L'état de la fenêtre (agrandie, active…), donné par l'hôte.
     pub window: WindowInfo,
+    /// Le réglage « Réduire les animations » du système, donné par l'hôte.
+    pub reduce_motion: bool,
+    /// `.ignore_reduce_motion()` : ce sous-arbre s'anime quand même.
+    pub ignore_reduce_motion: bool,
 }
 
 impl Default for Environment {
@@ -118,11 +122,19 @@ impl Default for Environment {
             color_matrix: ColorMatrix::IDENTITY,
             system_accent: None,
             window: WindowInfo::default(),
+            reduce_motion: false,
+            ignore_reduce_motion: false,
         }
     }
 }
 
 impl Environment {
+    /// Vrai si les mouvements doivent être évités ici : layout et déplacements sans animation,
+    /// transitions réduites à leur fondu.
+    pub fn reduces_motion(&self) -> bool {
+        self.reduce_motion && !self.ignore_reduce_motion
+    }
+
     /// De quoi résoudre les jetons de ce sous-arbre.
     pub fn palette(&self) -> Palette<'_> {
         Palette {

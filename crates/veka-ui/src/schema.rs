@@ -9,9 +9,10 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use veka_anima::{Animation, Transition};
 use veka_colora::{ColorScheme, Paint, Theme};
 use veka_foundation::{Color, WindowControl};
-use veka_graphics::CornerRadii;
+use veka_graphics::{CornerRadii, Shape};
 use veka_text::Weight;
 
 use crate::element::{Action, Element};
@@ -35,6 +36,25 @@ pub enum Value {
     /// Une valeur d'énumération par son nom (`"title"`, `"leading"`…).
     Enum(Rc<str>),
     Action(Action),
+    /// Une spec d'animation Anima (courbe ou ressort).
+    Animation(Animation),
+    /// Une transition d'entrée et de sortie.
+    Transition(Transition),
+}
+
+impl Value {
+    /// L'empreinte d'une valeur simple (pour `animation` et `matchedGeometryEffect`).
+    pub fn key(&self) -> u64 {
+        match self {
+            Value::Bool(b) => views::value_key(&(0u8, *b)),
+            // Un entier et le même nombre en flottant ont la même empreinte.
+            Value::Int(i) => views::value_key(&(1u8, (*i as f64).to_bits())),
+            Value::Float(f) => views::value_key(&(1u8, f.to_bits())),
+            Value::String(s) | Value::Enum(s) => views::value_key(&(2u8, &**s)),
+            Value::Color(c) => views::value_key(&(3u8, [c.r, c.g, c.b, c.a].map(f32::to_bits))),
+            _ => 0,
+        }
+    }
 }
 
 /// Type d'un paramètre.
@@ -49,6 +69,10 @@ pub enum ValueType {
     Theme,
     Enum(&'static [&'static str]),
     Action,
+    Animation,
+    Transition,
+    /// Une valeur simple quelconque (booléen, nombre, texte, couleur), comparée par empreinte.
+    Any,
 }
 
 /// Un paramètre déclaré.
@@ -142,6 +166,20 @@ impl Params {
     pub fn action(&self, name: &str) -> Option<Action> {
         match self.get(name)? {
             Value::Action(a) => Some(a.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn animation(&self, name: &str) -> Option<Animation> {
+        match self.get(name)? {
+            Value::Animation(a) => Some(*a),
+            _ => None,
+        }
+    }
+
+    pub fn transition(&self, name: &str) -> Option<Transition> {
+        match self.get(name)? {
+            Value::Transition(t) => Some(t.clone()),
             _ => None,
         }
     }
@@ -298,7 +336,18 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         | (ValueType::Color, Value::Color(_))
         | (ValueType::Paint, Value::Color(_) | Value::Paint(_))
         | (ValueType::Theme, Value::Theme(_))
-        | (ValueType::Action, Value::Action(_)) => true,
+        | (ValueType::Action, Value::Action(_))
+        | (ValueType::Animation, Value::Animation(_))
+        | (ValueType::Transition, Value::Transition(_))
+        | (
+            ValueType::Any,
+            Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::Enum(_)
+            | Value::Color(_),
+        ) => true,
         (ValueType::Enum(names), Value::Enum(s) | Value::String(s)) => names.contains(&&**s),
         _ => false,
     }
@@ -623,8 +672,27 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "fond",
-            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
-            build: |p, c| one(c).background(p.paint("paint").unwrap_or_default()),
+            params: const {
+                &[
+                    p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé"),
+                    p(
+                        "shape",
+                        ValueType::Enum(BACKGROUND_SHAPES),
+                        false,
+                        "forme du fond (rectangle par défaut)",
+                    ),
+                ]
+            },
+            build: |p, c| {
+                let paint = p.paint("paint").unwrap_or_default();
+                let shape = match p.enumeration("shape") {
+                    Some("capsule") => Shape::Capsule,
+                    Some("circle") => Shape::Circle,
+                    Some("ellipse") => Shape::Ellipse,
+                    _ => Shape::Rectangle,
+                };
+                one(c).background_shape(paint, shape)
+            },
         },
         Entry {
             name: "theme",
@@ -656,6 +724,115 @@ fn builtin_entries() -> Vec<Entry> {
         adjust("saturation", "saturation (0 = gris, 1 = inchangé)"),
         adjust("hueRotation", "rotation de teinte, en degrés"),
         adjust("grayscale", "niveaux de gris (0 = inchangé, 1 = gris)"),
+        // --- Anima ---
+        Entry {
+            name: "opacity",
+            kind: Modifier,
+            children: One,
+            doc: "opacité (0 à 1), animable",
+            params: const { &[p("amount", ValueType::Number, true, "opacité")] },
+            build: |p, c| one(c).opacity(p.number("amount").unwrap_or(1.0)),
+        },
+        Entry {
+            name: "offset",
+            kind: Modifier,
+            children: One,
+            doc: "décale le dessin sans changer le layout, animable",
+            params: const {
+                &[
+                    p("x", ValueType::Number, false, "vers la droite"),
+                    p("y", ValueType::Number, false, "vers le bas"),
+                ]
+            },
+            build: |p, c| one(c).offset(p.number("x").unwrap_or(0.0), p.number("y").unwrap_or(0.0)),
+        },
+        Entry {
+            name: "scaleEffect",
+            kind: Modifier,
+            children: One,
+            doc: "agrandit le dessin autour de son centre, animable",
+            params: const {
+                &[
+                    p("scale", ValueType::Number, false, "les deux axes"),
+                    p("x", ValueType::Number, false, "horizontal"),
+                    p("y", ValueType::Number, false, "vertical"),
+                ]
+            },
+            build: |p, c| {
+                let s = p.number("scale").unwrap_or(1.0);
+                one(c).scale_effect_xy(p.number("x").unwrap_or(s), p.number("y").unwrap_or(s))
+            },
+        },
+        Entry {
+            name: "rotationEffect",
+            kind: Modifier,
+            children: One,
+            doc: "tourne le dessin autour de son centre (degrés), animable",
+            params: const { &[p("degrees", ValueType::Number, true, "angle, sens horaire")] },
+            build: |p, c| one(c).rotation_effect(p.number("degrees").unwrap_or(0.0)),
+        },
+        Entry {
+            name: "animation",
+            kind: Modifier,
+            children: One,
+            doc: "anime le sous-arbre quand `value` change",
+            params: const {
+                &[
+                    p(
+                        "spec",
+                        ValueType::Animation,
+                        false,
+                        "l'animation (absente : ne pas animer)",
+                    ),
+                    p("value", ValueType::Any, true, "la valeur surveillée"),
+                ]
+            },
+            build: |p, c| {
+                let key = p.get("value").map_or(0, Value::key);
+                one(c).wrap(views::AnimationPrim {
+                    spec: p.animation("spec"),
+                    value: key,
+                })
+            },
+        },
+        Entry {
+            name: "transition",
+            kind: Modifier,
+            children: One,
+            doc: "entrée et sortie de la vue pendant une animation",
+            params: const { &[p("transition", ValueType::Transition, true, "la transition")] },
+            build: |p, c| one(c).transition(p.transition("transition").unwrap_or_default()),
+        },
+        Entry {
+            name: "matchedGeometryEffect",
+            kind: Modifier,
+            children: One,
+            doc: "la vue part de la place d'une vue de même `id` qui disparaît",
+            params: const { &[p("id", ValueType::Any, true, "l'identifiant partagé")] },
+            build: |p, c| {
+                let key = p.get("id").map_or(0, Value::key);
+                one(c).wrap(views::MatchedGeometryPrim { key })
+            },
+        },
+        Entry {
+            name: "ignoreReduceMotion",
+            kind: Modifier,
+            children: One,
+            doc: "s'anime même si le système demande de réduire les animations",
+            params: NO_PARAMS,
+            build: |_, c| one(c).ignore_reduce_motion(),
+        },
+        Entry {
+            name: "onAnimationEnd",
+            kind: Modifier,
+            children: One,
+            doc: "action quand les animations du sous-arbre sont finies",
+            params: const { &[p("action", ValueType::Action, true, "action")] },
+            build: |p, c| {
+                let a = p.action("action").expect("vérifié par le schéma");
+                one(c).wrap(views::AnimationEndPrim { action: a })
+            },
+        },
         Entry {
             name: "onTapGesture",
             kind: Modifier,
@@ -723,6 +900,7 @@ fn builtin_entries() -> Vec<Entry> {
 }
 
 const SCHEMES: &[&str] = &["light", "dark"];
+const BACKGROUND_SHAPES: &[&str] = &["rectangle", "capsule", "circle", "ellipse"];
 
 /// Un réglage de couleur : un seul paramètre `amount`.
 fn adjust(name: &'static str, doc: &'static str) -> Entry {

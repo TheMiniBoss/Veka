@@ -1,5 +1,5 @@
-//! Anima : une carte à ressort, une liste avec transitions, une couleur animée et la galerie des
-//! courbes. `cargo run --example anima`
+//! Anima : une carte à ressort, une liste avec transitions, une couleur animée, la galerie des
+//! courbes, une pastille à géométrie liée et une pulsation en timeline. `cargo run --example anima`
 
 use veka::prelude::*;
 
@@ -37,9 +37,12 @@ fn liste() -> impl View {
             .background_shape(Token::Fill, Shape::Capsule)
             .id(i as i64)
             .transition(Transition::asymmetric(
-                // Arrive d'en haut (les lignes s'ajoutent en tête), part en se réduisant.
-                Transition::move_edge(Edge::Top).combined(Transition::opacity()),
-                Transition::scale(0.6).combined(Transition::opacity()),
+                // Descend un peu en apparaissant (les lignes s'ajoutent en tête, sous les boutons),
+                // part en se réduisant.
+                Transition::offset(0.0, -12.0)
+                    .combined(Transition::scale(0.9))
+                    .combined(Transition::opacity()),
+                Transition::scale(0.8).combined(Transition::opacity()),
             ))
         })
         .collect();
@@ -104,6 +107,70 @@ fn galerie() -> impl View {
     ]
 }
 
+fn geometrie() -> impl View {
+    let droite = State::new(false);
+    let d = droite.get();
+    let pastille = Circle()
+        .fill(Token::Orange)
+        .frame(if d { 44 } else { 20 }, if d { 44 } else { 20 })
+        .matched_geometry_effect("pastille")
+        .id(if d { 2 } else { 1 });
+    let rail = Capsule().fill(Token::Fill).frame(180, 6).id(0);
+    let ligne = if d {
+        vec![rail, pastille]
+    } else {
+        vec![pastille, rail]
+    };
+    VStack![spacing: 8;
+        Button("Déplacer", move || {
+            with_animation(Animation::spring(0.45, 0.75), || droite.toggle())
+        }),
+        veka::ui::views::stack(Axis::Horizontal, Some(12.0), ligne),
+    ]
+}
+
+fn pulsation() -> impl View {
+    let battements = State::new(0u32);
+    let tl = TimelineState::playing(
+        Timeline::new()
+            .track(
+                "échelle",
+                [
+                    Keyframe::new(0.0, 1.0).curve(Curve::EaseOut),
+                    Keyframe::new(0.15, 1.35),
+                    Keyframe::new(0.5, 1.0).curve(Curve::Linear),
+                ],
+            )
+            .track(
+                "opacité",
+                [
+                    Keyframe::new(0.0, 0.6).curve(Curve::EaseOut),
+                    Keyframe::new(0.15, 1.0),
+                    Keyframe::new(0.9, 0.6),
+                ],
+            )
+            .event(0.15, "battement")
+            .length(0.9)
+            .looping(true),
+    );
+    tl.on_event(move |_| {
+        let mut b = battements;
+        b += 1;
+    });
+    HStack![spacing: 12;
+        Button(if tl.is_playing() { "Pause" } else { "Lecture" }, move || {
+            if tl.is_playing() { tl.pause() } else { tl.play() }
+        }),
+        Circle()
+            .fill(Token::Pink)
+            .frame(28, 28)
+            .scale_effect(tl.value("échelle"))
+            .opacity(tl.value("opacité"))
+            .frame(44, 44),
+        Text(format!("Battements : {battements}")).font(Font::Footnote),
+    ]
+}
+
 pub fn vue() -> impl View {
     let fond = Rectangle().fill(Token::WindowBackground);
     let contenu = HStack![spacing: 32;
@@ -112,6 +179,8 @@ pub fn vue() -> impl View {
             component(carte),
             component(couleur),
             component(galerie),
+            component(geometrie),
+            component(pulsation),
         ],
         component(liste),
     ]
@@ -120,7 +189,7 @@ pub fn vue() -> impl View {
 }
 
 fn main() {
-    let fenetre = Window::new("Anima").size(Size::new(820.0, 560.0));
+    let fenetre = Window::new("Anima").size(Size::new(860.0, 720.0));
     if let Err(e) = App::new().window_with(fenetre, vue).run() {
         eprintln!("Veka : {e}");
         std::process::exit(1);

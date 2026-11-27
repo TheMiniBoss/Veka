@@ -270,6 +270,17 @@ impl<T: 'static> State<T> {
         r
     }
 
+    /// Modifie la valeur sans ré-évaluer la vue (ce qui n'est pas affiché : un rappel…).
+    pub(crate) fn update_silent<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        STATES.with(|s| {
+            let mut s = s.borrow_mut();
+            let slot = s
+                .get_mut(self.key)
+                .expect("Veka : cet état appartient à une vue qui n'existe plus");
+            f(slot.value.downcast_mut::<T>().expect("type d'état"))
+        })
+    }
+
     pub fn set(&self, value: T) {
         self.update(|v| *v = value);
     }
@@ -277,6 +288,21 @@ impl<T: 'static> State<T> {
     /// Vrai tant que la vue propriétaire existe.
     pub fn is_alive(&self) -> bool {
         STATES.with(|s| s.borrow().contains_key(self.key))
+    }
+
+    /// La surface de la vue propriétaire, si elle existe encore.
+    pub(crate) fn surface(&self) -> Option<u32> {
+        STATES.with(|s| s.borrow().get(self.key).map(|slot| slot.owner.surface))
+    }
+
+    /// Lit la valeur si l'état existe encore.
+    pub(crate) fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        STATES.with(|s| {
+            s.borrow()
+                .get(self.key)
+                .and_then(|slot| slot.value.downcast_ref::<T>())
+                .map(f)
+        })
     }
 }
 

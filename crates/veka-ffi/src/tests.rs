@@ -261,3 +261,166 @@ fn colora_en_c() {
         veka_theme_free(theme);
     }
 }
+
+struct Anima {
+    ouvert: *mut VekaState,
+    tl: *mut VekaState,
+    modele: *mut VekaTimeline,
+    evenements: u32,
+}
+
+unsafe extern "C" fn ouvrir(cx: *mut VekaContext, user: *mut c_void) {
+    let a = unsafe { &mut *(user as *mut Anima) };
+    veka_state_set_bool(cx, a.ouvert, true);
+}
+
+unsafe extern "C" fn compter(_cx: *mut VekaContext, name: *const std::ffi::c_char, user: *mut c_void) {
+    let a = unsafe { &mut *(user as *mut Anima) };
+    assert_eq!(unsafe { CStr::from_ptr(name) }, c"pic");
+    a.evenements += 1;
+}
+
+unsafe extern "C" fn anima_setup(cx: *mut VekaContext, user: *mut c_void) {
+    let a = unsafe { &mut *(user as *mut Anima) };
+    a.ouvert = veka_state_new_bool(cx, false);
+    a.tl = unsafe { veka_state_new_timeline(cx, a.modele, true) };
+}
+
+unsafe extern "C" fn anima_body(cx: *mut VekaContext, user: *mut c_void) -> *mut VekaElement {
+    let a = unsafe { &mut *(user as *mut Anima) };
+    veka_timeline_on_event(cx, a.tl, Some(compter), user);
+    let largeur = if veka_state_get_bool(cx, a.ouvert) {
+        200.0
+    } else {
+        100.0
+    };
+    unsafe {
+        let lignes = [
+            veka_frame(veka_rectangle(), largeur, 40.0),
+            veka_opacity(
+                veka_frame(veka_circle(), 10.0, 10.0),
+                veka_timeline_value(cx, a.tl, c"o".as_ptr()),
+            ),
+        ];
+        veka_vstack(0.0, lignes.as_ptr(), lignes.len())
+    }
+}
+
+#[test]
+fn anima_en_c() {
+    use veka_foundation::Instant;
+    use veka_graphics::DrawCommand;
+
+    let at = |s: &mut Surface, t: f64| {
+        s.frame_at(Instant::from_nanos((t * 1e9) as u64));
+    };
+    let opacites = |s: &Surface| -> Vec<f32> {
+        s.draw_list()
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::PushLayer { opacity } => Some(*opacity),
+                _ => None,
+            })
+            .collect()
+    };
+    unsafe {
+        let modele = veka_timeline_new();
+        veka_timeline_key(modele, c"o".as_ptr(), 0.0, 0.0, VekaCurve::Linear);
+        veka_timeline_key(modele, c"o".as_ptr(), 1.0, 1.0, VekaCurve::Linear);
+        veka_timeline_event(modele, 0.5, c"pic".as_ptr());
+        let mut a = Anima {
+            ouvert: std::ptr::null_mut(),
+            tl: std::ptr::null_mut(),
+            modele,
+            evenements: 0,
+        };
+        let user = &mut a as *mut Anima as *mut c_void;
+        let mut s = Surface::new(component(app::window_view(
+            Some(anima_setup),
+            Some(anima_body),
+            user,
+        )));
+        s.resize(Size::new(400.0, 300.0), 1.0);
+        at(&mut s, 10.0);
+        assert!(veka_timeline_is_playing(context(), a.tl));
+        veka_with_animation(context(), veka_animation_linear(1.0), Some(ouvrir), user);
+        at(&mut s, 10.0);
+        at(&mut s, 10.5);
+        let w = s.rects_of("Rectangle")[0].width();
+        assert!((w - 150.0).abs() < 0.01, "{w}");
+        let o = opacites(&s);
+        assert!(o.len() == 1 && (o[0] - 0.5).abs() < 0.01, "{o:?}");
+        assert_eq!(a.evenements, 1);
+        at(&mut s, 11.5);
+        assert!(!veka_timeline_is_playing(context(), a.tl));
+        assert!(!s.is_animating());
+        veka_timeline_free(modele);
+    }
+}
+
+#[test]
+fn anima_c_comme_rust() {
+    use veka_ui::prelude::*;
+    let rust = Circle()
+        .frame(20, 20)
+        .opacity(0.5)
+        .offset(3.0, 4.0)
+        .scale_effect(1.5)
+        .rotation_effect(45.0)
+        .animation(Animation::snappy().delay(0.2), 1)
+        .transition(Transition::asymmetric(
+            Transition::push(Edge::Top).combined(Transition::scale(0.5)),
+            Transition::opacity(),
+        ))
+        .matched_geometry_effect("a")
+        .ignore_reduce_motion();
+    unsafe {
+        let mut e = veka_frame(veka_circle(), 20.0, 20.0);
+        e = veka_opacity(e, 0.5);
+        e = veka_offset(e, 3.0, 4.0);
+        e = veka_scale_effect(e, 1.5);
+        e = veka_rotation_effect(e, 45.0);
+        let spec = veka_animation_delay(veka_animation_snappy(), 0.2);
+        e = veka_animation(e, &spec, 1);
+        let t = veka_transition_asymmetric(
+            veka_transition_combined(veka_transition_push(VekaEdge::Top), veka_transition_scale(0.5)),
+            veka_transition_opacity(),
+        );
+        e = veka_transition(e, t);
+        e = veka_matched_geometry_effect(e, c"a".as_ptr());
+        e = veka_ignore_reduce_motion(e);
+        assert!(!e.is_null(), "{:?}", CStr::from_ptr(veka_last_error()));
+        let c = Box::from_raw(e).element;
+        let mut a = Surface::new(rust);
+        let mut b = Surface::new(c);
+        for s in [&mut a, &mut b] {
+            s.resize(Size::new(100.0, 100.0), 1.0);
+            s.frame();
+        }
+        assert_eq!(a.draw_list().to_string(), b.draw_list().to_string());
+        assert_eq!(Animation::from(spec), Animation::snappy().delay(0.2));
+
+        // Aller-retour des specs.
+        for a in [
+            Animation::linear(1.0),
+            Animation::ease_in(0.3).repeat(3, true),
+            Animation::circ_ease_in_out(2.0).repeat_forever(false).speed(2.0),
+            Animation::timing_curve(0.3, 1.6, 0.6, 1.0, 1.0),
+            Animation::bouncy(),
+        ] {
+            assert_eq!(Animation::from(VekaAnimation::from(a)), a);
+        }
+        // Erreurs.
+        assert!(veka_transition(veka_rectangle(), std::ptr::null_mut()).is_null());
+        assert!(veka_transition_combined(veka_transition_opacity(), std::ptr::null_mut()).is_null());
+        assert!(veka_state_new_timeline(std::ptr::null_mut(), std::ptr::null(), false).is_null());
+        veka_with_animation(
+            std::ptr::null_mut(),
+            veka_animation_smooth(),
+            None,
+            std::ptr::null_mut(),
+        );
+        assert!(!veka_last_error().is_null());
+    }
+}

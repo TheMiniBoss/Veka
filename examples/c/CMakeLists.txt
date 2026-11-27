@@ -41,8 +41,8 @@ if(WIN32)
 endif()
 add_dependencies(veka veka_cargo)
 
-# Les exemples : compteur (étape 1), fenetre_perso (étape 2) et colora (étape 3).
-foreach(exemple compteur fenetre_perso colora)
+# Les exemples : compteur (étape 1), fenetre_perso (étape 2), colora (étape 3) et anima (étape 4).
+foreach(exemple compteur fenetre_perso colora anima)
     add_executable(${exemple} ${exemple}.c)
     target_link_libraries(${exemple} PRIVATE veka)
     if(MSVC)

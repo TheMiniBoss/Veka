@@ -311,12 +311,20 @@ pub(crate) fn place(tree: &mut Tree, text: &mut TextSystem, id: NodeId, rect: Re
 
 pub(crate) fn paint(tree: &Tree, list: &mut DrawList, id: NodeId) {
     let node = &tree.nodes[id];
-    let frame = tree.anims.get(&id).and_then(|a| a.transition_frame(node.rect));
+    let anims = tree.anims.get(&id);
+    let frame = anims.and_then(|a| a.transition_frame(node.rect));
     let pops = match frame {
         Some(f) => crate::anim::push_frame(list, &f, node.rect),
         None => 0,
     };
+    let geometry = anims.and_then(|a| a.geometry_transform(node.rect));
+    if let Some(t) = geometry {
+        list.push(veka_graphics::DrawCommand::PushTransform(t));
+    }
     node.shown()
         .paint(&mut PaintCx { tree, list, node: id }, node.rect);
+    if geometry.is_some() {
+        list.push(veka_graphics::DrawCommand::PopTransform);
+    }
     crate::anim::pop(list, pops);
 }

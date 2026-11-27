@@ -11,7 +11,7 @@ use veka_colora::{Gradient, Ink, Paint, UnitPoint};
 use veka_foundation::{Color, Rect, Transform2D};
 use veka_graphics::{CornerRadii, DrawCommand, Shape};
 
-use crate::element::Element;
+use crate::element::{Action, Element};
 use crate::env::Environment;
 use crate::primitive::{PaintCx, Primitive};
 
@@ -338,6 +338,31 @@ impl Primitive for TransitionPrim {
     }
 }
 
+/// `.matched_geometry_effect(id)` : quand une vue portant `key` apparaît pendant qu'une autre portant
+/// la même clé disparaît, la nouvelle part de la place de l'ancienne.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchedGeometryPrim {
+    pub key: u64,
+}
+
+impl Primitive for MatchedGeometryPrim {
+    fn name(&self) -> &'static str {
+        "matchedGeometryEffect"
+    }
+}
+
+/// `.on_animation_end(f)` : `f` est appelé quand les animations de ce sous-arbre sont finies.
+#[derive(Debug)]
+pub struct AnimationEndPrim {
+    pub action: Action,
+}
+
+impl Primitive for AnimationEndPrim {
+    fn name(&self) -> &'static str {
+        "onAnimationEnd"
+    }
+}
+
 /// L'empreinte d'une valeur (pour `.animation`).
 pub fn value_key(value: &impl Hash) -> u64 {
     let mut h = DefaultHasher::new();
@@ -382,5 +407,26 @@ impl Element {
     /// Comment la vue entre dans l'arbre et en sort pendant une animation (fondu par défaut).
     pub fn transition(self, transition: Transition) -> Element {
         self.wrap(TransitionPrim { transition })
+    }
+
+    /// Anime ce sous-arbre normalement même si le système demande de réduire les animations (à
+    /// réserver aux mouvements qui portent du sens, comme une jauge).
+    pub fn ignore_reduce_motion(self) -> Element {
+        self.wrap(super::EnvModifier::IgnoreReduceMotion)
+    }
+
+    /// Relie cette vue aux autres vues de même `id` : quand l'une disparaît et qu'une autre apparaît
+    /// dans la même animation, la nouvelle part de la place et de la taille de l'ancienne (qui est
+    /// retirée tout de suite). Comme `matchedGeometryEffect` de SwiftUI, sans espace de noms.
+    pub fn matched_geometry_effect(self, id: impl Hash) -> Element {
+        self.wrap(MatchedGeometryPrim { key: value_key(&id) })
+    }
+
+    /// Appelle `f` quand les animations de ce sous-arbre (layout, valeurs, entrées et sorties) se
+    /// terminent.
+    pub fn on_animation_end(self, f: impl FnMut() + 'static) -> Element {
+        self.wrap(AnimationEndPrim {
+            action: Action::new(f),
+        })
     }
 }
