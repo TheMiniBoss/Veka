@@ -1,4 +1,4 @@
-//! Les exemples `.vk` : `cargo run --example vk -- compteur` (ou `colora`, `anima`).
+//! Les exemples `.vk` : `cargo run --example vk -- compteur` (ou `colora`, `anima`, `feux`).
 //!
 //! Modifiez le fichier `examples/vk/<nom>.vk` pendant que la fenêtre est ouverte : elle se met
 //! à jour à l'enregistrement, sans perdre ses états. Une erreur s'affiche en bandeau rouge.
@@ -11,8 +11,9 @@ fn main() {
         "compteur" => ("Compteur", Size::new(480.0, 320.0)),
         "colora" => ("Colora", Size::new(680.0, 520.0)),
         "anima" => ("Anima", Size::new(860.0, 720.0)),
+        "feux" => ("Feux", Size::new(640.0, 200.0)),
         _ => {
-            eprintln!("Veka : exemple inconnu `{nom}` (compteur, colora, anima)");
+            eprintln!("Veka : exemple inconnu `{nom}` (compteur, colora, anima, feux)");
             std::process::exit(2);
         }
     };

@@ -122,24 +122,6 @@ const ANIMA: &str = include_str!("../examples/vk/anima.vk");
 #[allow(dead_code)]
 mod anima_rs;
 
-/// `anima.rs` sans la pulsation (les timelines .vk arrivent ensuite).
-fn anima_rust() -> impl View {
-    use anima_rs::*;
-    let fond = Rectangle().fill(Token::WindowBackground);
-    let contenu = HStack![spacing: 32;
-        VStack![spacing: 24;
-            Text("Anima").font(Font::LargeTitle),
-            component(carte),
-            component(couleur),
-            component(galerie),
-            component(geometrie),
-        ],
-        component(liste),
-    ]
-    .padding(24);
-    ZStack![fond, contenu]
-}
-
 fn at(s: &mut Surface, t: f64) {
     s.frame_at(veka::foundation::Instant::from_nanos((t * 1e9) as u64));
 }
@@ -148,7 +130,7 @@ fn at(s: &mut Surface, t: f64) {
 fn anima_meme_dessin_que_rust() {
     let p = program(ANIMA);
     let mut vk = Surface::new(p.view("Anima"));
-    let mut rs = Surface::new(component(anima_rust));
+    let mut rs = Surface::new(component(anima_rs::vue));
     for s in [&mut vk, &mut rs] {
         s.resize(Size::new(860.0, 720.0), 1.0);
         at(s, 0.0);
@@ -184,7 +166,78 @@ fn anima_meme_dessin_que_rust() {
         t += 2.0;
     }
     let textes = vk.texts();
-    for attendu in ["Froid", "Élément 4"] {
+    for attendu in ["Froid", "Élément 4", "Lecture"] {
         assert!(textes.iter().any(|x| x == attendu), "{textes:?}");
     }
+    let battements = textes
+        .iter()
+        .find(|x| x.starts_with("Battements"))
+        .expect("le cœur");
+    assert_ne!(battements, "Battements : 0");
+}
+
+#[test]
+fn feux_d_artifice() {
+    let source = include_str!("../examples/vk/feux.vk");
+    let images = |instants: &[f64]| {
+        let p = program(source);
+        let mut s = Surface::new(p.view("Feux"));
+        s.resize(Size::new(640.0, 200.0), 1.0);
+        let mut listes = Vec::new();
+        for &t in instants {
+            at(&mut s, t);
+            at(&mut s, t);
+            listes.push((
+                s.draw_list().to_string(),
+                s.rects_of("Circle").len(),
+                s.rects_of("Capsule").len(),
+            ));
+        }
+        assert!(s.needs_frame(), "l'horloge avance à chaque image");
+        listes
+    };
+    let a = images(&[0.0, 0.5, 2.0, 2.9]);
+    // Au début, des fusées (traînées) ; ensuite, des gerbes de 180 étincelles.
+    assert!(a.iter().any(|(_, _, fusees)| *fusees > 0));
+    assert!(
+        a.iter().any(|(_, cercles, _)| *cercles >= 180),
+        "{:?}",
+        a.iter().map(|x| x.1).collect::<Vec<_>>()
+    );
+    // Déterministe : mêmes instants, même dessin.
+    assert_eq!(a, images(&[0.0, 0.5, 2.0, 2.9]));
+    // Une image ne prend pas trop de temps (évaluation de ~1000 étincelles).
+    let p = program(source);
+    let mut s = Surface::new(p.view("Feux"));
+    s.resize(Size::new(640.0, 200.0), 1.0);
+    at(&mut s, 0.0);
+    let debut = std::time::Instant::now();
+    for i in 1..=10 {
+        at(&mut s, 1.0 + i as f64 * 0.016);
+    }
+    eprintln!("feux : {:.1} ms par image", debut.elapsed().as_secs_f64() * 100.0);
+}
+
+#[test]
+fn boutique_c_se_charge() {
+    let p = program(include_str!("../../../examples/c/boutique.vk"));
+    p.set_model(veka::lang::Val::record([(
+        "articles",
+        veka::lang::Val::from(vec![veka::lang::Val::record([
+            ("nom", veka::lang::Val::from("Épée")),
+            ("prix", veka::lang::Val::from(12)),
+            ("nouveau", veka::lang::Val::from(true)),
+        ])]),
+    )]));
+    let s = surface(p.view("Boutique"));
+    assert_eq!(
+        s.texts(),
+        [
+            "Boutique",
+            "Épée",
+            "NOUVEAU",
+            "Acheter 12 or",
+            "Dernier achat : rien, 0 or dépensés"
+        ]
+    );
 }

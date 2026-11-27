@@ -25,10 +25,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-use veka_lang::{Diagnostic, Program};
+use veka_lang::Diagnostic;
+pub use veka_lang::{Program, Val};
 
 use veka_platform::{
     MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowId,
@@ -84,6 +86,22 @@ struct VkFile {
     path: PathBuf,
     program: Program,
     banner: Banner,
+    /// Le fichier et ses imports, lus par le fil de surveillance.
+    paths: SharedPaths,
+}
+
+/// Des chemins partagés avec le fil de surveillance.
+type SharedPaths = Arc<Mutex<Vec<PathBuf>>>;
+
+impl VkFile {
+    fn update_paths(&self) {
+        let dir = self.path.parent().map(PathBuf::from).unwrap_or_default();
+        let mut all = vec![self.path.clone()];
+        all.extend(self.program.imports().into_iter().map(|i| dir.join(i)));
+        if let Ok(mut p) = self.paths.lock() {
+            *p = all;
+        }
+    }
 }
 
 /// Les erreurs à afficher par-dessus une vue `.vk`.
@@ -199,14 +217,27 @@ impl App {
 
     /// Comme [`window_vk`](Self::window_vk), avec tous les réglages de la fenêtre.
     pub fn window_vk_with(mut self, desc: WindowDesc, path: impl Into<PathBuf>, view: &str) -> Self {
+        self.window_vk_program(desc, path, view);
+        self
+    }
+
+    /// Comme [`window_vk_with`](Self::window_vk_with), et rend le [`Program`] du fichier : pour
+    /// lui donner des données (`set_model`) et recevoir ses événements (`on_event`).
+    pub fn window_vk_program(&mut self, desc: WindowDesc, path: impl Into<PathBuf>, view: &str) -> Program {
         let path = path.into();
+        // `import "x.vk"` : relatif au dossier du fichier.
+        let dir = path.parent().map(PathBuf::from).unwrap_or_default();
+        let loader = move |p: &str| std::fs::read_to_string(dir.join(p)).map_err(|e| e.to_string());
         let (program, errors) = match std::fs::read_to_string(&path) {
             Ok(source) => {
-                let p = Program::new(&source);
+                let p = Program::with_loader(&source, veka_ui::schema::Schema::builtin(), loader);
                 let e = messages(&p.errors());
                 (p, e)
             }
-            Err(e) => (Program::new(""), vec![format!("{} : {e}", path.display())]),
+            Err(e) => (
+                Program::with_loader("", veka_ui::schema::Schema::builtin(), loader),
+                vec![format!("{} : {e}", path.display())],
+            ),
         };
         let banner = Banner::default();
         banner.set(errors);
@@ -215,12 +246,16 @@ impl App {
             banner.wrap(move || program.view(&view))
         };
         self.windows.push((desc, root));
-        self.files.push(VkFile {
+        let file = VkFile {
             path,
             program,
             banner,
-        });
-        self
+            paths: Arc::new(Mutex::new(Vec::new())),
+        };
+        file.update_paths();
+        let program = file.program.clone();
+        self.files.push(file);
+        program
     }
 
     /// Relit les fichiers `.vk` quand ils changent. Par défaut : oui en debug, non en release.
@@ -314,24 +349,27 @@ impl Watch {
             .iter()
             .map(|_| Arc::new(AtomicBool::new(false)))
             .collect();
-        let watched: Vec<(PathBuf, Arc<AtomicBool>)> = self
+        let watched: Vec<(SharedPaths, Arc<AtomicBool>)> = self
             .files
             .iter()
             .zip(&self.changed)
-            .map(|(f, c)| (f.path.clone(), c.clone()))
+            .map(|(f, c)| (f.paths.clone(), c.clone()))
             .collect();
         let spawned = std::thread::Builder::new()
             .name("veka-vk-watch".into())
             .spawn(move || {
-                let mut dates: Vec<Option<SystemTime>> = watched.iter().map(|(p, _)| modified(p)).collect();
+                // La date de chaque fichier ; un import nouveau est noté sans déclencher.
+                let mut dates: HashMap<PathBuf, Option<SystemTime>> = HashMap::new();
                 loop {
-                    std::thread::sleep(Duration::from_millis(250));
                     let mut wake = false;
-                    for ((path, flag), date) in watched.iter().zip(dates.iter_mut()) {
-                        let now = modified(path);
-                        if now != *date {
-                            *date = now;
-                            flag.store(true, Ordering::Release);
+                    for (paths, flag) in &watched {
+                        let paths = paths.lock().map(|p| p.clone()).unwrap_or_default();
+                        for path in paths {
+                            let now = modified(&path);
+                            match dates.insert(path, now) {
+                                Some(before) if before != now => flag.store(true, Ordering::Release),
+                                _ => {}
+                            }
                         }
                         // Toujours en attente (réveil perdu) : on redemande.
                         wake |= flag.load(Ordering::Acquire);
@@ -339,6 +377,7 @@ impl Watch {
                     if wake {
                         waker();
                     }
+                    std::thread::sleep(Duration::from_millis(250));
                 }
             });
         if spawned.is_err() {
@@ -355,10 +394,13 @@ impl Watch {
             match std::fs::read_to_string(&file.path) {
                 // Un éditeur peut vider le fichier avant de l'écrire : on attend la suite.
                 Ok(source) if source.trim().is_empty() => {}
-                Ok(source) => match file.program.reload(&source) {
-                    Ok(()) => file.banner.set(Vec::new()),
-                    Err(errors) => file.banner.set(messages(&errors)),
-                },
+                Ok(source) => {
+                    match file.program.reload(&source) {
+                        Ok(()) => file.banner.set(Vec::new()),
+                        Err(errors) => file.banner.set(messages(&errors)),
+                    }
+                    file.update_paths();
+                }
                 Err(e) => file.banner.set(vec![format!("{} : {e}", file.path.display())]),
             }
         }

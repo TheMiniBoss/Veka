@@ -10,11 +10,20 @@ use veka_colora::{
     Theme, Token, UnitPoint,
 };
 use veka_foundation::Color;
+use veka_ui::TimelineState;
 use veka_ui::schema::{Value, ValueType};
 
-/// Une valeur pendant l'évaluation.
-#[derive(Clone, Debug)]
+/// Une valeur `.vk` : ce que calculent les expressions, et les données de l'hôte (`model`).
+///
+/// ```
+/// use veka_lang::Val;
+/// let article = Val::record([("nom", Val::from("Épée")), ("prix", Val::from(12))]);
+/// let model = Val::record([("articles", Val::from(vec![article]))]);
+/// assert_eq!(model.get("articles").and_then(|a| a.index(0)).and_then(|a| a.get("prix")), Some(Val::Int(12)));
+/// ```
+#[derive(Clone, Debug, Default)]
 pub enum Val {
+    #[default]
     Unit,
     Bool(bool),
     Int(i64),
@@ -28,6 +37,95 @@ pub enum Val {
     /// `lo..<hi` (fin exclue).
     Range(i64, i64),
     Theme(Arc<Theme>),
+    /// `{ nom: valeur, … }`, dans l'ordre d'écriture.
+    Record(Rc<Vec<(Rc<str>, Val)>>),
+    /// Une `@Timeline` (ou une `@Clock`) de la vue.
+    Timeline(TimelineState),
+}
+
+impl Val {
+    /// Un enregistrement.
+    pub fn record<K: Into<Rc<str>>>(fields: impl IntoIterator<Item = (K, Val)>) -> Val {
+        Val::Record(Rc::new(fields.into_iter().map(|(k, v)| (k.into(), v)).collect()))
+    }
+
+    /// Le champ `name` d'un enregistrement.
+    pub fn get(&self, name: &str) -> Option<Val> {
+        match self {
+            Val::Record(r) => r.iter().find(|(k, _)| &**k == name).map(|(_, v)| v.clone()),
+            _ => None,
+        }
+    }
+
+    /// L'élément `i` d'un tableau.
+    pub fn index(&self, i: usize) -> Option<Val> {
+        match self {
+            Val::Array(a) => a.get(i).cloned(),
+            Val::Range(lo, hi) => {
+                (*lo + i as i64 >= *lo && (*lo + i as i64) < *hi).then(|| Val::Int(*lo + i as i64))
+            }
+            _ => None,
+        }
+    }
+
+    /// Un enregistrement avec le champ `name` remplacé (ou ajouté).
+    pub fn with(&self, name: &str, value: Val) -> Val {
+        let mut fields = match self {
+            Val::Record(r) => (**r).clone(),
+            _ => Vec::new(),
+        };
+        match fields.iter_mut().find(|(k, _)| &**k == name) {
+            Some(f) => f.1 = value,
+            None => fields.push((name.into(), value)),
+        }
+        Val::Record(Rc::new(fields))
+    }
+}
+
+impl From<bool> for Val {
+    fn from(v: bool) -> Self {
+        Val::Bool(v)
+    }
+}
+impl From<i64> for Val {
+    fn from(v: i64) -> Self {
+        Val::Int(v)
+    }
+}
+impl From<i32> for Val {
+    fn from(v: i32) -> Self {
+        Val::Int(v as i64)
+    }
+}
+impl From<f64> for Val {
+    fn from(v: f64) -> Self {
+        Val::Float(v)
+    }
+}
+impl From<f32> for Val {
+    fn from(v: f32) -> Self {
+        Val::Float(v as f64)
+    }
+}
+impl From<&str> for Val {
+    fn from(v: &str) -> Self {
+        Val::Str(v.into())
+    }
+}
+impl From<String> for Val {
+    fn from(v: String) -> Self {
+        Val::Str(v.into())
+    }
+}
+impl From<Color> for Val {
+    fn from(v: Color) -> Self {
+        Val::Color(v)
+    }
+}
+impl From<Vec<Val>> for Val {
+    fn from(v: Vec<Val>) -> Self {
+        Val::Array(Rc::new(v))
+    }
 }
 
 /// Un symbole et ce qu'on lui a appliqué.
@@ -55,6 +153,8 @@ impl PartialEq for Val {
             (Array(a), Array(b)) => a == b,
             (Range(a, b), Range(c, d)) => a == c && b == d,
             (Theme(a), Theme(b)) => Arc::ptr_eq(a, b),
+            (Record(a), Record(b)) => a == b,
+            (Timeline(a), Timeline(b)) => a.to_bits() == b.to_bits(),
             _ => false,
         }
     }
@@ -89,6 +189,17 @@ impl fmt::Display for Val {
             Val::Range(a, b) => write!(f, "{a}..<{b}"),
             Val::Paint(_) => f.write_str("<peinture>"),
             Val::Theme(t) => write!(f, "<thème {}>", t.name),
+            Val::Record(r) => {
+                f.write_str("{ ")?;
+                for (i, (k, v)) in r.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{k}: {v}")?;
+                }
+                f.write_str(" }")
+            }
+            Val::Timeline(_) => f.write_str("<timeline>"),
         }
     }
 }
@@ -108,6 +219,8 @@ impl Val {
             Val::Array(_) => "Array",
             Val::Range(..) => "Range",
             Val::Theme(_) => "Theme",
+            Val::Record(_) => "Record",
+            Val::Timeline(_) => "Timeline",
         }
     }
 
@@ -135,7 +248,7 @@ impl Val {
         }
     }
 
-    fn sym(&self) -> Option<&Sym> {
+    pub(crate) fn sym(&self) -> Option<&Sym> {
         match self {
             Val::Sym(s) => Some(s),
             _ => None,
@@ -371,6 +484,12 @@ pub fn to_transition(v: &Val) -> Result<Transition, String> {
 
 /// Les dégradés de Colora : `LinearGradient([.Blue, .Teal], from: .top, to: .bottom)`…
 pub fn gradient(name: &str, a: &Args) -> Option<Result<Paint, String>> {
+    if !matches!(
+        name,
+        "LinearGradient" | "RadialGradient" | "EllipticalGradient" | "AngularGradient" | "MeshGradient"
+    ) {
+        return None;
+    }
     let inks = || -> Result<Vec<Ink>, String> {
         let list = arg(a, 0, "colors").ok_or("une liste de couleurs attendue")?;
         list.items()
@@ -437,11 +556,7 @@ pub fn gradient(name: &str, a: &Args) -> Option<Result<Paint, String>> {
             _ => unreachable!(),
         })
     })();
-    matches!(
-        name,
-        "LinearGradient" | "RadialGradient" | "EllipticalGradient" | "AngularGradient" | "MeshGradient"
-    )
-    .then_some(r)
+    Some(r)
 }
 
 /// Convertit une valeur pour un paramètre du schéma de type `ty`.

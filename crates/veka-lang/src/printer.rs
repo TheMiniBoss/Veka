@@ -17,6 +17,11 @@ pub fn print(module: &Module) -> String {
         match item {
             Item::View(v) => p.view(v),
             Item::Theme(t) => p.theme(t),
+            Item::Func(f) => p.func(f),
+            Item::Timeline(t) => p.timeline(t),
+            Item::Import(d) => {
+                let _ = writeln!(p.out, "import \"{}\"", escape(&d.path));
+            }
         }
     }
     p.out
@@ -40,16 +45,48 @@ fn pad(n: usize) -> String {
 impl Printer {
     fn view(&mut self, v: &ViewDecl) {
         let _ = writeln!(self.out, "view {} {{", v.name);
-        for s in &v.states {
-            let _ = write!(self.out, "    @State var {}", s.name);
-            if let Some(t) = &s.ty {
+        for p in &v.params {
+            let _ = write!(self.out, "    @Param var {}", p.name);
+            if let Some(t) = &p.ty {
                 let _ = write!(self.out, ": {}", type_text(t));
             }
-            self.out.push_str(" = ");
-            self.expr(&s.init, 0, 1);
+            if let Some(d) = &p.default {
+                self.out.push_str(" = ");
+                self.expr(d, 0, 1);
+            }
             self.out.push('\n');
         }
-        if !v.states.is_empty() && !v.body.is_empty() {
+        for s in &v.slots {
+            let _ = writeln!(self.out, "    @Slot {s}");
+        }
+        for e in &v.events {
+            let _ = write!(self.out, "    @Event {}", e.name);
+            if let Some(t) = &e.ty {
+                let _ = write!(self.out, "({})", type_text(t));
+            }
+            self.out.push('\n');
+        }
+        for (attr, list) in [("State", &v.states), ("Timeline", &v.timelines)] {
+            for s in list {
+                let _ = write!(self.out, "    @{attr} var {}", s.name);
+                if let Some(t) = &s.ty {
+                    let _ = write!(self.out, ": {}", type_text(t));
+                }
+                self.out.push_str(" = ");
+                self.expr(&s.init, 0, 1);
+                self.out.push('\n');
+            }
+        }
+        for c in &v.clocks {
+            let _ = writeln!(self.out, "    @Clock var {c}");
+        }
+        let decls = v.params.len()
+            + v.slots.len()
+            + v.events.len()
+            + v.states.len()
+            + v.timelines.len()
+            + v.clocks.len();
+        if decls > 0 && !v.body.is_empty() {
             self.out.push('\n');
         }
         for s in &v.body {
@@ -76,6 +113,55 @@ impl Printer {
         self.out.push_str("}\n");
     }
 
+    fn func(&mut self, f: &FuncDecl) {
+        let _ = write!(self.out, "func {}(", f.name);
+        for (i, (n, t)) in f.params.iter().enumerate() {
+            if i > 0 {
+                self.out.push_str(", ");
+            }
+            self.out.push_str(n);
+            if let Some(t) = t {
+                let _ = write!(self.out, ": {}", type_text(t));
+            }
+        }
+        self.out.push(')');
+        if let Some(t) = &f.ret {
+            let _ = write!(self.out, " -> {}", type_text(t));
+        }
+        self.out.push(' ');
+        self.block(&f.body, 0);
+        self.out.push('\n');
+    }
+
+    fn timeline(&mut self, t: &TimelineDecl) {
+        let _ = write!(self.out, "timeline {}", t.name);
+        if !t.args.is_empty() {
+            self.call_rest(&t.args, None, 0);
+        }
+        self.out.push_str(" {\n");
+        for tr in &t.tracks {
+            let _ = write!(self.out, "    track {} {{ ", tr.name);
+            for (i, k) in tr.keys.iter().enumerate() {
+                if i > 0 {
+                    self.out.push_str(" ; ");
+                }
+                self.expr(&k.time, 7, 1);
+                self.out.push_str(": ");
+                self.expr(&k.value, 0, 1);
+                if let Some(c) = &k.curve {
+                    let _ = write!(self.out, " .{c}");
+                }
+            }
+            self.out.push_str(" }\n");
+        }
+        for (time, name) in &t.events {
+            self.out.push_str("    event ");
+            self.expr(time, 7, 1);
+            let _ = writeln!(self.out, " {name}");
+        }
+        self.out.push_str("}\n");
+    }
+
     fn block(&mut self, body: &[Stmt], indent: usize) {
         self.out.push_str("{\n");
         for s in body {
@@ -90,6 +176,14 @@ impl Printer {
         match s {
             Stmt::Expr(e) => self.chain(e, indent),
             Stmt::If { cond, then, els, .. } => self.if_stmt(cond, then, els.as_deref(), indent),
+            Stmt::Emit { name, value, .. } => {
+                let _ = write!(self.out, "emit {name}");
+                if let Some(v) = value {
+                    self.out.push('(');
+                    self.expr(v, 0, indent);
+                    self.out.push(')');
+                }
+            }
             Stmt::Let { name, value, .. } => {
                 let _ = write!(self.out, "let {name} = ");
                 self.expr(value, 0, indent);
@@ -197,17 +291,7 @@ impl Printer {
                 self.out.push('"');
                 for p in parts {
                     match p {
-                        StrPart::Text(t) => {
-                            for c in t.chars() {
-                                match c {
-                                    '"' => self.out.push_str("\\\""),
-                                    '\\' => self.out.push_str("\\\\"),
-                                    '\n' => self.out.push_str("\\n"),
-                                    '\t' => self.out.push_str("\\t"),
-                                    c => self.out.push(c),
-                                }
-                            }
-                        }
+                        StrPart::Text(t) => self.out.push_str(&escape(t)),
                         StrPart::Expr(e) => {
                             self.out.push_str("\\(");
                             self.expr(e, 0, indent);
@@ -230,6 +314,23 @@ impl Printer {
                     }
                     self.expr(it, 0, indent);
                 }
+                self.out.push(']');
+            }
+            ExprKind::Record(fields) => {
+                self.out.push_str("{ ");
+                for (i, (n, v)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        self.out.push_str(", ");
+                    }
+                    let _ = write!(self.out, "{n}: ");
+                    self.expr(v, 0, indent);
+                }
+                self.out.push_str(" }");
+            }
+            ExprKind::Index { recv, index } => {
+                self.expr(recv, 8, indent);
+                self.out.push('[');
+                self.expr(index, 0, indent);
                 self.out.push(']');
             }
             ExprKind::Range { lo, hi, inclusive } => {
@@ -302,6 +403,20 @@ pub(crate) fn is_view_like(e: &Expr) -> bool {
         ExprKind::Member { recv, .. } => is_view_like(recv),
         _ => false,
     }
+}
+
+pub(crate) fn escape(t: &str) -> String {
+    let mut out = String::new();
+    for c in t.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 pub(crate) fn type_text(t: &TypeName) -> String {

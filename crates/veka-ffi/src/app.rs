@@ -11,7 +11,7 @@ use crate::{VekaContext, VekaElement, build, context, guard, set_error, string, 
 
 /// Une application. Opaque.
 pub struct VekaApp {
-    app: App,
+    pub(crate) app: App,
 }
 
 /// Déclare les états de la fenêtre (rappelée avant chaque `body`).
@@ -151,6 +151,16 @@ pub unsafe extern "C" fn veka_app_add_window_ex(
         }
         // SAFETY : contrat de l'API.
         let (app, d) = unsafe { (&mut *app, *desc) };
+        let desc = unsafe { window_desc(&d) }?;
+        app.app = std::mem::take(&mut app.app).window_with(desc, window_view(setup, body, user));
+        Ok(0)
+    })
+}
+
+/// Les réglages Rust d'une fenêtre C.
+pub(crate) unsafe fn window_desc(d: &VekaWindowDesc) -> Result<WindowDesc, String> {
+    {
+        // SAFETY : contrat de l'API.
         let title = unsafe { string(d.title, "titre") }?;
         let mut desc = WindowDesc::new(title)
             .size(Size::new(d.width, d.height))
@@ -170,9 +180,8 @@ pub unsafe extern "C" fn veka_app_add_window_ex(
         if d.resize_margin > 0.0 {
             desc = desc.resize_margin(d.resize_margin);
         }
-        app.app = std::mem::take(&mut app.app).window_with(desc, window_view(setup, body, user));
-        Ok(0)
-    })
+        Ok(desc)
+    }
 }
 
 /// Ouvre les fenêtres et bloque jusqu'à la fermeture de la dernière. Libère `app`.

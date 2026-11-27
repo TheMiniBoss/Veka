@@ -1,6 +1,6 @@
 // Anima en .vk : une carte à ressort, une liste avec transitions, une couleur animée, la galerie
-// des courbes et une pastille à géométrie liée. `cargo run --example vk -- anima`
-// (même dessin que `anima.rs`, testé ; la pulsation en timeline arrive avec les timelines .vk).
+// des courbes, une pastille à géométrie liée et une pulsation en timeline.
+// `cargo run --example vk -- anima` (même dessin que `anima.rs`, testé).
 
 view Anima {
     ZStack {
@@ -14,6 +14,7 @@ view Anima {
                 Couleur
                 Galerie
                 Geometrie
+                Coeur
             }
             Liste
         }
@@ -159,5 +160,33 @@ view Geometrie {
                     .id(0)
             }
         }
+    }
+}
+
+timeline Pulsation(loop: true, length: 0.9) {
+    track échelle { 0: 1 .easeOut ; 0.15: 1.35 ; 0.5: 1 .linear }
+    track opacité { 0: 0.6 .easeOut ; 0.15: 1 ; 0.9: 0.6 }
+    event 0.15 battement
+}
+
+view Coeur {
+    @State var battements = 0
+    @Timeline var p = Pulsation(autoplay: true)
+
+    HStack(spacing: 12) {
+        Button(p.isPlaying ? "Pause" : "Lecture") {
+            p.toggle()
+        }
+        Circle()
+            .fill(.Pink)
+            .frame(28, 28)
+            .scaleEffect(p.échelle)
+            .opacity(p.opacité)
+            .frame(44, 44)
+            .onTimelineEvent(p, battement) {
+                battements += 1
+            }
+        Text("Battements : \(battements)")
+            .font(.footnote)
     }
 }

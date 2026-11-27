@@ -170,15 +170,21 @@ impl Parser {
                 self.view().map(Item::View)
             } else if self.is_ident("theme") {
                 self.theme().map(Item::Theme)
+            } else if self.is_ident("func") {
+                self.func().map(Item::Func)
+            } else if self.is_ident("timeline") {
+                self.timeline().map(Item::Timeline)
+            } else if self.is_ident("import") {
+                self.import().map(Item::Import)
             } else {
-                Err(self.unexpected("`view` ou `theme`"))
+                Err(self.unexpected("`view`, `theme`, `func`, `timeline` ou `import`"))
             };
             match r {
                 Ok(item) => items.push(item),
                 Err(e) => {
                     self.errors.push(e);
                     // Saute jusqu'à la prochaine déclaration.
-                    while !self.at_eof() && !self.is_ident("view") && !self.is_ident("theme") {
+                    while !self.at_eof() && !TOP.iter().any(|k| self.is_ident(k)) {
                         self.bump();
                     }
                 }
@@ -187,12 +193,161 @@ impl Parser {
         Module { items }
     }
 
+    fn import(&mut self) -> R<ImportDecl> {
+        let span = self.span();
+        self.bump();
+        match self.peek().clone() {
+            Tok::Str(pieces) => {
+                self.bump();
+                let mut path = String::new();
+                for p in pieces {
+                    match p {
+                        StrPiece::Text(t) => path.push_str(&t),
+                        StrPiece::Code(_, at) => {
+                            return Err(Diagnostic::error(at, "`import` : un chemin sans `\\(…)`"));
+                        }
+                    }
+                }
+                Ok(ImportDecl { path, span })
+            }
+            _ => Err(self.unexpected("un chemin entre guillemets")),
+        }
+    }
+
+    fn func(&mut self) -> R<FuncDecl> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("le nom de la fonction")?;
+        self.expect("(")?;
+        let mut params = Vec::new();
+        loop {
+            if self.eat(")") {
+                break;
+            }
+            let p = self.ident("un paramètre")?;
+            let ty = if self.eat(":") {
+                Some(self.type_name()?)
+            } else {
+                None
+            };
+            params.push((p, ty));
+            if !self.eat(",") {
+                self.expect(")")?;
+                break;
+            }
+        }
+        let ret = if self.eat("->") {
+            Some(self.type_name()?)
+        } else {
+            None
+        };
+        let body = self.block()?;
+        if !matches!(body.last(), Some(Stmt::Expr(_))) {
+            return Err(Diagnostic::error(
+                span,
+                format!("`func {name}` : la dernière ligne doit être une valeur"),
+            ));
+        }
+        Ok(FuncDecl {
+            name,
+            params,
+            ret,
+            body,
+            span,
+        })
+    }
+
+    fn timeline(&mut self) -> R<TimelineDecl> {
+        let span = self.span();
+        self.bump();
+        let name = self.ident("le nom de la timeline")?;
+        let args = if self.eat("(") { self.args()? } else { Vec::new() };
+        self.expect("{")?;
+        let mut tracks = Vec::new();
+        let mut events = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.eat("}") {
+                break;
+            }
+            if self.at_eof() {
+                return Err(Diagnostic::error(
+                    span,
+                    format!("`timeline {name}` : `}}` de fin manquante"),
+                ));
+            }
+            let r = if self.is_ident("track") {
+                self.track().map(|t| tracks.push(t))
+            } else if self.is_ident("event") {
+                self.bump();
+                self.expr(true).and_then(|t| {
+                    let n = self.ident("le nom de l'événement")?;
+                    events.push((t, n));
+                    Ok(())
+                })
+            } else {
+                Err(self.unexpected("`track` ou `event`"))
+            };
+            if let Err(e) = r {
+                self.errors.push(e);
+                self.sync();
+            }
+        }
+        Ok(TimelineDecl {
+            name,
+            args,
+            tracks,
+            events,
+            span,
+        })
+    }
+
+    fn track(&mut self) -> R<TrackDecl> {
+        self.bump();
+        let name = self.ident("le nom de la piste")?;
+        self.expect("{")?;
+        let mut keys = Vec::new();
+        loop {
+            self.skip_newlines();
+            while self.eat(";") {
+                self.skip_newlines();
+            }
+            if self.eat("}") {
+                break;
+            }
+            let time = self.unary(true)?;
+            self.expect(":")?;
+            let value = self.expr(true)?;
+            // `1 .easeOut` : la courbe se lit comme un membre de la valeur.
+            let (value, curve) = match value.kind {
+                ExprKind::Member { recv, name } if is_curve(&name) => (*recv, Some(name)),
+                kind => (
+                    Expr {
+                        kind,
+                        span: value.span,
+                    },
+                    None,
+                ),
+            };
+            keys.push(KeyDecl { time, value, curve });
+            if !matches!(self.peek(), Tok::Punct(";") | Tok::Punct("}") | Tok::Newline) {
+                return Err(self.unexpected("`;` ou une fin de ligne"));
+            }
+        }
+        Ok(TrackDecl { name, keys })
+    }
+
     fn view(&mut self) -> R<ViewDecl> {
         let span = self.span();
         self.bump();
         let name = self.ident("le nom de la vue")?;
         self.expect("{")?;
         let mut states = Vec::new();
+        let mut params = Vec::new();
+        let mut slots = Vec::new();
+        let mut events = Vec::new();
+        let mut timelines = Vec::new();
+        let mut clocks = Vec::new();
         let mut body = Vec::new();
         loop {
             self.skip_newlines();
@@ -207,9 +362,39 @@ impl Parser {
             }
             let r = match self.peek().clone() {
                 Tok::Attr(a) if a == "State" => self.state().map(|s| states.push(s)),
+                Tok::Attr(a) if a == "Timeline" => self.state().map(|s| timelines.push(s)),
+                Tok::Attr(a) if a == "Param" => self.param().map(|p| params.push(p)),
+                Tok::Attr(a) if a == "Slot" => {
+                    self.bump();
+                    self.ident("le nom de l'emplacement").map(|n| slots.push(n))
+                }
+                Tok::Attr(a) if a == "Clock" => {
+                    self.bump();
+                    self.is_ident("var").then(|| self.bump());
+                    self.ident("le nom de l'horloge").map(|n| clocks.push(n))
+                }
+                Tok::Attr(a) if a == "Event" => {
+                    let at = self.span();
+                    self.bump();
+                    self.ident("le nom de l'événement").and_then(|n| {
+                        let ty = if self.eat("(") {
+                            let t = self.type_name()?;
+                            self.expect(")")?;
+                            Some(t)
+                        } else {
+                            None
+                        };
+                        events.push(EventDecl {
+                            name: n,
+                            ty,
+                            span: at,
+                        });
+                        Ok(())
+                    })
+                }
                 Tok::Attr(a) => Err(Diagnostic::error(
                     self.span(),
-                    format!("`@{a}` inconnu (seul `@State` existe pour l'instant)"),
+                    format!("`@{a}` inconnu (`@State`, `@Param`, `@Slot`, `@Event`, `@Timeline`, `@Clock`)"),
                 )),
                 _ => self.stmt().map(|s| body.push(s)),
             };
@@ -220,7 +405,12 @@ impl Parser {
         }
         Ok(ViewDecl {
             name,
+            params,
+            slots,
+            events,
             states,
+            timelines,
+            clocks,
             body,
             span,
         })
@@ -242,6 +432,32 @@ impl Parser {
         self.expect("=")?;
         let init = self.expr(false)?;
         Ok(StateDecl { name, ty, init, span })
+    }
+
+    fn param(&mut self) -> R<ParamDecl> {
+        let span = self.span();
+        self.bump();
+        if !self.is_ident("var") {
+            return Err(self.unexpected("`var`"));
+        }
+        self.bump();
+        let name = self.ident("le nom du paramètre")?;
+        let ty = if self.eat(":") {
+            Some(self.type_name()?)
+        } else {
+            None
+        };
+        let default = if self.eat("=") {
+            Some(self.expr(false)?)
+        } else {
+            None
+        };
+        Ok(ParamDecl {
+            name,
+            ty,
+            default,
+            span,
+        })
     }
 
     fn type_name(&mut self) -> R<TypeName> {
@@ -354,6 +570,22 @@ impl Parser {
         let span = self.span();
         if self.is_ident("if") {
             return self.if_stmt();
+        }
+        if self.is_ident("emit") {
+            self.bump();
+            let name = self.ident("le nom de l'événement")?;
+            let value = if self.eat("(") {
+                let v = if self.is(")") {
+                    None
+                } else {
+                    Some(self.expr(false)?)
+                };
+                self.expect(")")?;
+                v
+            } else {
+                None
+            };
+            return Ok(Stmt::Emit { name, value, span });
         }
         if self.is_ident("let") {
             self.bump();
@@ -585,6 +817,20 @@ impl Parser {
                 };
                 continue;
             }
+            if self.is("[") {
+                self.bump();
+                let index = self.expr(false)?;
+                self.expect("]")?;
+                let span = e.span;
+                e = Expr {
+                    kind: ExprKind::Index {
+                        recv: Box::new(e),
+                        index: Box::new(index),
+                    },
+                    span,
+                };
+                continue;
+            }
             // `.nom`, aussi au début de la ligne suivante (les modifiers).
             let mut k = 0;
             while matches!(self.peek_at(k), Tok::Newline) {
@@ -732,6 +978,29 @@ impl Parser {
                 self.bump();
                 ExprKind::Symbol(self.ident("un nom après `.`")?)
             }
+            // `{ x: 1, y: 2 }` : un enregistrement.
+            Tok::Punct("{")
+                if matches!(
+                    (self.peek_at(1), self.peek_at(2)),
+                    (Tok::Ident(_), Tok::Punct(":"))
+                ) =>
+            {
+                self.bump();
+                let mut fields = Vec::new();
+                loop {
+                    if self.eat("}") {
+                        break;
+                    }
+                    let n = self.ident("un champ")?;
+                    self.expect(":")?;
+                    fields.push((n, self.expr(false)?));
+                    if !self.eat(",") {
+                        self.expect("}")?;
+                        break;
+                    }
+                }
+                ExprKind::Record(fields)
+            }
             Tok::Punct("(") => {
                 self.bump();
                 let e = self.expr(false)?;
@@ -757,6 +1026,16 @@ impl Parser {
         };
         Ok(Expr { kind, span })
     }
+}
+
+/// Les mots qui commencent une déclaration (pour reprendre après une erreur).
+const TOP: &[&str] = &["view", "theme", "func", "timeline", "import"];
+
+pub(crate) fn is_curve(name: &str) -> bool {
+    matches!(
+        name,
+        "linear" | "easeIn" | "easeOut" | "easeInOut" | "circEaseIn" | "circEaseOut" | "circEaseInOut"
+    )
 }
 
 fn bin(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {

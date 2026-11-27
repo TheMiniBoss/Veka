@@ -424,3 +424,84 @@ fn anima_c_comme_rust() {
         assert!(!veka_last_error().is_null());
     }
 }
+
+// --- Le langage .vk depuis le C -------------------------------------------------------------------
+
+const BOUTIQUE_VK: &std::ffi::CStr = c"view Boutique {
+    @Event acheter(String)
+    VStack {
+        ForEach(model.articles) { a in
+            Button(\"\\(a.nom) : \\(a.prix) or\") {
+                emit acheter(a.nom)
+            }
+        }
+    }
+}
+";
+
+unsafe extern "C" fn recu(
+    view: *const c_char,
+    event: *const c_char,
+    value: *const VekaData,
+    user: *mut c_void,
+) {
+    let out = unsafe { &mut *(user as *mut Vec<String>) };
+    let mut buf = [0 as c_char; 64];
+    unsafe { veka_data_text(value, buf.as_mut_ptr(), buf.len()) };
+    let s = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+    out.push(format!("{}.{}({})", s(view), s(event), s(buf.as_ptr())));
+}
+
+#[test]
+fn vk_depuis_le_c() {
+    unsafe {
+        let vk = veka_vk_load(BOUTIQUE_VK.as_ptr());
+        assert!(!vk.is_null());
+        let model = veka_data_record();
+        let articles = veka_data_array();
+        for (nom, prix) in [(c"Épée", 12), (c"Arc", 9)] {
+            let a = veka_data_record();
+            assert_eq!(
+                veka_data_set(a, c"nom".as_ptr(), veka_data_string(nom.as_ptr())),
+                0
+            );
+            assert_eq!(veka_data_set(a, c"prix".as_ptr(), veka_data_int(prix)), 0);
+            assert_eq!(veka_data_push(articles, a), 0);
+        }
+        assert_eq!(veka_data_len(articles), 2);
+        assert_eq!(
+            veka_data_as_int(veka_data_get(veka_data_at(articles, 1), c"prix".as_ptr())),
+            9
+        );
+        assert_eq!(veka_data_kind(veka_data_at(articles, 0)), VekaDataKind::Record);
+        assert_eq!(veka_data_set(model, c"articles".as_ptr(), articles), 0);
+        assert_eq!(veka_vk_set_model(vk, model), 0);
+        let mut events: Vec<String> = Vec::new();
+        assert_eq!(
+            veka_vk_on_event(vk, Some(recu), &mut events as *mut Vec<String> as *mut c_void),
+            0
+        );
+        let view = take(veka_vk_view(vk, c"Boutique".as_ptr())).unwrap();
+        let mut s = Surface::new(view);
+        s.resize(Size::new(300.0, 200.0), 1.0);
+        s.frame();
+        assert_eq!(s.texts(), ["Épée : 12 or", "Arc : 9 or"]);
+        let p = s.rects_of("Button")[1].center();
+        s.handle(InputEvent::PointerDown {
+            position: p,
+            button: PointerButton::Primary,
+        });
+        s.handle(InputEvent::PointerUp {
+            position: p,
+            button: PointerButton::Primary,
+        });
+        assert_eq!(events, ["Boutique.acheter(Arc)"]);
+        // Une erreur : NULL et un message avec sa position.
+        assert!(veka_vk_load(c"view A {\n    Txt(\"x\")\n}\n".as_ptr()).is_null());
+        let e = CStr::from_ptr(veka_last_error()).to_string_lossy().into_owned();
+        assert!(e.starts_with("2:5") && e.contains("`Text`"), "{e}");
+        assert!(veka_vk_view(vk, c"Absente".as_ptr()).is_null());
+        drop(s);
+        veka_vk_free(vk);
+    }
+}

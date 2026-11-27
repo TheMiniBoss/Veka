@@ -1,0 +1,51 @@
+// La boutique de `boutique.c` : les articles viennent du C (`model`), l'achat lui revient
+// (`emit`). Modifiez ce fichier pendant que la fenêtre est ouverte : elle se met à jour.
+
+view Article {
+    @Param var nom: String = "Article"
+    @Param var prix: Int = 10
+    @Slot badge
+    @Event acheter(Int)
+
+    HStack(spacing: 10) {
+        Text(nom)
+            .font(.headline)
+        Slot(badge)
+        Spacer()
+        Button("Acheter \(prix) or") {
+            emit acheter(prix)
+        }
+    }
+    .padding(horizontal: 14, vertical: 8)
+    .background(.Fill, shape: .capsule)
+}
+
+view Boutique {
+    @Event achat(String)
+    @State var dernier = "rien"
+    @State var depense = 0
+
+    VStack(spacing: 10) {
+        Text("Boutique")
+            .font(.largeTitle)
+        ForEach(model.articles) { a in
+            Article(nom: a.nom, prix: a.prix) {
+                if a.nouveau {
+                    Text("NOUVEAU")
+                        .font(.caption)
+                        .foregroundColor(.Orange)
+                }
+            }
+            .on(acheter) { prix in
+                withAnimation(.snappy) {
+                    dernier = a.nom
+                    depense += prix
+                }
+                emit achat(a.nom)
+            }
+        }
+        Text("Dernier achat : \(dernier), \(depense) or dépensés")
+            .font(.footnote)
+    }
+    .padding(24)
+}

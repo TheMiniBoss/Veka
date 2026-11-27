@@ -1,15 +1,16 @@
 //! L'interpréteur : une vue `.vk` est une vue composée de Veka dont le corps parcourt l'arbre du
 //! fichier. Les vues sont construites par le schéma, les actions deviennent des `Action`.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use veka_colora::{Paint, Theme, Token};
 use veka_ui::schema::{Children, EntryKind, Params, Schema, Value, ValueType};
-use veka_ui::{Action, Element, Key, State, with_animation};
+use veka_ui::{Action, Element, Key, State, TimelineState, with_animation};
 
-use crate::ast::*;
+pub(crate) use crate::ast::*;
 use crate::value::{Sym, Val, gradient, to_animation, to_paint, to_schema};
 use crate::{Diagnostic, Span};
 
@@ -24,6 +25,38 @@ pub(crate) struct Shared {
     pub themes: HashMap<String, Arc<Theme>>,
 }
 
+/// Un rappel d'événement (`.on(acheter) { prix in … }`).
+pub(crate) type Handler = Rc<dyn Fn(Val)>;
+
+/// Ce que l'hôte partage avec toutes les vues : ses données et son rappel d'événements.
+#[derive(Default)]
+pub(crate) struct Host {
+    pub model: RefCell<Val>,
+    #[allow(clippy::type_complexity)]
+    pub on_event: RefCell<Option<Rc<dyn Fn(&str, &str, &Val)>>>,
+}
+
+/// Le contenu d'un `@Slot`, évalué chez l'appelant.
+#[derive(Clone)]
+pub(crate) enum SlotVal {
+    Body(Box<Cx>, Rc<Vec<Stmt>>),
+    Expr(Box<Cx>, Rc<Expr>),
+}
+
+/// Ce que l'appelant donne à une vue du fichier.
+#[derive(Clone, Default)]
+pub(crate) struct Instance {
+    pub params: Vars,
+    pub slots: HashMap<String, SlotVal>,
+    pub handlers: HashMap<String, Handler>,
+}
+
+/// Construit une vue du fichier.
+pub(crate) type ViewFn = Rc<dyn Fn(&str, Instance) -> Element>;
+
+/// Les rappels `.onTimelineEvent` relevés pendant une évaluation : `(timeline, événement, rappel)`.
+pub(crate) type TimelineHandlers = Rc<RefCell<Vec<(TimelineState, Option<String>, Handler)>>>;
+
 /// Le contexte d'évaluation d'une vue (ou d'une action).
 #[derive(Clone)]
 pub(crate) struct Cx {
@@ -32,10 +65,39 @@ pub(crate) struct Cx {
     pub vars: Option<State<Vars>>,
     /// Les états déjà calculés pendant l'initialisation.
     pub pre: Rc<Vars>,
-    /// `let`, paramètres de `ForEach` et de fermetures.
+    /// `let`, paramètres de `ForEach` et de fermetures, timelines et horloges.
     pub locals: Vec<(Rc<str>, Val)>,
     /// Les vues du fichier, pour en construire depuis un corps.
-    pub views: Rc<dyn Fn(&str) -> Element>,
+    pub views: ViewFn,
+    pub host: Rc<Host>,
+    /// La vue évaluée (pour `emit`).
+    pub view: Rc<str>,
+    pub params: Rc<Vars>,
+    pub slots: Rc<HashMap<String, SlotVal>>,
+    pub handlers: Rc<HashMap<String, Handler>>,
+    pub tl_handlers: TimelineHandlers,
+    /// Profondeur des appels de fonctions (contre la récursion sans fin).
+    pub depth: u32,
+}
+
+impl Cx {
+    /// Un contexte sans vue (thèmes, valeurs initiales).
+    pub fn root(shared: Rc<Shared>, host: Rc<Host>, views: ViewFn) -> Self {
+        Cx {
+            shared,
+            vars: None,
+            pre: Rc::new(Vars::new()),
+            locals: Vec::new(),
+            views,
+            host,
+            view: Rc::from(""),
+            params: Rc::new(Vars::new()),
+            slots: Rc::new(HashMap::new()),
+            handlers: Rc::new(HashMap::new()),
+            tl_handlers: Rc::new(RefCell::new(Vec::new())),
+            depth: 0,
+        }
+    }
 }
 
 fn err(span: Span, msg: impl Into<String>) -> Diagnostic {
@@ -77,10 +139,20 @@ impl Cx {
         if let Some(v) = self.pre.get(name) {
             return Some(v.clone());
         }
+        if let Some(v) = self.params.get(name) {
+            return Some(v.clone());
+        }
+        if let Some(v) = self.vars.and_then(|s| s.with(|m| m.get(name).cloned())) {
+            return Some(v);
+        }
         if let Some(t) = self.shared.themes.get(name) {
             return Some(Val::Theme(t.clone()));
         }
-        self.vars.and_then(|s| s.with(|m| m.get(name).cloned()))
+        match name {
+            "model" => Some(self.host.model.borrow().clone()),
+            "pi" => Some(Val::Float(std::f64::consts::PI)),
+            _ => None,
+        }
     }
 
     fn is_state(&self, name: &str) -> bool {
@@ -110,6 +182,7 @@ impl Cx {
             ExprKind::Ident(n) => self.lookup(n).ok_or_else(|| {
                 let mut names: Vec<String> = self.locals.iter().map(|(n, _)| n.to_string()).collect();
                 names.extend(self.pre.keys().cloned());
+                names.extend(self.params.keys().cloned());
                 if let Some(s) = self.vars {
                     s.with(|m| names.extend(m.keys().cloned()));
                 }
@@ -125,6 +198,37 @@ impl Cx {
             })),
             ExprKind::Array(items) => {
                 Val::Array(Rc::new(items.iter().map(|i| self.eval(i)).collect::<R<_>>()?))
+            }
+            ExprKind::Record(fields) => Val::Record(Rc::new(
+                fields
+                    .iter()
+                    .map(|(n, e)| Ok((Rc::from(n.as_str()), self.eval(e)?)))
+                    .collect::<R<_>>()?,
+            )),
+            ExprKind::Index { recv, index } => {
+                let r = self.eval(recv)?;
+                let i = self.eval(index)?;
+                match (&r, &i) {
+                    (Val::Array(_) | Val::Range(..), Val::Int(k)) => {
+                        let len = r.items().map_or(0, |v| v.len());
+                        usize::try_from(*k).ok().and_then(|k| r.index(k)).ok_or_else(|| {
+                            err(index.span, format!("indice {k} hors du tableau ({len} éléments)"))
+                        })?
+                    }
+                    (Val::Record(_), Val::Str(k)) => r
+                        .get(k)
+                        .ok_or_else(|| err(index.span, format!("champ `{k}` absent")))?,
+                    _ => {
+                        return Err(err(
+                            span,
+                            format!(
+                                "`[…]` : un tableau et un entier attendus, trouvé {} et {}",
+                                r.type_name(),
+                                i.type_name()
+                            ),
+                        ));
+                    }
+                }
             }
             ExprKind::Range { lo, hi, inclusive } => {
                 let int = |e: &Expr| -> R<i64> {
@@ -199,11 +303,83 @@ impl Cx {
                         let r = self.eval(recv)?;
                         member(&r, name, Some(args)).map_err(|m| err(span, m))?
                     }
-                    ExprKind::Ident(n) => builtin(n, &args).map_err(|m| err(span, m))?,
+                    ExprKind::Ident(n) => {
+                        let shared = self.shared.clone();
+                        if let Some(f) = shared.module.func(n) {
+                            return self.call_func(f, args, span);
+                        }
+                        if shared.module.timeline(n).is_some() {
+                            return Err(err(
+                                span,
+                                format!("`{n}` est une timeline : `@Timeline var x = {n}(…)`"),
+                            ));
+                        }
+                        builtin(n, &args).map_err(|m| {
+                            if m.starts_with("fonction `") {
+                                let funcs = shared.module.funcs().map(|f| f.name.as_str());
+                                err(
+                                    span,
+                                    format!("{m}{}", suggest(n, funcs.chain(BUILTINS.iter().copied()))),
+                                )
+                            } else {
+                                err(span, m)
+                            }
+                        })?
+                    }
                     _ => return Err(err(span, "on ne peut appeler que des noms")),
                 }
             }
         })
+    }
+
+    /// Une fonction du fichier : pure, elle ne voit que ses paramètres (et les autres fonctions).
+    fn call_func(&self, f: &FuncDecl, args: Vec<(Option<String>, Val)>, span: Span) -> R<Val> {
+        if self.depth > 64 {
+            return Err(err(
+                span,
+                format!("`{}` : trop d'appels imbriqués (récursion sans fin ?)", f.name),
+            ));
+        }
+        if args.len() != f.params.len() {
+            return Err(err(
+                span,
+                format!(
+                    "`{}` attend {} argument(s), {} donné(s)",
+                    f.name,
+                    f.params.len(),
+                    args.len()
+                ),
+            ));
+        }
+        let mut cx = Cx::root(self.shared.clone(), self.host.clone(), self.views.clone());
+        cx.depth = self.depth + 1;
+        for ((name, ty), (label, v)) in f.params.iter().zip(args) {
+            if label.as_ref().is_some_and(|l| l != name) {
+                return Err(err(
+                    span,
+                    format!("`{}` : paramètre `{name}` attendu ici", f.name),
+                ));
+            }
+            let v = check_type(ty, v, span)?;
+            cx.locals.push((Rc::from(name.as_str()), v));
+        }
+        let mut result = Val::Unit;
+        for st in &f.body {
+            match st {
+                Stmt::Let { name, value, .. } => {
+                    let v = cx.eval(value)?;
+                    cx.locals.push((Rc::from(name.as_str()), v));
+                }
+                Stmt::Expr(e) => result = cx.eval(e)?,
+                Stmt::If { span, .. } | Stmt::Assign { span, .. } | Stmt::Emit { span, .. } => {
+                    return Err(err(
+                        *span,
+                        "une fonction ne contient que des `let` et sa valeur (`a ? b : c` pour choisir)",
+                    ));
+                }
+            }
+        }
+        check_type(&f.ret, result, span)
     }
 
     fn bool(&self, e: &Expr) -> R<bool> {
@@ -239,6 +415,8 @@ impl Cx {
                         && matches!(&callee.kind, ExprKind::Ident(n) if n == "ForEach")
                     {
                         self.for_each(e.span, args, trailing.as_ref(), &mut out)?;
+                    } else if let Some(name) = slot_name(e) {
+                        out.extend(self.slot(name, e.span)?);
                     } else {
                         out.push(self.element(e)?);
                     }
@@ -254,16 +432,33 @@ impl Cx {
                     let v = self.eval(value)?;
                     self.locals.push((Rc::from(name.as_str()), v));
                 }
-                Stmt::Assign { span, .. } => {
+                Stmt::Assign { span, .. } | Stmt::Emit { span, .. } => {
                     return Err(err(
                         *span,
-                        "on ne change pas un état en décrivant la vue : faites-le dans une action (`Button { … }`)",
+                        "on n'agit pas en décrivant la vue : faites-le dans une action (`Button { … }`)",
                     ));
                 }
             }
         }
         self.locals.truncate(mark);
         Ok(out)
+    }
+
+    /// Le contenu de `Slot(nom)` (rien si l'appelant n'en a pas donné).
+    fn slot(&self, name: &str, span: Span) -> R<Vec<Element>> {
+        let declared = self
+            .shared
+            .module
+            .view(&self.view)
+            .is_some_and(|v| v.slots.iter().any(|s| s == name));
+        if !declared {
+            return Err(err(span, format!("`{name}` n'est pas un `@Slot` de cette vue")));
+        }
+        match self.slots.get(name) {
+            None => Ok(Vec::new()),
+            Some(SlotVal::Body(cx, body)) => cx.as_ref().clone().body(body),
+            Some(SlotVal::Expr(cx, e)) => Ok(vec![cx.as_ref().clone().element(e)?]),
+        }
     }
 
     fn for_each(
@@ -299,34 +494,192 @@ impl Cx {
 
     /// Une expression qui décrit une vue.
     pub fn element(&mut self, e: &Expr) -> R<Element> {
+        let mut handlers = Vec::new();
+        self.element_h(e, &mut handlers)
+    }
+
+    /// Comme [`element`](Self::element) ; les `.on(…)` relevés en chemin vont à la vue du fichier
+    /// qu'ils suivent.
+    fn element_h(&mut self, e: &Expr, handlers: &mut Vec<(String, Span, Handler)>) -> R<Element> {
         let span = e.span;
         match &e.kind {
-            ExprKind::Ident(n) => self.entry_or_view(n, &[], None, None, span),
+            ExprKind::Ident(n) => self.entry_or_view(n, &[], None, handlers, span),
             ExprKind::Call {
                 callee,
                 args,
                 trailing,
             } => match &callee.kind {
-                ExprKind::Ident(n) => self.entry_or_view(n, args, trailing.as_ref(), None, span),
+                ExprKind::Ident(n) => self.entry_or_view(n, args, trailing.as_ref(), handlers, span),
+                ExprKind::Member { recv, name } if name == "on" => {
+                    let event = match args.first().map(|a| &a.value.kind) {
+                        Some(ExprKind::Ident(ev)) if args.len() == 1 => ev.clone(),
+                        _ => {
+                            return Err(err(
+                                callee.span,
+                                "`.on(événement) { valeur in … }` : un nom d'événement attendu",
+                            ));
+                        }
+                    };
+                    let c = trailing
+                        .as_ref()
+                        .ok_or_else(|| err(callee.span, "`.on(…)` : la fermeture `{ … }` manque"))?;
+                    handlers.push((event, callee.span, self.handler(c)));
+                    self.element_h(recv, handlers)
+                }
+                ExprKind::Member { recv, name } if name == "onTimelineEvent" => {
+                    let tl = match args.first() {
+                        Some(a) => match self.eval(&a.value)? {
+                            Val::Timeline(t) => t,
+                            v => {
+                                return Err(err(
+                                    a.value.span,
+                                    format!("une `@Timeline` attendue, trouvé {}", v.type_name()),
+                                ));
+                            }
+                        },
+                        None => {
+                            return Err(err(callee.span, "`.onTimelineEvent(timeline, événement) { … }`"));
+                        }
+                    };
+                    let filter = match args.get(1).map(|a| &a.value.kind) {
+                        Some(ExprKind::Ident(n)) => Some(n.clone()),
+                        None => None,
+                        Some(_) => {
+                            return Err(err(
+                                callee.span,
+                                "`.onTimelineEvent` : un nom d'événement attendu",
+                            ));
+                        }
+                    };
+                    let c = trailing.as_ref().ok_or_else(|| {
+                        err(callee.span, "`.onTimelineEvent(…)` : la fermeture `{ … }` manque")
+                    })?;
+                    let h = self.handler(c);
+                    self.tl_handlers.borrow_mut().push((tl, filter, h));
+                    self.element_h(recv, handlers)
+                }
                 ExprKind::Member { recv, name } => {
-                    let child = self.element(recv)?;
+                    let child = self.element_h(recv, handlers)?;
                     self.modifier(child, name, args, trailing.as_ref(), callee.span)
                 }
                 _ => Err(err(span, "une vue attendue")),
             },
             ExprKind::Member { recv, name } => {
-                let child = self.element(recv)?;
+                let child = self.element_h(recv, handlers)?;
                 self.modifier(child, name, &[], None, span)
             }
             ExprKind::Ternary { cond, then, els } => {
                 if self.bool(cond)? {
-                    self.element(then)
+                    self.element_h(then, handlers)
                 } else {
-                    self.element(els)
+                    self.element_h(els, handlers)
                 }
             }
             _ => Err(err(span, "une vue attendue (`Text(…)`, `VStack { … }`…)")),
         }
+    }
+
+    /// Une fermeture `{ valeur in … }` qui agit dans ce contexte.
+    fn handler(&self, c: &Closure) -> Handler {
+        let cx = self.clone();
+        let body = Rc::new(c.body.clone());
+        let param = c.params.first().map(|p| Rc::<str>::from(p.as_str()));
+        Rc::new(move |v| {
+            let mut cx = cx.clone();
+            if let Some(p) = &param {
+                cx.locals.push((p.clone(), v));
+            }
+            if let Err(d) = cx.exec(&body) {
+                crate::program::report(d);
+            }
+        })
+    }
+
+    /// `Article(titre: …, prix: …) { contenu du slot }` : ce que l'appelant donne à une vue du fichier.
+    fn instance(
+        &mut self,
+        decl: &ViewDecl,
+        args: &[Arg],
+        trailing: Option<&Closure>,
+        handlers: &mut Vec<(String, Span, Handler)>,
+    ) -> R<Instance> {
+        let mut inst = Instance::default();
+        let mut positional = decl.params.iter();
+        for a in args {
+            let name = match &a.label {
+                Some(l) => l.clone(),
+                None => match positional.find(|p| !inst.params.contains_key(&p.name)) {
+                    Some(p) => p.name.clone(),
+                    None => return Err(err(a.value.span, format!("`{}` : trop d'arguments", decl.name))),
+                },
+            };
+            if let Some(p) = decl.params.iter().find(|p| p.name == name) {
+                if inst.params.contains_key(&name) {
+                    return Err(err(
+                        a.value.span,
+                        format!("`{}` : `{name}` donné deux fois", decl.name),
+                    ));
+                }
+                let v = self.eval(&a.value)?;
+                let v = check_type(&p.ty, v, a.value.span)
+                    .map_err(|d| err(d.span, format!("`{}` : `{name}` : {}", decl.name, d.message)))?;
+                inst.params.insert(name, v);
+            } else if decl.slots.contains(&name) {
+                inst.slots.insert(
+                    name,
+                    SlotVal::Expr(Box::new(self.clone()), Rc::new(a.value.clone())),
+                );
+            } else {
+                let names = decl
+                    .params
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .chain(decl.slots.iter().map(String::as_str));
+                return Err(err(
+                    a.value.span,
+                    format!(
+                        "`{}` n'a pas de paramètre `{name}`{}",
+                        decl.name,
+                        suggest(&name, names)
+                    ),
+                ));
+            }
+        }
+        if let Some(c) = trailing {
+            let Some(first) = decl.slots.first() else {
+                return Err(err(
+                    c_span(c, a_span(args)),
+                    format!("`{}` n'a pas de `@Slot` : pas de `{{ … }}`", decl.name),
+                ));
+            };
+            inst.slots.insert(
+                first.clone(),
+                SlotVal::Body(Box::new(self.clone()), Rc::new(c.body.clone())),
+            );
+        }
+        for p in &decl.params {
+            if p.default.is_none() && !inst.params.contains_key(&p.name) {
+                return Err(err(
+                    a_span(args),
+                    format!("`{}` : le paramètre `{}` manque", decl.name, p.name),
+                ));
+            }
+        }
+        for (name, at, h) in handlers.drain(..) {
+            if !decl.events.iter().any(|e| e.name == name) {
+                let names = decl.events.iter().map(|e| e.name.as_str());
+                return Err(err(
+                    at,
+                    format!(
+                        "`{}` n'a pas d'`@Event {name}`{}",
+                        decl.name,
+                        suggest(&name, names)
+                    ),
+                ));
+            }
+            inst.handlers.insert(name, h);
+        }
+        Ok(inst)
     }
 
     fn modifier(
@@ -373,18 +726,34 @@ impl Cx {
         name: &str,
         args: &[Arg],
         trailing: Option<&Closure>,
-        _child: Option<Element>,
+        handlers: &mut Vec<(String, Span, Handler)>,
         span: Span,
     ) -> R<Element> {
         let shared = self.shared.clone();
-        if shared.module.view(name).is_some() {
-            if !args.is_empty() || trailing.is_some() {
-                return Err(err(
-                    span,
-                    format!("`{name}` : les paramètres de vue arrivent avec `@Param`"),
-                ));
-            }
-            return Ok((self.views)(name));
+        if let Some(decl) = shared.module.view(name) {
+            let inst = self.instance(decl, args, trailing, handlers)?;
+            return Ok((self.views)(name, inst));
+        }
+        if let Some((ev, at, _)) = handlers.first() {
+            return Err(err(
+                *at,
+                format!(
+                    "`.on({ev})` : `{name}` n'envoie pas d'événements (seule une vue du fichier le peut)"
+                ),
+            ));
+        }
+        if name == "Slot" {
+            let Some(slot) = slot_name_args(args) else {
+                return Err(err(span, "`Slot(nom)` : le nom d'un `@Slot` attendu"));
+            };
+            let mut items = self.slot(slot, span)?;
+            return Ok(match items.len() {
+                1 => items.pop().expect("un élément"),
+                _ => shared
+                    .schema
+                    .build("VStack", Params::new(), items)
+                    .map_err(|e| err(span, e.to_string()))?,
+            });
         }
         match shared.schema.get(name) {
             Some(entry) if entry.kind == EntryKind::Primitive => {
@@ -505,6 +874,25 @@ impl Cx {
                     let v = self.eval(value)?;
                     self.locals.push((Rc::from(name.as_str()), v));
                 }
+                Stmt::Emit { name, value, span } => {
+                    let declared = self
+                        .shared
+                        .module
+                        .view(&self.view)
+                        .is_some_and(|v| v.events.iter().any(|e| &e.name == name));
+                    if !declared {
+                        return Err(err(*span, format!("`{name}` n'est pas un `@Event` de cette vue")));
+                    }
+                    let v = match value {
+                        Some(e) => self.eval(e)?,
+                        None => Val::Unit,
+                    };
+                    if let Some(h) = self.handlers.get(name).cloned() {
+                        h(v);
+                    } else if let Some(f) = self.host.on_event.borrow().clone() {
+                        f(&self.view, name, &v);
+                    }
+                }
                 Stmt::Assign {
                     target,
                     op,
@@ -596,6 +984,9 @@ impl Cx {
                 let old = self
                     .lookup(state)
                     .ok_or_else(|| err(recv.span, format!("`{state}` inconnu")))?;
+                if let Val::Timeline(tl) = old {
+                    return timeline_method(tl, name, &args).map_err(|m| err(span, m));
+                }
                 let new = mutate(old, name, &args).map_err(|m| err(span, m))?;
                 self.set(state, new, span)
             }
@@ -672,9 +1063,53 @@ fn mutate(v: Val, method: &str, args: &[(Option<String>, Val)]) -> Result<Val, S
     }
 }
 
+/// `p.play()`, `p.seek(0.5)`… dans une action.
+fn timeline_method(tl: TimelineState, name: &str, args: &[(Option<String>, Val)]) -> Result<(), String> {
+    match name {
+        "play" => tl.play(),
+        "pause" => tl.pause(),
+        "stop" => tl.stop(),
+        "reverse" => tl.reverse(),
+        "toggle" => {
+            if tl.is_playing() {
+                tl.pause()
+            } else {
+                tl.play()
+            }
+        }
+        "seek" => {
+            let t = args
+                .first()
+                .and_then(|(_, v)| v.as_f64())
+                .ok_or("`seek` : un instant (secondes) attendu")?;
+            tl.seek(t as f32)
+        }
+        n => {
+            return Err(format!(
+                "`{n}` : inconnu sur une timeline (play, pause, stop, reverse, toggle, seek)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// `recv.name` ou `recv.name(args)`.
 fn member(r: &Val, name: &str, args: Option<Vec<(Option<String>, Val)>>) -> Result<Val, String> {
     match r {
+        Val::Record(_) if args.is_none() => r.get(name).ok_or_else(|| {
+            let Val::Record(f) = r else { unreachable!() };
+            format!(
+                "champ `{name}` absent{}",
+                suggest(name, f.iter().map(|(k, _)| &**k))
+            )
+        }),
+        Val::Timeline(t) if args.is_none() => Ok(match name {
+            "time" => Val::Float(t.time() as f64),
+            "duration" => Val::Float(t.duration() as f64),
+            "isPlaying" => Val::Bool(t.is_playing()),
+            "isReversed" => Val::Bool(t.is_reversed()),
+            track => Val::Float(t.value(track) as f64),
+        }),
         Val::Sym(s) => {
             let mut s = (**s).clone();
             s.chain.push((name.to_owned(), args));
@@ -702,10 +1137,148 @@ fn member(r: &Val, name: &str, args: Option<Vec<(Option<String>, Val)>>) -> Resu
     }
 }
 
+/// Les noms de la bibliothèque (pour « vouliez-vous dire »).
+const BUILTINS: &[&str] = &[
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt", "pow", "exp", "log", "floor", "ceil",
+    "round", "abs", "min", "max", "clamp", "lerp", "random", "len", "format", "rgb", "rgba", "token",
+    "String", "Int", "Float",
+];
+
+/// `random(graine)` : un nombre de 0 à 1, toujours le même pour la même graine (SplitMix64).
+pub(crate) fn random01(seed: &Val) -> f64 {
+    let bits = match seed {
+        Val::Int(i) => *i as u64,
+        Val::Float(f) => f.to_bits(),
+        Val::Bool(b) => *b as u64,
+        Val::Str(s) => s.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+        }),
+        _ => 0,
+    };
+    let mut z = bits.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// `format("%.1f €", x)` : `%d`, `%f`, `%.Nf`, `%s`, `%%`.
+fn format_text(fmt: &str, args: &[Val]) -> Result<String, String> {
+    let mut out = String::new();
+    let mut it = fmt.chars().peekable();
+    let mut next = args.iter();
+    while let Some(c) = it.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        let mut prec = None;
+        if it.peek() == Some(&'.') {
+            it.next();
+            let mut digits = String::new();
+            while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
+                digits.push(*d);
+                it.next();
+            }
+            prec = digits.parse::<usize>().ok();
+        }
+        let spec = it.next().ok_or("`format` : `%` en fin de texte")?;
+        if spec == '%' {
+            out.push('%');
+            continue;
+        }
+        let v = next.next().ok_or("`format` : pas assez de valeurs")?;
+        match spec {
+            'd' => out.push_str(&format!(
+                "{}",
+                v.as_f64().ok_or("`%d` : un nombre attendu")?.round() as i64
+            )),
+            'f' => out.push_str(&format!(
+                "{:.*}",
+                prec.unwrap_or(6),
+                v.as_f64().ok_or("`%f` : un nombre attendu")?
+            )),
+            's' => out.push_str(&v.to_string()),
+            c => return Err(format!("`format` : `%{c}` inconnu (%d, %f, %.2f, %s, %%)")),
+        }
+    }
+    Ok(out)
+}
+
+/// Les maths : `None` si `name` n'en est pas.
+fn math(name: &str, args: &[(Option<String>, Val)]) -> Option<Result<Val, String>> {
+    let n = |i: usize| -> Result<f64, String> {
+        args.get(i)
+            .and_then(|(_, v)| v.as_f64())
+            .ok_or_else(|| format!("`{name}` : un nombre attendu en argument {}", i + 1))
+    };
+    let one = |f: fn(f64) -> f64| n(0).map(|x| Val::Float(f(x)));
+    Some(match name {
+        "sin" => one(f64::sin),
+        "cos" => one(f64::cos),
+        "tan" => one(f64::tan),
+        "asin" => one(f64::asin),
+        "acos" => one(f64::acos),
+        "atan" => one(f64::atan),
+        "sqrt" => one(f64::sqrt),
+        "exp" => one(f64::exp),
+        "log" => one(f64::ln),
+        "atan2" => (|| Ok(Val::Float(n(0)?.atan2(n(1)?))))(),
+        "pow" => (|| Ok(Val::Float(n(0)?.powf(n(1)?))))(),
+        "floor" | "ceil" | "round" => n(0).map(|x| {
+            Val::Int(match name {
+                "floor" => x.floor(),
+                "ceil" => x.ceil(),
+                _ => x.round(),
+            } as i64)
+        }),
+        "clamp" => match args {
+            [(_, Val::Int(x)), (_, Val::Int(lo)), (_, Val::Int(hi))] => {
+                Ok(Val::Int((*x).clamp(*lo, (*hi).max(*lo))))
+            }
+            _ => (|| {
+                let (x, lo, hi) = (n(0)?, n(1)?, n(2)?);
+                Ok(Val::Float(x.max(lo).min(hi.max(lo))))
+            })(),
+        },
+        "lerp" => (|| {
+            let (a, b, t) = (n(0)?, n(1)?, n(2)?);
+            Ok(Val::Float(a + (b - a) * t))
+        })(),
+        "random" => match args.len() {
+            1 => Ok(Val::Float(random01(&args[0].1))),
+            3 => (|| {
+                let (lo, hi) = (n(1)?, n(2)?);
+                Ok(Val::Float(lo + (hi - lo) * random01(&args[0].1)))
+            })(),
+            _ => Err("`random(graine)` ou `random(graine, min, max)`".into()),
+        },
+        "len" => match args.first().map(|a| &a.1) {
+            Some(Val::Str(s)) => Ok(Val::Int(s.chars().count() as i64)),
+            Some(v) => v
+                .items()
+                .map(|i| Val::Int(i.len() as i64))
+                .ok_or_else(|| format!("`len` : un tableau attendu, trouvé {}", v.type_name())),
+            None => Err("`len(tableau)`".into()),
+        },
+        "format" => match args.split_first() {
+            Some(((_, Val::Str(f)), rest)) => {
+                let rest: Vec<Val> = rest.iter().map(|(_, v)| v.clone()).collect();
+                format_text(f, &rest).map(|s| Val::Str(s.into()))
+            }
+            _ => Err("`format(\"%.1f\", x)` : un texte de format attendu".into()),
+        },
+        _ => return None,
+    })
+}
+
 /// Les fonctions de base.
 fn builtin(name: &str, args: &[(Option<String>, Val)]) -> Result<Val, String> {
     if let Some(p) = gradient(name, args) {
         return p.map(Val::Paint);
+    }
+    if let Some(r) = math(name, args) {
+        return r;
     }
     let n = |i: usize| -> Result<f64, String> {
         args.get(i)
@@ -821,17 +1394,15 @@ pub(crate) fn themes(module: &Module, schema: &Rc<Schema>) -> (HashMap<String, A
                 },
                 None => None,
             };
-            let cx = Cx {
-                shared: Rc::new(Shared {
+            let cx = Cx::root(
+                Rc::new(Shared {
                     module: Rc::new(Module::default()),
                     schema: schema.clone(),
                     themes: out.clone(),
                 }),
-                vars: None,
-                pre: Rc::new(Vars::new()),
-                locals: Vec::new(),
-                views: Rc::new(|_| veka_ui::views::Text("")),
-            };
+                Rc::new(Host::default()),
+                Rc::new(|_, _| veka_ui::views::Text("")),
+            );
             let mut theme = Theme::new(t.name.clone());
             if let Some(p) = parent {
                 theme = theme.parent(p);
@@ -869,6 +1440,114 @@ pub(crate) fn themes(module: &Module, schema: &Rc<Schema>) -> (HashMap<String, A
         }
     }
     (out, errors)
+}
+
+/// `Slot(nom)` dans un corps.
+fn slot_name(e: &Expr) -> Option<&str> {
+    match &e.kind {
+        ExprKind::Call {
+            callee,
+            args,
+            trailing: None,
+        } if matches!(&callee.kind, ExprKind::Ident(n) if n == "Slot") => slot_name_args(args),
+        _ => None,
+    }
+}
+
+fn slot_name_args(args: &[Arg]) -> Option<&str> {
+    match args {
+        [Arg { label: None, value }] => match &value.kind {
+            ExprKind::Ident(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn a_span(args: &[Arg]) -> Span {
+    args.first().map_or(Span::START, |a| a.value.span)
+}
+
+fn c_span(c: &Closure, fallback: Span) -> Span {
+    match c.body.first() {
+        Some(Stmt::Expr(e)) => e.span,
+        _ => fallback,
+    }
+}
+
+/// Construit la `Timeline` d'une déclaration ; `args` (de `@Timeline var p = Nom(…)`) remplace ses
+/// réglages. Rend aussi `autoplay`.
+pub(crate) fn build_timeline(cx: &Cx, decl: &TimelineDecl, args: &[Arg]) -> R<(veka_anima::Timeline, bool)> {
+    use veka_anima::{Curve, Keyframe, Timeline};
+    let mut tl = Timeline::new();
+    let mut autoplay = false;
+    for a in decl.args.iter().chain(args) {
+        let v = cx.eval(&a.value)?;
+        let num = || {
+            v.as_f64()
+                .map(|x| x as f32)
+                .ok_or_else(|| err(a.value.span, "un nombre attendu"))
+        };
+        match a.label.as_deref() {
+            Some("loop") | Some("looping") => {
+                tl = tl.looping(
+                    v.as_bool()
+                        .ok_or_else(|| err(a.value.span, "`true` ou `false` attendu"))?,
+                )
+            }
+            Some("length") => tl = tl.length(num()?),
+            Some("speed") => tl = tl.speed(num()?),
+            Some("autoplay") => {
+                autoplay = v
+                    .as_bool()
+                    .ok_or_else(|| err(a.value.span, "`true` ou `false` attendu"))?
+            }
+            other => {
+                return Err(err(
+                    a.value.span,
+                    format!(
+                        "timeline : réglage `{}` inconnu (loop, length, speed, autoplay)",
+                        other.unwrap_or("?")
+                    ),
+                ));
+            }
+        }
+    }
+    for tr in &decl.tracks {
+        let mut keys = Vec::new();
+        for k in &tr.keys {
+            let t = cx
+                .eval(&k.time)?
+                .as_f64()
+                .ok_or_else(|| err(k.time.span, "un instant attendu"))?;
+            let v = cx
+                .eval(&k.value)?
+                .as_f64()
+                .ok_or_else(|| err(k.value.span, "une valeur attendue"))?;
+            let mut key = Keyframe::new(t as f32, v as f32);
+            if let Some(c) = &k.curve {
+                key = key.curve(match c.as_str() {
+                    "linear" => Curve::Linear,
+                    "easeIn" => Curve::EaseIn,
+                    "easeOut" => Curve::EaseOut,
+                    "easeInOut" => Curve::EaseInOut,
+                    "circEaseIn" => Curve::CircEaseIn,
+                    "circEaseOut" => Curve::CircEaseOut,
+                    _ => Curve::CircEaseInOut,
+                });
+            }
+            keys.push(key);
+        }
+        tl = tl.track(tr.name.clone(), keys);
+    }
+    for (t, name) in &decl.events {
+        let t = cx
+            .eval(t)?
+            .as_f64()
+            .ok_or_else(|| err(t.span, "un instant attendu"))?;
+        tl = tl.event(t as f32, name.clone());
+    }
+    Ok((tl, autoplay))
 }
 
 /// Vérifie (et convertit) la valeur initiale d'un état contre son type écrit.
@@ -941,6 +1620,7 @@ fn check_stmt(s: &Stmt, module: &Module, schema: &Schema, out: &mut Vec<Diagnost
         }
         Stmt::Let { .. } => {}
         Stmt::Assign { span, .. } => out.push(err(*span, "une affectation n'a sa place que dans une action")),
+        Stmt::Emit { span, .. } => out.push(err(*span, "`emit` n'a sa place que dans une action")),
     }
 }
 
@@ -960,7 +1640,7 @@ fn check_view_expr(e: &Expr, module: &Module, schema: &Schema, out: &mut Vec<Dia
             }
         }
     };
-    let known = |name: &str| module.view(name).is_some() || schema.get(name).is_some();
+    let known = |name: &str| name == "Slot" || module.view(name).is_some() || schema.get(name).is_some();
     let unknown = |name: &str, span: Span, out: &mut Vec<Diagnostic>| {
         let views = module.views().map(|v| v.name.as_str());
         let prims = schema
@@ -992,6 +1672,11 @@ fn check_view_expr(e: &Expr, module: &Module, schema: &Schema, out: &mut Vec<Dia
                     return;
                 }
                 labels(n, args, out);
+                if let (Some(c), Some(_)) = (trailing, module.view(n)) {
+                    for s in &c.body {
+                        check_stmt(s, module, schema, out);
+                    }
+                }
                 if let Some(c) = trailing
                     && schema.get(n).is_some_and(|e| e.children != Children::None)
                     && !schema
@@ -1005,7 +1690,7 @@ fn check_view_expr(e: &Expr, module: &Module, schema: &Schema, out: &mut Vec<Dia
             }
             ExprKind::Member { recv, name } => {
                 check_view_expr(recv, module, schema, out);
-                if name == "id" {
+                if matches!(name.as_str(), "id" | "on" | "onTimelineEvent") {
                     return;
                 }
                 match schema.get(name) {

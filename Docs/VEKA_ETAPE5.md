@@ -1,6 +1,6 @@
 # Veka : étape 5, le langage `.vk`
 
-Statut : **validé** (les 8 choix recommandés) ; PR J faite, PR K à venir. Fait suite à `VEKA_ETAPE4.md`. Reprend le langage de VekaUI (`VekaLang` : `view`, `@State`,
+Statut : **validé** (les 8 choix recommandés) ; PR J et PR K faites. Fait suite à `VEKA_ETAPE4.md`. Reprend le langage de VekaUI (`VekaLang` : `view`, `@State`,
 `@Param`, `@Slot`, `@Event`, `model`, `ForEach`, `withAnimation`, `emit`) et la leçon des feux d'artifice (écrits
 en C++ faute de `random`, `cos` et d'horloge dans le langage). On garde la conception et la syntaxe, pas le code.
 
@@ -202,6 +202,9 @@ view Coeur {
   - interface C et exemple C ;
   - les feux d'artifice en `.vk` ;
   - essais sur le PC.
+  - Fait. Écarts : `func` contient des `let` puis sa valeur ; le surveillant de fichiers regarde la date toutes
+    les 250 ms (pas `ReadDirectoryChangesW` / FSEvents) ; `@Clock` avance à chaque image ; les données C sont des
+    `VekaData` (opaques) plutôt que des `VekaValue`.
 
 ## 6. Choix (validés)
 

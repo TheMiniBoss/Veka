@@ -4,6 +4,25 @@ Le plus récent en premier.
 
 ## Étape 5 — le langage `.vk`
 
+### Composants, données de l'hôte, logique, interface C (PR K)
+- Composants : `@Param var nom: Type = défaut`, `@Slot nom` et `Slot(nom)`, `@Event nom(Type)`, `emit nom(valeur)`
+  et `.on(nom) { valeur in … }` ; une vue du fichier s'utilise comme un composant (`Article(nom: a.nom) { … }`).
+- Données de l'hôte : `model` dans le fichier, `Program::set_model(Val)` (les vues affichées suivent),
+  `Program::on_event` reçoit les `emit` que personne n'écoute ; `Val` (nombres, textes, tableaux,
+  enregistrements) est public.
+- Expressions : enregistrements `{ x: 1, y: 2 }`, indices `a[i]`, `func` pures au niveau du fichier, maths
+  (`sin`, `cos`, `atan2`, `sqrt`, `pow`, `clamp`, `lerp`, `floor`, `round`, `pi`…), `random(graine)` et
+  `random(graine, min, max)` déterministes, `format("%.1f", x)`, `len`.
+- Temps : `@Clock var t` ; `timeline Nom(loop:, length:) { track … ; event … }`, `@Timeline var p = Nom(autoplay:)`,
+  `p.piste`, `p.play()` / `pause` / `seek` / `reverse` / `toggle`, `.onTimelineEvent(p, événement) { … }`.
+- `import "fichier.vk"` (le cœur reçoit un lecteur de l'hôte) ; veka-app relit aussi les imports à chaud.
+- Interface C : `veka_vk_load`, `veka_vk_load_file`, `veka_vk_reload`, `veka_vk_view`, `veka_vk_set_model`,
+  `veka_vk_on_event`, `veka_app_add_window_vk`, et `VekaData` (`veka_data_*`) pour les données. Exemple
+  `examples/c/boutique.c` + `boutique.vk`.
+- `anima.vk` gagne sa pulsation (même dessin que `anima.rs`) ; `feux.vk` : des feux d'artifice écrits seulement
+  en `.vk` (`cargo run --example vk -- feux`).
+- Correction : `rgb(…)` et les fonctions de base pouvaient paniquer (dégradé évalué trop tôt).
+
 ### Parseur, interpréteur, rechargement à chaud (PR J)
 - Nouveau crate `veka-lang` (cœur, compile pour WebAssembly) : lexer, parseur avec reprise sur erreur, AST,
   imprimeur canonique (relire le texte imprimé redonne le même arbre), analyse au chargement (vues, modifiers et

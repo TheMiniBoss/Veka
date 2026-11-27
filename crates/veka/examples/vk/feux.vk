@@ -1,0 +1,102 @@
+// Des feux d'artifice écrits seulement en .vk, d'après un `Fireworks` SwiftUI (TimelineView +
+// Canvas) : une fusée monte avec sa traînée, éclate (éclair puis gerbe d'étincelles qui
+// s'ouvre, tombe un peu, scintille et s'éteint), et recommence. Rien d'autre qu'une horloge
+// (`@Clock`), des maths et des vues. `cargo run --example vk -- feux`
+
+// Le hasard du modèle SwiftUI : fract(sin(x × 12.9898) × 43758.5453), toujours le même pour x.
+func hasard(x: Float) -> Float {
+    let v = sin(x * 12.9898) * 43758.5453
+    v - Float(floor(v))
+}
+
+func montee(p: Float) -> Float {
+    1 - (1 - p) * (1 - p)
+}
+
+view FeuxDArtifice {
+    @Param var couleurs = [.green, .purple, .indigo, .red, .pink, .yellow, .Cyan, .white]
+    @Param var gerbes: Int = 6
+    @Param var etincelles: Int = 180
+    @Param var taille: Float = 1
+    @Param var ampleur: Float = 0.8
+    @Param var fusee: Float = 1
+    @Param var eclat: Float = 2
+    @Param var largeur: Float = 560
+    @Param var hauteur: Float = 100
+    @Clock var t
+
+    ZStack {
+        ForEach(0..<gerbes) { i in
+            let cycle = t / (fusee + eclat) + Float(i) * 0.37
+            let ecoule = (cycle - Float(floor(cycle))) * (fusee + eclat)
+            let base = Float(i)
+            let n = len(couleurs)
+            let c1 = couleurs[min(n - 1, Int(hasard(base + 1) * Float(n)))]
+            let c2 = couleurs[min(n - 1, Int(hasard(base + 2) * Float(n)))]
+            // Le point d'éclatement, depuis le centre du cadre.
+            let x = hasard(base + 3) * largeur - largeur / 2
+            let y = (0.1 + 0.8 * hasard(base + 4)) * hauteur - hauteur / 2
+            if ecoule < fusee {
+                // La fusée : tête blanche et traînée en dégradé, du bas vers le point.
+                let x0 = x + (hasard(base + 5) - 0.5) * largeur * 0.3
+                let y0 = hauteur / 2
+                let p = ecoule / fusee
+                let tete = montee(p)
+                let queue = montee(max(0, p - 0.3))
+                let hx = x0 + (x - x0) * tete
+                let hy = y0 + (y - y0) * tete
+                let qx = x0 + (x - x0) * queue
+                let qy = y0 + (y - y0) * queue
+                Capsule()
+                    .fill(LinearGradient([.clear, c1], from: .leading, to: .trailing))
+                    .frame(max(0.1, sqrt((hx - qx) * (hx - qx) + (hy - qy) * (hy - qy))), 0.9 * taille)
+                    .rotationEffect(atan2(hy - qy, hx - qx) * 180 / pi)
+                    .offset((hx + qx) / 2, (hy + qy) / 2)
+                Circle()
+                    .fill(.white)
+                    .frame(1.2 * taille, 1.2 * taille)
+                    .offset(hx, hy)
+            } else {
+                // L'éclatement.
+                let p = (ecoule - fusee) / eclat
+                let rayon = hauteur * ampleur * (0.4 + 0.3 * hasard(base + 6)) * (1 - pow(1 - p, 4))
+                let chute = p * p * hauteur * 0.07
+                if p < 0.15 {
+                    let r = hauteur * 0.35 * ampleur
+                    Circle()
+                        .fill(RadialGradient([.white, .clear], r))
+                        .frame(2 * r, 2 * r)
+                        .opacity(1 - p / 0.15)
+                        .offset(x, y)
+                }
+                ForEach(0..<etincelles) { k in
+                    let v = hasard(base + Float(k) * 7.1)
+                    let angle = hasard(base + Float(k) * 3.3) * 2 * pi
+                    let d = rayon * pow(v, 0.3)
+                    let scintille = 0.4 + 0.6 * abs(sin(t * (6 + 12 * v) + v * 40))
+                    Circle()
+                        .fill(k % 3 == 0 ? c2 : c1)
+                        .frame(2 * taille, 2 * taille)
+                        .offset(x + cos(angle) * d, y + sin(angle) * d + chute)
+                        .opacity((1 - p) * scintille)
+                }
+            }
+        }
+    }
+    .frame(largeur, hauteur)
+}
+
+// La carte du modèle : les feux sur un fond noir arrondi.
+view Feux {
+    ZStack {
+        RoundedRectangle(30)
+            .fill(.black)
+            .frame(560, 100)
+        // Liseré : sans lui la carte se fond dans une fenêtre sombre.
+        RoundedRectangle(30)
+            .stroke(.gray, lineWidth: 1)
+            .frame(560, 100)
+        FeuxDArtifice(fusee: 1, eclat: 2)
+    }
+    .padding(16)
+}

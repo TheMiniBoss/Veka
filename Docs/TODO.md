@@ -37,9 +37,12 @@
 
 ## Étape 5 (le langage `.vk`)
 - [x] PR J : parseur, imprimeur, interpréteur, `App::window_vk`, rechargement à chaud, exemples.
-- [ ] PR K : `@Param`, `@Slot`, `@Event` / `.on`, `import`, `model`, fonctions, maths, `random`, `@Clock`,
+- [x] PR K : `@Param`, `@Slot`, `@Event` / `.on`, `import`, `model`, fonctions, maths, `random`, `@Clock`,
   timelines dans le fichier, interface C, feux d'artifice en `.vk`.
-- [ ] Indexation (`tableau[i]`), tuples ou structures pour `ForEach`.
+- [ ] `@Clock` : n'avancer que si la vue lit l'horloge (aujourd'hui : à chaque image).
+- [ ] Plusieurs `@Slot` remplis par fermetures nommées (aujourd'hui : le premier par `{ … }`, les autres par
+  `nom: Vue(…)`).
+- [ ] Timelines et horloges retrouvées par nom au rechargement (aujourd'hui : relancées si leur liste change).
 - [ ] Rechargement : surveiller le dossier (événements du système) plutôt que la date toutes les 250 ms.
 
 ## Plus tard
