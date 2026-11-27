@@ -24,6 +24,9 @@ pub struct Appearance {
     /// « Réduire les animations » (macOS : Accessibilité > Affichage ; Windows : Accessibilité >
     /// Effets visuels > Effets d'animation désactivés).
     pub reduce_motion: bool,
+    /// « Réduire la transparence » (macOS : Accessibilité > Affichage ; Windows : Personnalisation >
+    /// Couleurs > Effets de transparence désactivés).
+    pub reduce_transparency: bool,
 }
 
 /// Erreur d'une plateforme.

@@ -4,6 +4,7 @@
 
 mod anima;
 mod button;
+mod effects;
 mod modifiers;
 mod shape;
 mod text;
@@ -13,6 +14,7 @@ pub use anima::{
     ScaleEffectPrim, TransitionPrim, value_key,
 };
 pub use button::{ButtonPrim, ButtonState};
+pub use effects::BackdropBlur;
 pub use modifiers::{Background, EnvModifier, Length, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};

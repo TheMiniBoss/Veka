@@ -505,3 +505,35 @@ fn vk_depuis_le_c() {
         veka_vk_free(vk);
     }
 }
+
+#[test]
+fn flou_d_arriere_plan_en_c() {
+    use veka_ui::prelude::*;
+    let dessin = |e: Element| {
+        let mut s = Surface::new(e);
+        s.resize(Size::new(200.0, 100.0), 1.0);
+        s.frame().to_string()
+    };
+    unsafe {
+        let c = veka_frosted_glass(veka_text(c"Verre".as_ptr()));
+        assert!(!c.is_null());
+        assert_eq!(
+            dessin(Box::from_raw(c).element),
+            dessin(Text("Verre").frosted_glass())
+        );
+
+        let mut b = veka_backdrop_default();
+        b.radius = 12.0;
+        b.shape = VekaBackdropShape::Capsule;
+        let c = veka_backdrop(veka_text(c"Barre".as_ptr()), &b, std::ptr::null_mut());
+        let rs = Text("Barre").backdrop(BackdropBlur::default().radius(12.0).shape(Shape::Capsule));
+        let d = dessin(Box::from_raw(c).element);
+        assert!(d.contains("backdrop Capsule"), "{d}");
+        assert_eq!(d, dessin(rs));
+
+        let app = veka_app_new();
+        assert_eq!(veka_app_set_backdrop_quality(app, VekaBackdropQuality::Low), 0);
+        veka_app_free(app);
+        assert!(veka_backdrop(veka_text(c"x".as_ptr()), std::ptr::null(), std::ptr::null_mut()).is_null());
+    }
+}

@@ -38,7 +38,8 @@ use veka_platform::{
 use veka_render::{FrameInfo, RenderError, Renderer};
 use veka_render_wgpu::{SurfaceOptions, WindowRenderer};
 use veka_ui::{
-    Axis, Color, Element, Font, InputEvent, PointerButton, State, Surface, View, component, views,
+    Axis, BackdropQuality, Color, Element, Font, InputEvent, PointerButton, State, Surface, View, component,
+    views,
 };
 
 pub use veka_platform::{Chrome, Size, WindowDesc};
@@ -69,6 +70,7 @@ pub struct App {
     windows: Vec<(WindowDesc, Element)>,
     files: Vec<VkFile>,
     hot_reload: bool,
+    backdrop_quality: BackdropQuality,
 }
 
 impl Default for App {
@@ -77,6 +79,7 @@ impl Default for App {
             windows: Vec::new(),
             files: Vec::new(),
             hot_reload: cfg!(debug_assertions),
+            backdrop_quality: BackdropQuality::High,
         }
     }
 }
@@ -264,6 +267,12 @@ impl App {
         self
     }
 
+    /// Qualité des effets d'arrière-plan (flou, verre) de toutes les fenêtres. `Off` : teintes unies.
+    pub fn backdrop_quality(mut self, quality: BackdropQuality) -> Self {
+        self.backdrop_quality = quality;
+        self
+    }
+
     /// Ouvre les fenêtres avec la plateforme de l'OS et tourne jusqu'à la fermeture de la dernière.
     pub fn run(self) -> Result<(), AppError> {
         #[cfg(windows)]
@@ -286,6 +295,7 @@ impl App {
             windows: HashMap::new(),
             error: None,
             exit_after_first_frame,
+            backdrop_quality: self.backdrop_quality,
             watch: Watch {
                 files: self.files,
                 changed: Vec::new(),
@@ -327,6 +337,7 @@ struct Host {
     windows: HashMap<WindowId, HostWindow>,
     error: Option<AppError>,
     exit_after_first_frame: bool,
+    backdrop_quality: BackdropQuality,
     watch: Watch,
 }
 
@@ -438,6 +449,8 @@ impl Host {
         let appearance = ctx.appearance();
         surface.set_system_appearance(appearance.scheme, appearance.accent);
         surface.set_reduce_motion(appearance.reduce_motion);
+        surface.set_reduce_transparency(appearance.reduce_transparency);
+        surface.set_backdrop_quality(self.backdrop_quality);
         let (width, height) = window.pixel_size();
         let frame = FrameInfo {
             width,
@@ -568,6 +581,7 @@ impl Host {
                     w.surface
                         .set_system_appearance(appearance.scheme, appearance.accent);
                     w.surface.set_reduce_motion(appearance.reduce_motion);
+                    w.surface.set_reduce_transparency(appearance.reduce_transparency);
                     if w.surface.needs_frame() {
                         ctx.window(id).request_redraw();
                     }

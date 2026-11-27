@@ -9,7 +9,9 @@ mod draw_list;
 mod paint;
 mod shape;
 
-pub use draw_list::{BackdropEffect, DrawCommand, DrawList, FontId, FontRef, Glyph, GlyphRun, Segment};
+pub use draw_list::{
+    BackdropEffect, BlurEffect, DrawCommand, DrawList, FontId, FontRef, Glyph, GlyphRun, Segment,
+};
 pub use paint::Paint;
 pub use shape::{CornerRadii, Shape};
 pub use veka_foundation as foundation;
