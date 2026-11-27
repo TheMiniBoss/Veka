@@ -1,16 +1,4 @@
-//! Peintures. Colora ajoutera les dégradés (linéaire, radial, angulaire, maillé).
+//! Peintures : celles de Colora. Dans une `DrawList`, une peinture est **résolue** (aucun jeton) ; un jeton
+//! qui arriverait jusqu'au renderer serait dessiné en magenta.
 
-use veka_foundation::Color;
-
-/// Ce qui remplit une forme, un trait ou du texte.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[non_exhaustive]
-pub enum Paint {
-    Solid(Color),
-}
-
-impl From<Color> for Paint {
-    fn from(c: Color) -> Self {
-        Paint::Solid(c)
-    }
-}
+pub use veka_colora::Paint;

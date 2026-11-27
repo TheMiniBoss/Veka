@@ -33,7 +33,7 @@ impl Primitive for ButtonPrim {
     }
 
     fn update_env(&self, env: &mut Environment) -> bool {
-        env.foreground = veka_foundation::Color::White;
+        env.foreground = veka_colora::Token::ButtonText.into();
         if env.font_weight.is_none() {
             env.font_weight = Some(veka_text::Weight::SemiBold);
         }
@@ -63,15 +63,18 @@ impl Primitive for ButtonPrim {
 
     fn paint(&self, cx: &mut PaintCx<'_>, rect: Rect) {
         let st = *cx.state::<ButtonState>();
-        let base = cx.env().accent;
-        let color = if st.pressed {
-            base.mix(veka_foundation::Color::Black, 0.25)
-        } else if st.hovered {
-            base.mix(veka_foundation::Color::Black, 0.1)
+        let base = cx.env().resolve(&cx.env().accent);
+        let dark = match (st.pressed, st.hovered) {
+            (true, _) => 0.25,
+            (false, true) => 0.1,
+            _ => 0.0,
+        };
+        let paint = if dark > 0.0 {
+            base.map_colors(|c| c.mix(veka_foundation::Color::Black.with_alpha(c.a), dark))
         } else {
             base
         };
-        cx.list().fill(Shape::Capsule, rect, color);
+        cx.list().fill(Shape::Capsule, rect, paint);
         cx.paint_children();
     }
 

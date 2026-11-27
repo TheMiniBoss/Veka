@@ -238,20 +238,21 @@ fn paint_windows_button(
     env: &Environment,
 ) {
     let close = control == WindowControl::Close;
+    let fg = env.color(&env.foreground);
     let background = match (close, st.pressed, st.hovered) {
-        (true, true, _) => Some(Color::hex(0xF1707A)),
-        (true, false, true) => Some(Color::hex(0xE81123)),
-        (false, true, _) => Some(env.foreground.with_alpha(0.12)),
-        (false, false, true) => Some(env.foreground.with_alpha(0.07)),
+        (true, true, _) => Some(env.adjusted(Color::hex(0xF1707A))),
+        (true, false, true) => Some(env.adjusted(Color::hex(0xE81123))),
+        (false, true, _) => Some(fg.with_alpha(0.12)),
+        (false, false, true) => Some(fg.with_alpha(0.07)),
         _ => None,
     };
     if let Some(b) = background {
         cx.list().fill(Shape::Rectangle, rect, b);
     }
     let ink = if close && st.hovered {
-        Color::White
+        env.adjusted(Color::White)
     } else {
-        env.foreground
+        fg
     };
     let c = rect.center();
     let list = cx.list();
@@ -271,7 +272,7 @@ fn paint_windows_button(
                 list.fill(
                     Shape::Rectangle,
                     Rect::new(c.x - 5.0, c.y - 3.0, 8.0, 8.0),
-                    background.unwrap_or(env.background),
+                    background.unwrap_or(env.color(&env.background)),
                 );
                 list.stroke(
                     Shape::Rectangle,
@@ -322,9 +323,13 @@ fn paint_mac_light(
     } else {
         base
     };
-    cx.list().fill(Shape::Circle, rect, color);
-    cx.list()
-        .stroke(Shape::Circle, rect, Color::Black.with_alpha(0.12), 0.5);
+    cx.list().fill(Shape::Circle, rect, env.adjusted(color));
+    cx.list().stroke(
+        Shape::Circle,
+        rect,
+        env.adjusted(Color::Black.with_alpha(0.12)),
+        0.5,
+    );
 }
 
 /// Un bouton de fenêtre au style du système.
@@ -353,7 +358,13 @@ impl Primitive for TitleBarPrim {
 
     fn update_env(&self, env: &mut Environment) -> bool {
         if !env.window.active {
-            env.foreground = env.foreground.mix(env.background, 0.55);
+            // Sans les réglages de couleur : ils seront appliqués une fois, au dessin.
+            let raw = veka_colora::Palette {
+                matrix: &veka_colora::ColorMatrix::IDENTITY,
+                ..env.palette()
+            };
+            let (fg, bg) = (raw.color(&env.foreground), raw.color(&env.background));
+            env.foreground = veka_colora::Paint::Solid(fg.mix(bg, 0.55));
         }
         env.font = Font::Footnote;
         true

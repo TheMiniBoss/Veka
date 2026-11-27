@@ -219,8 +219,53 @@ impl fmt::Display for DrawList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let r = |v: f32| (v * 100.0).round() / 100.0;
         let rect = |x: &Rect| format!("[{} {} {}×{}]", r(x.x()), r(x.y()), r(x.width()), r(x.height()));
+        let color = |c: &veka_foundation::Color| format!("rgba({} {} {} {})", r(c.r), r(c.g), r(c.b), r(c.a));
+        let stops = |g: &veka_colora::Gradient| {
+            g.stops
+                .iter()
+                .map(|s| match &s.ink {
+                    veka_colora::Ink::Color(c) => format!("{}@{}", color(c), r(s.location)),
+                    veka_colora::Ink::Token(t, _) => format!("{}@{}", t.name(), r(s.location)),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         let paint = |p: &Paint| match p {
-            Paint::Solid(c) => format!("rgba({} {} {} {})", r(c.r), r(c.g), r(c.b), r(c.a)),
+            Paint::Solid(c) => color(c),
+            Paint::Token(t, h) => format!("token({} {h:?})", t.name()),
+            Paint::Linear(g) => format!(
+                "linear({} {} → {} {}; {})",
+                r(g.start.x),
+                r(g.start.y),
+                r(g.end.x),
+                r(g.end.y),
+                stops(&g.gradient)
+            ),
+            Paint::Radial(g) => format!(
+                "radial({} {} r {}→{}; {})",
+                r(g.center.x),
+                r(g.center.y),
+                r(g.start_radius),
+                r(g.end_radius),
+                stops(&g.gradient)
+            ),
+            Paint::Elliptical(g) => format!(
+                "elliptical({} {} f {}→{}; {})",
+                r(g.center.x),
+                r(g.center.y),
+                r(g.start_fraction),
+                r(g.end_fraction),
+                stops(&g.gradient)
+            ),
+            Paint::Angular(g) => format!(
+                "angular({} {} {}°→{}°; {})",
+                r(g.center.x),
+                r(g.center.y),
+                r(g.start_angle),
+                r(g.end_angle),
+                stops(&g.gradient)
+            ),
+            Paint::Mesh(m) => format!("mesh({}×{})", m.width, m.height),
         };
         let mut depth = 0usize;
         for c in &self.commands {

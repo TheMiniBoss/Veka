@@ -146,11 +146,28 @@ impl Stack {
         order.extend((0..n).filter(|&i| spacer[i]).map(|i| (i, f32::INFINITY)));
         let others = n - spacer.iter().filter(|&&b| b).count();
         let mut remaining = (main - spacing).max(0.0);
+        // Taille idéale de chaque enfant. Si toutes tiennent, chacun la reçoit d'abord et seul le surplus
+        // est partagé : un texte ne passe pas à la ligne quand la pile a la place de l'écrire.
+        let ideal: Vec<f32> = (0..n)
+            .map(|i| {
+                if spacer[i] {
+                    0.0
+                } else {
+                    main_of(axis, cx.measure(children[i], make_proposal(axis, None, cross)))
+                }
+            })
+            .collect();
+        let fits = ideal.iter().sum::<f32>() + reserved <= remaining + 0.01;
+        let mut ideal_left: f32 = if fits { ideal.iter().sum() } else { 0.0 };
         let mut sizes = vec![Size::ZERO; n];
         for (k, &(i, _)) in order.iter().enumerate() {
             let share = if spacer[i] {
                 reserved -= spacer_min[i];
                 (remaining / (n - k) as f32).max(spacer_min[i])
+            } else if fits {
+                ideal_left -= ideal[i];
+                let extra = (remaining - reserved - ideal_left - ideal[i]).max(0.0);
+                ideal[i] + extra / (others - k) as f32
             } else {
                 ((remaining - reserved).max(0.0)) / (others - k) as f32
             };

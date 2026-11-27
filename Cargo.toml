@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 veka = { path = "crates/veka" }
 veka-foundation = { path = "crates/veka-foundation" }
+veka-colora = { path = "crates/veka-colora" }
 veka-graphics = { path = "crates/veka-graphics" }
 veka-text = { path = "crates/veka-text" }
 veka-ui = { path = "crates/veka-ui" }
@@ -64,6 +65,7 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Dwm",
     "Win32_System_LibraryLoader",
     "Win32_System_Performance",
+    "Win32_System_Registry",
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",

@@ -37,11 +37,16 @@ pub mod views;
 pub mod window;
 
 pub use element::{Action, Element, Key, View, component};
-pub use env::{Environment, Font};
+pub use env::{Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
 pub use primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
 pub use state::State;
 pub use surface::{InputEvent, PointerButton, Surface};
+pub use veka_colora as colora;
+pub use veka_colora::{
+    AngularGradient, ColorAdjust, ColorScheme, ColorSpace, EllipticalGradient, Gradient, Hierarchy, Ink,
+    LinearGradient, MeshGradient, MeshPoint, Paint, RadialGradient, Stop, Theme, Token, UnitPoint,
+};
 pub use veka_foundation::{
     Color, Insets, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo, WindowRegion,
 };
@@ -56,8 +61,10 @@ pub mod prelude {
         perform_window_action,
     };
     pub use crate::{
-        Alignment, Axis, Color, CornerRadii, Element, Environment, Font, Insets, Key, Point, Rect, Shape,
-        Size, State, Surface, View, Weight, WindowAction, WindowControl, WindowInfo, component,
+        Alignment, AngularGradient, Axis, Color, ColorScheme, ColorSpace, CornerRadii, Element,
+        EllipticalGradient, Environment, Font, Gradient, Hierarchy, Ink, Insets, Key, LinearGradient,
+        MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface, Theme, Token,
+        UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
     pub use crate::{HStack, VStack, ZStack};
 }

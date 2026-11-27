@@ -161,12 +161,14 @@ impl Host {
         let mut surface = Surface::new(root);
         if transparent {
             let mut env = surface.environment().clone();
-            env.background = Color::Clear;
+            env.background = Color::Clear.into();
             surface.set_environment(env);
         }
         surface.resize(window.size(), window.scale());
         surface.set_waker(window.redraw_requester());
         surface.set_window_info(window.info());
+        let appearance = ctx.appearance();
+        surface.set_system_appearance(appearance.scheme, appearance.accent);
         let (width, height) = window.pixel_size();
         let frame = FrameInfo {
             width,
@@ -276,6 +278,15 @@ impl Host {
                     w.surface.set_window_info(info);
                     if w.surface.needs_frame() {
                         ctx.window(window).request_redraw();
+                    }
+                }
+            }
+            PlatformEvent::AppearanceChanged { appearance } => {
+                for (&id, w) in self.windows.iter_mut() {
+                    w.surface
+                        .set_system_appearance(appearance.scheme, appearance.accent);
+                    if w.surface.needs_frame() {
+                        ctx.window(id).request_redraw();
                     }
                 }
             }

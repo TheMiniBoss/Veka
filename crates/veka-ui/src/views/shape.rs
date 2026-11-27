@@ -1,4 +1,5 @@
-use veka_foundation::{Color, Rect, Size};
+use veka_colora::Paint;
+use veka_foundation::{Rect, Size};
 use veka_graphics::Shape;
 
 use crate::element::Element;
@@ -9,9 +10,9 @@ use crate::primitive::{LayoutCx, PaintCx, Primitive, Proposal};
 pub struct ShapePrim {
     pub shape: Shape,
     /// `None` : couleur de premier plan de l'environnement.
-    pub fill: Option<Color>,
-    /// Trait seul (sans remplissage) : couleur et épaisseur.
-    pub stroke: Option<(Color, f32)>,
+    pub fill: Option<Paint>,
+    /// Trait seul (sans remplissage) : peinture et épaisseur.
+    pub stroke: Option<(Paint, f32)>,
 }
 
 impl ShapePrim {
@@ -51,11 +52,15 @@ impl Primitive for ShapePrim {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, rect: Rect) {
-        match self.stroke {
-            Some((color, width)) => cx.list().stroke(self.shape, rect, color, width),
+        match &self.stroke {
+            Some((paint, width)) => {
+                let p = cx.env().resolve(paint);
+                cx.list().stroke(self.shape, rect, p, *width);
+            }
             None => {
-                let color = self.fill.unwrap_or(cx.env().foreground);
-                cx.list().fill(self.shape, rect, color);
+                let env = cx.env();
+                let p = env.resolve(self.fill.as_ref().unwrap_or(&env.foreground));
+                cx.list().fill(self.shape, rect, p);
             }
         }
     }

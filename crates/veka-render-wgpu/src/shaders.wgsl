@@ -30,6 +30,9 @@ struct ShapeIn {
     @location(2) color: vec4f,    // linéaire, prémultiplié
     @location(3) xform: vec4f,    // a, b, c, d  (local → pixels)
     @location(4) extra: vec4f,    // tx, ty, sorte (0 boîte, 1 ellipse), épaisseur du trait (0 = remplissage)
+    @location(5) fill: vec4f,     // remplissage (0 uni, 1 linéaire, 2 radial, 3 elliptique, 4 angulaire, 5 maillé), rampe x, rampe v
+    @location(6) geo: vec4f,      // géométrie du dégradé (repère local)
+    @location(7) geo2: vec4f,
 };
 
 struct ShapeOut {
@@ -39,7 +42,17 @@ struct ShapeOut {
     @location(2) @interpolate(flat) radii: vec4f,
     @location(3) @interpolate(flat) color: vec4f,
     @location(4) @interpolate(flat) kind_stroke: vec2f,
+    @location(5) @interpolate(flat) fill: vec4f,
+    @location(6) @interpolate(flat) geo: vec4f,
+    @location(7) @interpolate(flat) geo2: vec4f,
 };
+
+@group(1) @binding(0) var ramps: texture_2d<f32>;
+@group(1) @binding(1) var ramps_sampler: sampler;
+
+const RAMPS_SIZE: f32 = 1024.0;
+const RAMP_LEN: f32 = 256.0;
+const TAU: f32 = 6.28318530718;
 
 @vertex
 fn shape_vs(@builtin(vertex_index) vi: u32, i: ShapeIn) -> ShapeOut {
@@ -58,7 +71,39 @@ fn shape_vs(@builtin(vertex_index) vi: u32, i: ShapeIn) -> ShapeOut {
     o.radii = i.radii;
     o.color = i.color;
     o.kind_stroke = i.extra.zw;
+    o.fill = i.fill;
+    o.geo = i.geo;
+    o.geo2 = i.geo2;
     return o;
+}
+
+// Couleur d'un dégradé au point `p` (repère local). Linéaire et prémultipliée, lue dans l'atlas.
+fn gradient(p: vec2f, fill: vec4f, geo: vec4f, geo2: vec4f) -> vec4f {
+    let kind = i32(fill.x + 0.5);
+    if (kind == 5) {
+        let uv = (p - geo.xy) / max(geo.zw, vec2f(1e-4));
+        let at = mix(geo2.xy, geo2.zw, clamp(uv, vec2f(0.0), vec2f(1.0)));
+        return textureSampleLevel(ramps, ramps_sampler, at, 0.0);
+    }
+    var t = 0.0;
+    if (kind == 1) {
+        let d = geo.zw - geo.xy;
+        t = dot(p - geo.xy, d) / max(dot(d, d), 1e-6);
+    } else if (kind == 2) {
+        t = (length(p - geo.xy) - geo.z) / max(geo.w - geo.z, 1e-4);
+    } else if (kind == 3) {
+        let r = length((p - geo.xy) / max(geo.zw, vec2f(1e-4)));
+        t = (r - geo2.x) / max(geo2.y - geo2.x, 1e-4);
+    } else if (kind == 4) {
+        let d = p - geo.xy;
+        // Sens horaire depuis +X (y vers le bas).
+        let a = atan2(d.y, d.x) - geo.z;
+        let turn = a - floor(a / TAU) * TAU;
+        t = turn / max(abs(geo.w), 1e-4);
+    }
+    t = clamp(t, 0.0, 1.0);
+    let u = (fill.y + 0.5 + t * (RAMP_LEN - 1.0)) / RAMPS_SIZE;
+    return textureSampleLevel(ramps, ramps_sampler, vec2f(u, fill.z), 0.0);
 }
 
 fn sd_round_box(p: vec2f, half: vec2f, radii: vec4f) -> f32 {
@@ -84,7 +129,11 @@ fn shape_fs(i: ShapeOut) -> @location(0) vec4f {
     if (i.kind_stroke.y > 0.0) { d = abs(d) - i.kind_stroke.y * 0.5; }
     let w = max(fwidth(d), 1e-4);
     let coverage = clamp(0.5 - d / w, 0.0, 1.0);
-    return i.color * coverage;
+    var color = i.color;
+    if (i.fill.x > 0.5) {
+        color = gradient(i.local, i.fill, i.geo, i.geo2) * i.color;
+    }
+    return color * coverage;
 }
 
 // ---------------------------------------------------------------- Glyphes

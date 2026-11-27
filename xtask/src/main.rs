@@ -8,7 +8,13 @@
 use std::process::{Command, ExitCode};
 
 /// Les crates du cœur : elles ne doivent jamais voir l'OS.
-const CORE: &[&str] = &["veka-foundation", "veka-graphics", "veka-text", "veka-ui"];
+const CORE: &[&str] = &[
+    "veka-foundation",
+    "veka-colora",
+    "veka-graphics",
+    "veka-text",
+    "veka-ui",
+];
 
 /// Dépendances interdites dans le cœur (fenêtres, OS, GPU).
 const FORBIDDEN: &[&str] = &[

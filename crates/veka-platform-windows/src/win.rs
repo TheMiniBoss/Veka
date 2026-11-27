@@ -15,20 +15,21 @@ use raw_window_handle::{
     WindowHandle,
 };
 use veka_platform::{
-    Chrome, Instant, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent,
-    PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowControl, WindowDesc, WindowId,
-    WindowInfo, WindowRegion,
+    Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
+    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, WindowAction,
+    WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
     ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
-    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMWCP_ROUNDSMALL,
-    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+    DWMWCP_ROUNDSMALL, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient, ValidateRect};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForSystem, GetDpiForWindow,
@@ -46,11 +47,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_CXPADDEDBORDER, SM_CYFRAME, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, SetWindowTextW, ShowWindow,
     TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK,
-    WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SIZE, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW,
-    WS_THICKFRAME,
+    WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE,
+    WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
+    WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WNDCLASSEXW,
+    WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -268,6 +269,7 @@ impl PlatformContext for Ctx {
                 let (w, h) = outer_size(desc.size, style, ex_style, real, custom);
                 let _ = SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
+            apply_scheme(hwnd, APPEARANCE.with(|a| a.get()).scheme);
             if custom {
                 decorate(hwnd, desc.chrome);
             }
@@ -307,6 +309,10 @@ impl PlatformContext for Ctx {
     fn exit(&mut self) {
         // SAFETY : appel sans pointeur.
         unsafe { PostQuitMessage(0) };
+    }
+
+    fn appearance(&self) -> Appearance {
+        APPEARANCE.with(|a| a.get())
     }
 }
 
@@ -396,6 +402,79 @@ thread_local! {
     static RUNNER: RefCell<Option<Runner>> = const { RefCell::new(None) };
     static QUEUE: RefCell<VecDeque<PlatformEvent>> = const { RefCell::new(VecDeque::new()) };
     static BY_HWND: RefCell<HashMap<isize, Rc<WinData>>> = RefCell::new(HashMap::new());
+    static APPEARANCE: Cell<Appearance> = Cell::new(Appearance::default());
+}
+
+/// Lit un DWORD de `HKEY_CURRENT_USER`.
+fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
+    let mut data = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY : tampon local de la bonne taille.
+    let err = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key,
+            value,
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut data as *mut u32 as *mut c_void),
+            Some(&mut size),
+        )
+    };
+    err.is_ok().then_some(data)
+}
+
+/// Mode clair / sombre (Paramètres > Personnalisation > Couleurs) et couleur d'accent.
+fn read_appearance() -> Appearance {
+    let light = read_dword(
+        w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+        w!("AppsUseLightTheme"),
+    );
+    let scheme = match light {
+        Some(0) => ColorScheme::Dark,
+        _ => ColorScheme::Light,
+    };
+    // 0xAABBGGRR.
+    let accent = read_dword(w!("Software\\Microsoft\\Windows\\DWM"), w!("AccentColor")).map(|v| {
+        Color::rgb(
+            (v & 0xFF) as f32 / 255.0,
+            ((v >> 8) & 0xFF) as f32 / 255.0,
+            ((v >> 16) & 0xFF) as f32 / 255.0,
+        )
+    });
+    Appearance { scheme, accent }
+}
+
+/// Barre de titre du système sombre ou claire, comme les applications.
+///
+/// # Safety
+///
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn apply_scheme(hwnd: HWND, scheme: ColorScheme) {
+    let dark: i32 = (scheme == ColorScheme::Dark) as i32;
+    // SAFETY : garanti par l'appelant ; échoue sans dommage avant Windows 10 20H1.
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const i32 as *const c_void,
+            std::mem::size_of::<i32>() as u32,
+        );
+    }
+}
+
+/// Relit l'apparence du système ; prévient l'application et les fenêtres si elle a changé.
+fn refresh_appearance() {
+    let now = read_appearance();
+    if APPEARANCE.with(|a| a.replace(now)) != now {
+        BY_HWND.with(|m| {
+            for data in m.borrow().values() {
+                // SAFETY : les HWND de la table sont vivants (retirés à WM_DESTROY).
+                unsafe { apply_scheme(data.hwnd.get(), now.scheme) };
+            }
+        });
+        push(PlatformEvent::AppearanceChanged { appearance: now });
+    }
 }
 
 fn push(event: PlatformEvent) {
@@ -444,6 +523,7 @@ impl Platform for WindowsPlatform {
                 next_id: 1,
                 frequency: frequency.max(1),
             };
+            APPEARANCE.with(|a| a.set(read_appearance()));
             RUNNER.with(|r| *r.borrow_mut() = Some(Runner { app, ctx }));
             push(PlatformEvent::Resumed);
             pump();
@@ -517,6 +597,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
         match msg {
             WM_ERASEBKGND => return LRESULT(1),
+            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => {
+                refresh_appearance();
+                pump();
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
             WM_PAINT => {
                 let _ = ValidateRect(Some(hwnd), None);
                 push(PlatformEvent::RedrawRequested { window });
