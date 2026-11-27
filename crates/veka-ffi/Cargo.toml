@@ -14,9 +14,13 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 veka-foundation.workspace = true
+veka-colora.workspace = true
 veka-ui.workspace = true
 veka-platform.workspace = true
 veka-app.workspace = true
+
+[dev-dependencies]
+veka-graphics.workspace = true
 
 [lints]
 workspace = true

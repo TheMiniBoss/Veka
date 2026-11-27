@@ -151,3 +151,113 @@ fn fenetre_personnalisee() {
         veka_app_free(app);
     }
 }
+
+#[test]
+fn colora_en_c() {
+    use veka_colora::{ColorScheme, Paint};
+    use veka_graphics::DrawCommand;
+
+    let peintures = |e: *mut VekaElement, scheme: ColorScheme| -> Vec<Paint> {
+        assert!(!e.is_null(), "{:?}", unsafe { CStr::from_ptr(veka_last_error()) });
+        let mut s = Surface::new(unsafe { Box::from_raw(e) }.element);
+        s.set_system_appearance(scheme, None);
+        s.resize(Size::new(200.0, 200.0), 1.0);
+        s.frame()
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::FillShape { paint, .. } => Some(paint.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    unsafe {
+        // Un thème : Tint orange en clair, et un jeton maison qui vaut un dégradé.
+        let theme = veka_theme_new(c"Marque".as_ptr(), std::ptr::null());
+        assert_eq!(
+            veka_theme_set_color(
+                theme,
+                c"Tint".as_ptr(),
+                veka_solid(veka_hex(0xFF6A00)),
+                veka_solid(veka_hex(0xFF8A33)),
+            ),
+            0
+        );
+        let couleurs = [veka_hex(0x000000), veka_hex(0xFFFFFF)];
+        let degrade = veka_linear_gradient(couleurs.as_ptr(), 2, VEKA_UNIT_TOP, VEKA_UNIT_BOTTOM);
+        assert_eq!(
+            veka_theme_set_color(theme, c"Marque.Fond".as_ptr(), degrade, std::ptr::null_mut()),
+            0
+        );
+
+        let forme = |jeton: &CStr| {
+            veka_frame(
+                veka_fill_paint(
+                    veka_rectangle(),
+                    veka_token(jeton.as_ptr(), VekaHierarchy::Primary),
+                ),
+                10.0,
+                10.0,
+            )
+        };
+        let vue = veka_theme(forme(c"Tint"), theme);
+        let p = peintures(vue, ColorScheme::Light);
+        assert_eq!(p[1], Paint::Solid(veka_foundation::Color::hex(0xFF6A00)));
+        let vue = veka_color_scheme(veka_theme(forme(c"Tint"), theme), VekaColorScheme::Dark);
+        let p = peintures(vue, ColorScheme::Light);
+        assert_eq!(p[1], Paint::Solid(veka_foundation::Color::hex(0xFF8A33)));
+        let p = peintures(veka_theme(forme(c"Marque.Fond"), theme), ColorScheme::Dark);
+        assert!(matches!(p[1], Paint::Linear(_)), "{p:?}");
+
+        // Arrêts en jetons, espace d'interpolation, réglage.
+        let arrets = [
+            VekaStop {
+                color: veka_rgb(0.0, 0.0, 0.0),
+                token: c"Blue".as_ptr(),
+                hierarchy: VekaHierarchy::Primary,
+                location: 0.0,
+            },
+            VekaStop {
+                color: veka_rgb(1.0, 1.0, 1.0),
+                token: std::ptr::null(),
+                hierarchy: VekaHierarchy::Primary,
+                location: 1.0,
+            },
+        ];
+        let g = veka_angular_gradient(couleurs.as_ptr(), 2, VEKA_UNIT_CENTER, 0.0, 360.0);
+        let g = veka_paint_space(veka_paint_stops(g, arrets.as_ptr(), 2), VekaColorSpace::OkLch);
+        let p = peintures(veka_fill_paint(veka_circle(), g), ColorScheme::Light);
+        match &p[1] {
+            Paint::Angular(a) => {
+                assert!(p[1].is_resolved());
+                assert_eq!(a.gradient.space, veka_colora::ColorSpace::OkLch);
+            }
+            autre => panic!("{autre:?}"),
+        }
+        let p = peintures(
+            veka_grayscale(veka_fill(veka_rectangle(), veka_hex(0xFF0000)), 1.0),
+            ColorScheme::Light,
+        );
+        let c = p[1].solid().unwrap();
+        assert!((c.r - c.g).abs() < 1e-3, "{c:?}");
+
+        // Le chemin données : fill(paint:) avec une peinture prêtée.
+        let maille = [veka_hex(0xFF0000); 4];
+        let mesh = veka_mesh_gradient(2, 2, std::ptr::null(), maille.as_ptr());
+        let params = [VekaParam {
+            name: c"paint".as_ptr(),
+            value: veka_paint_value(mesh),
+        }];
+        let e = veka_modifier(veka_rectangle(), c"fill".as_ptr(), params.as_ptr(), 1);
+        assert!(matches!(peintures(e, ColorScheme::Light)[1], Paint::Mesh(_)));
+        veka_paint_free(mesh);
+
+        // Erreurs : jeton NULL, maillage trop petit, arrêts sur une couleur unie.
+        assert!(veka_token(std::ptr::null(), VekaHierarchy::Primary).is_null());
+        assert!(veka_mesh_gradient(1, 3, std::ptr::null(), maille.as_ptr()).is_null());
+        assert!(veka_paint_stops(veka_solid(veka_hex(0)), arrets.as_ptr(), 2).is_null());
+        assert!(veka_fill_paint(veka_rectangle(), std::ptr::null_mut()).is_null());
+
+        veka_theme_free(theme);
+    }
+}

@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Arc;
 
+use veka_colora::{ColorScheme, Paint, Theme};
 use veka_foundation::{Color, WindowControl};
 use veka_graphics::CornerRadii;
 use veka_text::Weight;
@@ -26,6 +28,10 @@ pub enum Value {
     Float(f64),
     String(Rc<str>),
     Color(Color),
+    /// Une peinture Colora : couleur, jeton ou dégradé.
+    Paint(Paint),
+    /// Un thème Colora.
+    Theme(Arc<Theme>),
     /// Une valeur d'énumération par son nom (`"title"`, `"leading"`…).
     Enum(Rc<str>),
     Action(Action),
@@ -38,6 +44,9 @@ pub enum ValueType {
     Number,
     String,
     Color,
+    /// Une peinture : accepte aussi une couleur.
+    Paint,
+    Theme,
     Enum(&'static [&'static str]),
     Action,
 }
@@ -110,6 +119,22 @@ impl Params {
     pub fn color(&self, name: &str) -> Option<Color> {
         match self.get(name)? {
             Value::Color(c) => Some(*c),
+            _ => None,
+        }
+    }
+
+    /// Une peinture (une couleur en est une).
+    pub fn paint(&self, name: &str) -> Option<Paint> {
+        match self.get(name)? {
+            Value::Color(c) => Some(Paint::Solid(*c)),
+            Value::Paint(p) => Some(p.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn theme(&self, name: &str) -> Option<Arc<Theme>> {
+        match self.get(name)? {
+            Value::Theme(t) => Some(t.clone()),
             _ => None,
         }
     }
@@ -271,6 +296,8 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         | (ValueType::Number, Value::Int(_) | Value::Float(_))
         | (ValueType::String, Value::String(_))
         | (ValueType::Color, Value::Color(_))
+        | (ValueType::Paint, Value::Color(_) | Value::Paint(_))
+        | (ValueType::Theme, Value::Theme(_))
         | (ValueType::Action, Value::Action(_)) => true,
         (ValueType::Enum(names), Value::Enum(s) | Value::String(s)) => names.contains(&&**s),
         _ => false,
@@ -532,8 +559,8 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "remplissage d'une forme",
-            params: const { &[p("color", ValueType::Color, true, "couleur")] },
-            build: |p, c| one(c).fill(p.color("color").unwrap_or_default()),
+            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
+            build: |p, c| one(c).fill(p.paint("paint").unwrap_or_default()),
         },
         Entry {
             name: "stroke",
@@ -542,13 +569,13 @@ fn builtin_entries() -> Vec<Entry> {
             doc: "contour d'une forme",
             params: const {
                 &[
-                    p("color", ValueType::Color, true, "couleur"),
+                    p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé"),
                     p("lineWidth", ValueType::Number, false, "épaisseur"),
                 ]
             },
             build: |p, c| {
                 one(c).stroke(
-                    p.color("color").unwrap_or_default(),
+                    p.paint("paint").unwrap_or_default(),
                     p.number("lineWidth").unwrap_or(1.0),
                 )
             },
@@ -558,16 +585,16 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "couleur du texte et des formes",
-            params: const { &[p("color", ValueType::Color, true, "couleur")] },
-            build: |p, c| one(c).foreground(p.color("color").unwrap_or_default()),
+            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
+            build: |p, c| one(c).foreground(p.paint("paint").unwrap_or_default()),
         },
         Entry {
             name: "tint",
             kind: Modifier,
             children: One,
             doc: "couleur d'accent",
-            params: const { &[p("color", ValueType::Color, true, "couleur")] },
-            build: |p, c| one(c).tint(p.color("color").unwrap_or_default()),
+            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
+            build: |p, c| one(c).tint(p.paint("paint").unwrap_or_default()),
         },
         Entry {
             name: "font",
@@ -596,9 +623,39 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "fond",
-            params: const { &[p("color", ValueType::Color, true, "couleur")] },
-            build: |p, c| one(c).background(p.color("color").unwrap_or_default()),
+            params: const { &[p("paint", ValueType::Paint, true, "couleur, jeton ou dégradé")] },
+            build: |p, c| one(c).background(p.paint("paint").unwrap_or_default()),
         },
+        Entry {
+            name: "theme",
+            kind: Modifier,
+            children: One,
+            doc: "thème Colora du sous-arbre",
+            params: const { &[p("theme", ValueType::Theme, true, "thème")] },
+            build: |p, c| match p.theme("theme") {
+                Some(t) => one(c).theme(t),
+                Option::None => one(c),
+            },
+        },
+        Entry {
+            name: "colorScheme",
+            kind: Modifier,
+            children: One,
+            doc: "force le mode clair ou sombre du sous-arbre",
+            params: const { &[p("scheme", ValueType::Enum(SCHEMES), true, "mode")] },
+            build: |p, c| {
+                let scheme = match p.enumeration("scheme") {
+                    Some("dark") => ColorScheme::Dark,
+                    _ => ColorScheme::Light,
+                };
+                one(c).color_scheme(scheme)
+            },
+        },
+        adjust("brightness", "ajoute la valeur (-1 à 1) à chaque composante"),
+        adjust("contrast", "contraste (1 = inchangé)"),
+        adjust("saturation", "saturation (0 = gris, 1 = inchangé)"),
+        adjust("hueRotation", "rotation de teinte, en degrés"),
+        adjust("grayscale", "niveaux de gris (0 = inchangé, 1 = gris)"),
         Entry {
             name: "onTapGesture",
             kind: Modifier,
@@ -663,6 +720,28 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, _| window::TitleBarWith(p.string("title").unwrap_or_default(), title_style(p)),
         },
     ]
+}
+
+const SCHEMES: &[&str] = &["light", "dark"];
+
+/// Un réglage de couleur : un seul paramètre `amount`.
+fn adjust(name: &'static str, doc: &'static str) -> Entry {
+    // Le schéma veut une `fn` sans capture : chaque réglage a la sienne.
+    let build: BuildFn = match name {
+        "brightness" => |p, c| one(c).brightness(p.number("amount").unwrap_or(0.0)),
+        "contrast" => |p, c| one(c).contrast(p.number("amount").unwrap_or(1.0)),
+        "saturation" => |p, c| one(c).saturation(p.number("amount").unwrap_or(1.0)),
+        "hueRotation" => |p, c| one(c).hue_rotation(p.number("amount").unwrap_or(0.0)),
+        _ => |p, c| one(c).grayscale(p.number("amount").unwrap_or(1.0)),
+    };
+    Entry {
+        name,
+        kind: EntryKind::Modifier,
+        children: Children::One,
+        doc,
+        params: const { &[p("amount", ValueType::Number, true, "valeur")] },
+        build,
+    }
 }
 
 const CONTROLS: &[&str] = &["close", "minimize", "maximize", "fullscreen"];

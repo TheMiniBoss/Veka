@@ -22,6 +22,28 @@ typedef enum VekaChrome {
   VEKA_CHROME_CUSTOM,
 } VekaChrome;
 
+// Niveau d'un jeton : 100 %, 60 %, 30 % ou 18 % d'opacité.
+typedef enum VekaHierarchy {
+  VEKA_HIERARCHY_PRIMARY,
+  VEKA_HIERARCHY_SECONDARY,
+  VEKA_HIERARCHY_TERTIARY,
+  VEKA_HIERARCHY_QUATERNARY,
+} VekaHierarchy;
+
+// Espace dans lequel un dégradé interpole (Oklab par défaut).
+typedef enum VekaColorSpace {
+  VEKA_COLOR_SPACE_OKLAB,
+  VEKA_COLOR_SPACE_OK_LCH,
+  VEKA_COLOR_SPACE_LINEAR,
+  VEKA_COLOR_SPACE_SRGB,
+} VekaColorSpace;
+
+// Mode clair ou sombre.
+typedef enum VekaColorScheme {
+  VEKA_COLOR_SCHEME_LIGHT,
+  VEKA_COLOR_SCHEME_DARK,
+} VekaColorScheme;
+
 // Type d'une [`VekaValue`].
 typedef enum VekaValueKind {
   VEKA_VALUE_KIND_BOOL,
@@ -32,6 +54,10 @@ typedef enum VekaValueKind {
   // Une valeur d'énumération par son nom (`"title"`, `"leading"`…), dans `string`.
   VEKA_VALUE_KIND_ENUM,
   VEKA_VALUE_KIND_ACTION,
+  // Une peinture (`VekaPaint*`, copiée : le C la garde).
+  VEKA_VALUE_KIND_PAINT,
+  // Un thème (`VekaTheme*`, partagé : le C le garde).
+  VEKA_VALUE_KIND_THEME,
 } VekaValueKind;
 
 // Style de texte.
@@ -79,8 +105,14 @@ typedef struct VekaContext VekaContext;
 // Un élément d'interface (texte, forme, pile…). Opaque.
 typedef struct VekaElement VekaElement;
 
+// Une peinture : couleur, jeton du thème ou dégradé. Opaque.
+typedef struct VekaPaint VekaPaint;
+
 // Un état. Opaque : c'est une poignée, pas un pointeur à libérer.
 typedef struct VekaState VekaState;
+
+// Un thème Colora. Opaque.
+typedef struct VekaTheme VekaTheme;
 
 // Déclare les états de la fenêtre (rappelée avant chaque `body`).
 typedef void (*VekaSetupFn)(struct VekaContext *cx, void *user);
@@ -109,6 +141,12 @@ typedef struct VekaWindowDesc {
   float resize_margin;
 } VekaWindowDesc;
 
+// Un point dans le rectangle d'une forme : (0, 0) en haut à gauche, (1, 1) en bas à droite.
+typedef struct VekaUnitPoint {
+  float x;
+  float y;
+} VekaUnitPoint;
+
 // Une couleur sRGB, composantes de 0 à 1.
 typedef struct VekaColor {
   float r;
@@ -116,6 +154,15 @@ typedef struct VekaColor {
   float b;
   float a;
 } VekaColor;
+
+// Un arrêt de dégradé : une couleur, ou un jeton si `token` n'est pas NULL, à la position
+// `location` (0 à 1).
+typedef struct VekaStop {
+  struct VekaColor color;
+  const char *token;
+  enum VekaHierarchy hierarchy;
+  float location;
+} VekaStop;
 
 // Fonction appelée par une action (clic sur un bouton, toucher…).
 typedef void (*VekaActionFn)(struct VekaContext *cx, void *user);
@@ -134,6 +181,8 @@ typedef union VekaValueData {
   const char *string;
   struct VekaColor color;
   struct VekaAction action;
+  const struct VekaPaint *paint;
+  const struct VekaTheme *theme;
 } VekaValueData;
 
 // Une valeur de paramètre. Se construit avec `veka_number`, `veka_string`…
@@ -147,6 +196,24 @@ typedef struct VekaParam {
   const char *name;
   struct VekaValue value;
 } VekaParam;
+
+#define VEKA_UNIT_TOP_LEADING (VekaUnitPoint){ .x = 0.0, .y = 0.0 }
+
+#define VEKA_UNIT_TOP (VekaUnitPoint){ .x = 0.5, .y = 0.0 }
+
+#define VEKA_UNIT_TOP_TRAILING (VekaUnitPoint){ .x = 1.0, .y = 0.0 }
+
+#define VEKA_UNIT_LEADING (VekaUnitPoint){ .x = 0.0, .y = 0.5 }
+
+#define VEKA_UNIT_CENTER (VekaUnitPoint){ .x = 0.5, .y = 0.5 }
+
+#define VEKA_UNIT_TRAILING (VekaUnitPoint){ .x = 1.0, .y = 0.5 }
+
+#define VEKA_UNIT_BOTTOM_LEADING (VekaUnitPoint){ .x = 0.0, .y = 1.0 }
+
+#define VEKA_UNIT_BOTTOM (VekaUnitPoint){ .x = 0.5, .y = 1.0 }
+
+#define VEKA_UNIT_BOTTOM_TRAILING (VekaUnitPoint){ .x = 1.0, .y = 1.0 }
 
 #ifdef __cplusplus
 extern "C" {
@@ -189,6 +256,122 @@ int32_t veka_app_run(struct VekaApp *app);
 
 // Libère une application qui n'a pas été lancée.
 void veka_app_free(struct VekaApp *app);
+
+// Un point quelconque (`VEKA_UNIT_CENTER`… pour les points usuels).
+struct VekaUnitPoint veka_unit_point(float x, float y);
+
+// Une couleur unie.
+struct VekaPaint *veka_solid(struct VekaColor color);
+
+// Un jeton du thème par son nom (`"Accent"`, `"Foreground"`, `"Marque.Fond"`…). Un jeton inconnu
+// s'affiche en magenta.
+struct VekaPaint *veka_token(const char *name, enum VekaHierarchy hierarchy);
+
+// Dégradé linéaire de `from` à `to`, couleurs réparties régulièrement.
+struct VekaPaint *veka_linear_gradient(const struct VekaColor *colors,
+                                       size_t count,
+                                       struct VekaUnitPoint from,
+                                       struct VekaUnitPoint to);
+
+// Dégradé radial autour de `center`, rayons en points.
+struct VekaPaint *veka_radial_gradient(const struct VekaColor *colors,
+                                       size_t count,
+                                       struct VekaUnitPoint center,
+                                       float start_radius,
+                                       float end_radius);
+
+// Dégradé elliptique : rayons en fraction de la demi-taille de la forme (0 à 1).
+struct VekaPaint *veka_elliptical_gradient(const struct VekaColor *colors,
+                                           size_t count,
+                                           struct VekaUnitPoint center,
+                                           float start_fraction,
+                                           float end_fraction);
+
+// Dégradé angulaire autour de `center` : angles en degrés, sens horaire depuis la droite.
+struct VekaPaint *veka_angular_gradient(const struct VekaColor *colors,
+                                        size_t count,
+                                        struct VekaUnitPoint center,
+                                        float start_angle,
+                                        float end_angle);
+
+// Dégradé maillé de `width` × `height` points (au moins 2 × 2), couleurs ligne par ligne.
+// `positions` peut être NULL : grille régulière.
+struct VekaPaint *veka_mesh_gradient(size_t width,
+                                     size_t height,
+                                     const struct VekaUnitPoint *positions,
+                                     const struct VekaColor *colors);
+
+// Remplace les arrêts d'un dégradé (pour y mettre des jetons ou des positions libres). Pour un
+// dégradé maillé, les couleurs des points dans l'ordre (les positions des arrêts sont ignorées).
+// `paint` est consommé ; renvoie la peinture modifiée, ou NULL.
+struct VekaPaint *veka_paint_stops(struct VekaPaint *paint,
+                                   const struct VekaStop *stops,
+                                   size_t count);
+
+// Choisit l'espace d'interpolation d'un dégradé. `paint` est consommé ; renvoie la peinture
+// modifiée (inchangée si ce n'est pas un dégradé).
+struct VekaPaint *veka_paint_space(struct VekaPaint *paint, enum VekaColorSpace space);
+
+// Une copie de la peinture (qui, elle, n'est pas consommée).
+struct VekaPaint *veka_paint_copy(const struct VekaPaint *paint);
+
+// Libère une peinture qui n'a été donnée à personne.
+void veka_paint_free(struct VekaPaint *paint);
+
+// Remplit une forme avec une peinture (consommée).
+struct VekaElement *veka_fill_paint(struct VekaElement *element, struct VekaPaint *paint);
+
+// Contour d'une forme avec une peinture (consommée).
+struct VekaElement *veka_stroke_paint(struct VekaElement *element,
+                                      struct VekaPaint *paint,
+                                      float line_width);
+
+// Couleur du texte et des formes non remplies du contenu (peinture consommée).
+struct VekaElement *veka_foreground_paint(struct VekaElement *element, struct VekaPaint *paint);
+
+// Couleur d'accent du contenu (peinture consommée).
+struct VekaElement *veka_tint_paint(struct VekaElement *element, struct VekaPaint *paint);
+
+// Fond derrière le contenu (peinture consommée).
+struct VekaElement *veka_background_paint(struct VekaElement *element, struct VekaPaint *paint);
+
+// Applique un thème au contenu. Le thème n'est pas consommé.
+struct VekaElement *veka_theme(struct VekaElement *element, const struct VekaTheme *theme);
+
+// Force le mode clair ou sombre du contenu (sinon : celui du système).
+struct VekaElement *veka_color_scheme(struct VekaElement *element, enum VekaColorScheme scheme);
+
+// Ajoute `amount` (-1 à 1) à chaque composante des couleurs du contenu.
+struct VekaElement *veka_brightness(struct VekaElement *element, float amount);
+
+// Contraste du contenu (1 = inchangé).
+struct VekaElement *veka_contrast(struct VekaElement *element, float amount);
+
+// Saturation du contenu (0 = gris, 1 = inchangé).
+struct VekaElement *veka_saturation(struct VekaElement *element, float amount);
+
+// Rotation de teinte du contenu, en degrés.
+struct VekaElement *veka_hue_rotation(struct VekaElement *element, float amount);
+
+// Niveaux de gris (0 = inchangé, 1 = entièrement gris).
+struct VekaElement *veka_grayscale(struct VekaElement *element, float amount);
+
+// Un thème vide : tout jeton absent vient de `parent` (qui peut être NULL), puis de Veka.
+// Le parent est copié : le modifier ensuite ne change pas ce thème.
+struct VekaTheme *veka_theme_new(const char *name, const struct VekaTheme *parent);
+
+// Valeur d'un jeton en mode clair et en mode sombre (`dark` NULL : la même). Les peintures sont
+// consommées. Renvoie 0, ou -1 en cas d'erreur.
+int32_t veka_theme_set_color(struct VekaTheme *theme,
+                             const char *token,
+                             struct VekaPaint *light,
+                             struct VekaPaint *dark);
+
+// Une mesure de design du thème (`"CornerRadius.Card"`…). Renvoie 0, ou -1 en cas d'erreur.
+int32_t veka_theme_set_metric(struct VekaTheme *theme, const char *name, float value);
+
+// Libère un thème. Les éléments qui l'utilisent gardent leur copie.
+void veka_theme_free(struct VekaTheme *theme);
 
 // Construit n'importe quel composant du schéma par son nom (`"VStack"`, `"Text"`…).
 // Les enfants sont consommés.
@@ -323,6 +506,13 @@ struct VekaValue veka_color(struct VekaColor value);
 struct VekaValue veka_enum(const char *name);
 
 struct VekaValue veka_action(VekaActionFn callback, void *user);
+
+// Une peinture comme valeur de paramètre (`fill`, `foregroundColor`…). Elle est copiée au moment
+// de la construction de l'élément : le C la garde et la libère.
+struct VekaValue veka_paint_value(const struct VekaPaint *paint);
+
+// Un thème comme valeur de paramètre (modifier `theme`). Le C le garde.
+struct VekaValue veka_theme_value(const struct VekaTheme *theme);
 
 #ifdef __cplusplus
 }  // extern "C"

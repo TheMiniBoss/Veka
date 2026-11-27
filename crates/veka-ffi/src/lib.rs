@@ -8,7 +8,8 @@
 //!
 //! - **Propriété** : un `VekaElement*` passé à une pile, à un modifier ou renvoyé par `body` est
 //!   *consommé*, même en cas d'erreur. Le C ne libère (`veka_element_free`) que ce qu'il n'a donné
-//!   à personne.
+//!   à personne. De même pour un `VekaPaint*` (peinture) passé à une fonction ; un `VekaTheme*`, lui,
+//!   reste au C (`veka_theme_free`).
 //! - **Erreurs** : une fonction qui échoue renvoie `NULL` (ou un code non nul) et
 //!   `veka_last_error()` donne le message. Aucune panique ne traverse la frontière.
 //! - **Fil** : tout se passe sur le fil qui appelle `veka_app_run` (le fil principal sur macOS).
@@ -18,11 +19,13 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod app;
+mod colora;
 mod elements;
 mod state;
 mod value;
 
 pub use app::*;
+pub use colora::*;
 pub use elements::*;
 pub use state::*;
 pub use value::*;

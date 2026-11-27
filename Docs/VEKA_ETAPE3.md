@@ -1,6 +1,6 @@
 # Veka : étape 3, Colora
 
-Statut : **validé, en cours** (PR F). Fait suite à `VEKA_ETAPE2.md`. Reprend la conception de Colora dans VekaUI
+Statut : **validé, en cours** (PR F fusionnée, PR G). Fait suite à `VEKA_ETAPE2.md`. Reprend la conception de Colora dans VekaUI
 (Alpha 13 puis C++ phases 2 à 4), pas son code.
 
 ## 1. Objectif
@@ -62,18 +62,18 @@ fn mon_theme() -> Theme {
 ### 2.2 C
 
 ```c
-VekaPaint degrade = veka_linear_gradient((VekaColor[]){ VEKA_BLUE, VEKA_PURPLE }, 2,
-                                         VEKA_UNIT_TOP_LEADING, VEKA_UNIT_BOTTOM_TRAILING);
-VekaElement *carte = veka_fill_paint(veka_rounded_rectangle(16), degrade);
-VekaElement *titre = veka_foreground_paint(veka_text("Titre"), veka_token("Foreground", VEKA_PRIMARY));
+VekaColor couleurs[] = { veka_hex(0x007AFF), veka_hex(0xAF52DE) };
+VekaPaint *degrade = veka_linear_gradient(couleurs, 2, VEKA_UNIT_TOP_LEADING, VEKA_UNIT_BOTTOM_TRAILING);
+VekaElement *carte = veka_fill_paint(veka_rounded_rect(16), degrade);          /* la peinture est consommée */
+VekaElement *titre = veka_foreground_paint(veka_text("Titre"), veka_token("Foreground", VEKA_HIERARCHY_PRIMARY));
 
-VekaTheme *theme = veka_theme_new("Marque", NULL);
-veka_theme_set_color(theme, "Tint", veka_solid(0xFF6A00FF), veka_solid(0xFF8A33FF));
+VekaTheme *theme = veka_theme_new("Marque", NULL);                              /* gardé par le C */
+veka_theme_set_color(theme, "Tint", veka_solid(veka_hex(0xFF6A00)), veka_solid(veka_hex(0xFF8A33)));
 VekaElement *zone = veka_theme(contenu, theme);
 ```
 
-Et, comme toujours, tout passe aussi par le schéma : `fill(paint:)` accepte `{"linearGradient": {...}}` ou
-`{"token": "Accent"}`, ce qui servira tel quel au `.vk`.
+Et, comme toujours, tout passe aussi par le schéma : `fill(paint:)` accepte une couleur ou une peinture
+(`veka_paint_value` en C) ; le `.vk` y écrira `{"linearGradient": {...}}` ou `{"token": "Accent"}`.
 
 ## 3. Le modèle
 

@@ -29,7 +29,7 @@ fn nuancier() -> Element {
 fn carte(titre: &str, peinture: impl Into<Paint>) -> Element {
     VStack![spacing: 6;
         RoundedRectangle(14).fill(peinture).frame(112, 84),
-        Text(titre).font(Font::Caption).foreground(Token::Foreground.secondary()),
+        Text(titre).font(Font::Footnote),
     ]
 }
 
