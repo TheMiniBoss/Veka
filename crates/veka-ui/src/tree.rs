@@ -163,12 +163,16 @@ impl Tree {
 
     /// Les enfants qui ne sont pas en train de sortir.
     pub fn live_children(&self, id: NodeId) -> Vec<NodeId> {
+        self.live_children_iter(id).collect()
+    }
+
+    /// Comme [`live_children`](Self::live_children), sans allouer.
+    pub fn live_children_iter(&self, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
         self.nodes[id]
             .children
             .iter()
             .copied()
             .filter(|&c| !self.nodes[c].leaving)
-            .collect()
     }
 
     /// Ré-évalue une vue composée et met à jour son contenu.

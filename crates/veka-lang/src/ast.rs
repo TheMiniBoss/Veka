@@ -1,6 +1,8 @@
 //! L'arbre d'un fichier `.vk`. Les positions (`Span`) ne comptent pas dans les comparaisons : deux
 //! arbres égaux décrivent la même chose, où qu'elle soit écrite.
 
+use std::rc::Rc;
+
 use veka_foundation::Color;
 
 /// Une position dans le fichier (ligne et colonne à partir de 1).
@@ -101,7 +103,7 @@ pub struct ImportDecl {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FuncDecl {
     pub name: String,
-    pub params: Vec<(String, Option<TypeName>)>,
+    pub params: Vec<(Rc<str>, Option<TypeName>)>,
     pub ret: Option<TypeName>,
     /// Des `let`, puis l'expression rendue.
     pub body: Vec<Stmt>,
@@ -213,7 +215,8 @@ pub enum Stmt {
         span: Span,
     },
     Let {
-        name: String,
+        /// Partagé : poser la variable n'alloue pas.
+        name: Rc<str>,
         value: Expr,
         span: Span,
     },
@@ -322,7 +325,7 @@ pub struct Arg {
 /// `{ a, b in … }` après un appel.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure {
-    pub params: Vec<String>,
+    pub params: Vec<Rc<str>>,
     pub body: Vec<Stmt>,
 }
 

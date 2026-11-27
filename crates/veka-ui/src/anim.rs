@@ -310,6 +310,12 @@ fn animate_values(tree: &mut Tree, id: NodeId, spec: Option<Animation>, now: f64
     let Some(prev) = tree.nodes[id].prev.take() else {
         return;
     };
+    // Sans animation demandée ni en cours, la valeur affichée est la cible : rien à comparer (une vue
+    // `.vk` réévaluée à chaque image passe ici pour chaque nœud).
+    if spec.is_none() && tree.anims.get(&id).is_none_or(|a| a.values.is_none()) {
+        tree.nodes[id].shown = None;
+        return;
+    }
     let node = &tree.nodes[id];
     let env = node.env.clone();
     let target = node.prim.clone();

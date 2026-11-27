@@ -28,6 +28,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace
+      - name: Mesure du temps par image (.vk, affichée sans seuil)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo test -p veka --test mesure -- --ignored --nocapture
+          cargo test -p veka --release --test mesure -- --ignored --nocapture
       - name: Exemple (sans fenêtre)
         run: cargo run --example compteur_sans_fenetre
       - name: Exemple fenêtré (une image puis fermeture)

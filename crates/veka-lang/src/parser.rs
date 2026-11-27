@@ -230,7 +230,7 @@ impl Parser {
             } else {
                 None
             };
-            params.push((p, ty));
+            params.push((std::rc::Rc::from(p), ty));
             if !self.eat(",") {
                 self.expect(")")?;
                 break;
@@ -592,7 +592,11 @@ impl Parser {
             let name = self.ident("un nom")?;
             self.expect("=")?;
             let value = self.expr(false)?;
-            return Ok(Stmt::Let { name, value, span });
+            return Ok(Stmt::Let {
+                name: name.into(),
+                value,
+                span,
+            });
         }
         let e = self.expr(false)?;
         let op = match self.peek() {
@@ -901,7 +905,7 @@ impl Parser {
                 (Tok::Ident(_), Tok::Ident(n)) if n == "in" => {
                     for _ in 0..=k / 2 {
                         if let Tok::Ident(n) = self.bump().tok {
-                            params.push(n);
+                            params.push(n.into());
                         }
                         self.eat(",");
                     }

@@ -19,6 +19,9 @@
 //! version reste à l'écran.
 //!
 //! Avec `VEKA_EXIT_AFTER_FIRST_FRAME=1`, l'application se ferme après sa première image (CI).
+//! Avec `VEKA_STATS=1`, chaque fenêtre affiche chaque seconde (sortie d'erreur) son nombre d'images et le
+//! temps moyen et maximal d'une image : interface (évaluation des vues, layout, liste de dessin) puis
+//! rendu et présentation (attente de l'écran comprise).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -330,6 +333,58 @@ impl PlatformApp for Reporter {
 struct HostWindow {
     surface: Surface,
     renderer: WindowRenderer,
+    /// `VEKA_STATS=1` : le temps des images, affiché chaque seconde.
+    stats: Option<Stats>,
+}
+
+/// Le temps passé par image, cumulé sur une seconde.
+struct Stats {
+    since: std::time::Instant,
+    frames: u32,
+    ui: f64,
+    ui_max: f64,
+    render: f64,
+    render_max: f64,
+}
+
+impl Stats {
+    fn from_env() -> Option<Stats> {
+        std::env::var_os("VEKA_STATS")
+            .is_some_and(|v| v != "0")
+            .then(|| Stats {
+                since: std::time::Instant::now(),
+                frames: 0,
+                ui: 0.0,
+                ui_max: 0.0,
+                render: 0.0,
+                render_max: 0.0,
+            })
+    }
+
+    fn add(&mut self, id: WindowId, ui: f64, render: f64) {
+        self.frames += 1;
+        self.ui += ui;
+        self.ui_max = self.ui_max.max(ui);
+        self.render += render;
+        self.render_max = self.render_max.max(render);
+        let elapsed = self.since.elapsed().as_secs_f64();
+        if elapsed >= 1.0 {
+            let n = f64::from(self.frames);
+            eprintln!(
+                "Veka [fenêtre {}] : {:.0} images/s ; interface {:.2} ms (max {:.2}) ; rendu et présentation {:.2} ms (max {:.2})",
+                id.0,
+                n / elapsed,
+                self.ui / n * 1e3,
+                self.ui_max * 1e3,
+                self.render / n * 1e3,
+                self.render_max * 1e3,
+            );
+            *self = Stats {
+                since: std::time::Instant::now(),
+                ..Stats::from_env().expect("VEKA_STATS est posé")
+            };
+        }
+    }
 }
 
 struct Host {
@@ -467,7 +522,14 @@ impl Host {
             }
         };
         window.request_redraw();
-        self.windows.insert(id, HostWindow { surface, renderer });
+        self.windows.insert(
+            id,
+            HostWindow {
+                surface,
+                renderer,
+                stats: Stats::from_env(),
+            },
+        );
         Ok(())
     }
 
@@ -546,8 +608,13 @@ impl Host {
                 };
                 // L'heure de la plateforme : les animations avancent jusque-là. Tant qu'une animation
                 // tourne, `needs_frame` reste vrai et on redessine à chaque synchronisation verticale.
+                let t0 = std::time::Instant::now();
                 let list = w.surface.frame_at(ctx.now());
+                let t1 = std::time::Instant::now();
                 let result = w.renderer.render(list);
+                if let Some(stats) = &mut w.stats {
+                    stats.add(window, (t1 - t0).as_secs_f64(), t1.elapsed().as_secs_f64());
+                }
                 if let Some(regions) = w.surface.take_regions_if_changed() {
                     ctx.window(window).set_regions(&regions);
                 }

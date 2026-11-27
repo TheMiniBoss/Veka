@@ -510,7 +510,7 @@ impl Surface {
     fn walk(&self, id: NodeId, f: &mut dyn FnMut(&tree::Node)) {
         let node = &self.tree.nodes[id];
         f(node);
-        for c in self.tree.live_children(id) {
+        for c in self.tree.live_children_iter(id) {
             self.walk(c, f);
         }
     }
@@ -582,7 +582,7 @@ impl Surface {
                         rect,
                         kind: RegionKind::Drag,
                     });
-                    for child in tree.live_children(id) {
+                    for child in tree.live_children_iter(id) {
                         collect(tree, child, true, out);
                     }
                     return;
@@ -599,7 +599,7 @@ impl Surface {
                     return;
                 }
             }
-            for child in tree.live_children(id) {
+            for child in tree.live_children_iter(id) {
                 collect(tree, child, in_drag, out);
             }
         }

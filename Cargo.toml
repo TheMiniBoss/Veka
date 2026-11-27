@@ -93,3 +93,20 @@ all = { level = "warn", priority = -1 }
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Le cœur de Veka optimisé même en debug : un `.vk` animé (une évaluation par image) reste fluide, et le
+# pas-à-pas reste correct à ce niveau. Une application qui dépend de Veka peut copier ces lignes.
+[profile.dev.package.veka-foundation]
+opt-level = 1
+[profile.dev.package.veka-graphics]
+opt-level = 1
+[profile.dev.package.veka-colora]
+opt-level = 1
+[profile.dev.package.veka-anima]
+opt-level = 1
+[profile.dev.package.veka-text]
+opt-level = 1
+[profile.dev.package.veka-ui]
+opt-level = 1
+[profile.dev.package.veka-lang]
+opt-level = 1

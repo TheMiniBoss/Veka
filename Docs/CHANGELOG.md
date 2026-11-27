@@ -15,6 +15,20 @@ Le plus récent en premier.
 - Exemple `fenetre_transparente` : la carte prend le fond de fenêtre du thème (le blanc fixe rendait le texte
   illisible en mode sombre).
 
+## Étape 7 — un `.vk` rapide
+
+### Gains simples (PR N)
+- Le cœur de Veka (`veka-foundation`, `veka-graphics`, `veka-colora`, `veka-anima`, `veka-text`, `veka-ui`,
+  `veka-lang`) est compilé en `opt-level = 1` même en debug : les feux d'artifice passent de 31 à 6,5 ms par
+  image (720 × 480, hors GPU). Une application qui dépend de Veka peut copier ces lignes de `Cargo.toml`.
+- Interface : sans animation demandée ni en cours, plus de comparaison des valeurs animables après le layout ; le
+  relevé des zones de la fenêtre n'alloue plus.
+- Interpréteur : un appel de fonction ne crée plus de contexte neuf, les noms des `let`, paramètres et
+  fermetures sont partagés (`Rc<str>` dans l'AST). Feux en release : de 6,3 à 5,3 ms par image.
+- Mesure : `cargo test -p veka --release --test mesure -- --ignored --nocapture` (feux, anima, verre), affichée
+  par la CI sans seuil ; `VEKA_STATS=1` affiche chaque seconde les images par seconde et le temps d'une image
+  (interface, puis rendu et présentation).
+
 ## Étape 6 — Liquid Glass
 
 ### Verre liquide (PR M)
