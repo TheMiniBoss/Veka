@@ -87,6 +87,11 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: build/c/Debug/anima.exe
+      - name: Boutique .vk en C (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: build/c/Debug/boutique.exe
 
   core:
     name: Cœur sans OS + WebAssembly

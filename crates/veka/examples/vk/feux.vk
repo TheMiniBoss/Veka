@@ -1,0 +1,84 @@
+// Des feux d'artifice écrits seulement en .vk : une horloge (`@Clock`), du hasard déterministe
+// (`random`), des maths (`cos`, `sin`) et des fonctions. `cargo run --example vk -- feux`
+//
+// VekaUI devait les écrire en C++ faute de tout cela dans son langage.
+
+// Une gerbe toutes les `periode` secondes ; chacune vit `vie` secondes.
+func periode() -> Float {
+    0.55
+}
+
+func vie() -> Float {
+    1.8
+}
+
+// Ralentit vers la fin : les étincelles « s'accrochent » avant de tomber.
+func sortie(x: Float) -> Float {
+    let u = clamp(x, 0, 1)
+    1 - (1 - u) * (1 - u) * (1 - u)
+}
+
+// Une teinte vive pour la gerbe `b`.
+func teinte(b: Int, canal: Int) -> Float {
+    0.45 + 0.55 * random(b * 7 + canal)
+}
+
+view Gerbe {
+    @Param var b: Int = 0
+    @Param var age: Float = 0
+    @Param var particules: Int = 40
+    @Param var rayon: Float = 70
+
+    ZStack {
+        // L'éclair blanc du départ.
+        if age < 0.12 {
+            Circle()
+                .fill(.white)
+                .frame(18, 18)
+                .opacity(1 - age / 0.12)
+        }
+        ForEach(0..<particules) { i in
+            let angle = 2 * pi * Float(i) / Float(particules) + random(b * 1000 + i) * 0.3
+            let d = rayon * (0.7 + 0.3 * random(b * 2000 + i)) * sortie(age / 0.9)
+            // La pesanteur, et un scintillement.
+            let chute = 22 * age * age
+            let eclat = 0.6 + 0.4 * sin(age * 30 + Float(i))
+            Circle()
+                .fill(rgb(teinte(b, 0), teinte(b, 1), teinte(b, 2)))
+                .frame(4, 4)
+                .offset(cos(angle) * d, sin(angle) * d + chute)
+                .opacity(clamp((1 - age / vie()) * eclat, 0, 1))
+        }
+    }
+    .offset((random(b * 31) - 0.5) * 360, (random(b * 37) - 0.5) * 200 - 20)
+}
+
+view Feux {
+    @Clock var t
+    @State var particules = 40
+
+    ZStack {
+        Rectangle()
+            .fill(#0B1020)
+        ForEach(0..<4) { k in
+            let b = floor(t / periode()) - k
+            if b >= 0 {
+                Gerbe(b: b, age: t - Float(b) * periode(), particules: particules)
+            }
+        }
+        VStack {
+            Spacer()
+            HStack(spacing: 12) {
+                Button("Moins") {
+                    particules = max(8, particules - 8)
+                }
+                Text("\(particules) étincelles")
+                    .foregroundColor(.white)
+                Button("Plus") {
+                    particules = min(160, particules + 8)
+                }
+            }
+            .padding(16)
+        }
+    }
+}

@@ -25,6 +25,7 @@ mod colora;
 mod elements;
 mod state;
 mod value;
+mod vk;
 
 pub use anima::*;
 pub use app::*;
@@ -32,6 +33,7 @@ pub use colora::*;
 pub use elements::*;
 pub use state::*;
 pub use value::*;
+pub use vk::*;
 
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};

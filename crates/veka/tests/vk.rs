@@ -175,3 +175,69 @@ fn anima_meme_dessin_que_rust() {
         .expect("le cœur");
     assert_ne!(battements, "Battements : 0");
 }
+
+#[test]
+fn feux_d_artifice() {
+    let p = program(include_str!("../examples/vk/feux.vk"));
+    let mut s = Surface::new(p.view("Feux"));
+    s.resize(Size::new(640.0, 420.0), 1.0);
+    at(&mut s, 0.0);
+    at(&mut s, 0.0);
+    let debut = s.rects_of("Circle").len();
+    at(&mut s, 2.0);
+    let deux = s.draw_list().to_string();
+    let cercles = s.rects_of("Circle").len();
+    assert!(cercles > debut && cercles >= 120, "{debut} → {cercles}");
+    assert!(
+        s.is_animating() || s.needs_frame(),
+        "l'horloge avance à chaque image"
+    );
+    // Déterministe : même heure, même dessin.
+    let p2 = program(include_str!("../examples/vk/feux.vk"));
+    let mut s2 = Surface::new(p2.view("Feux"));
+    s2.resize(Size::new(640.0, 420.0), 1.0);
+    at(&mut s2, 0.0);
+    at(&mut s2, 0.0);
+    at(&mut s2, 2.0);
+    assert_eq!(s2.draw_list().to_string(), deux);
+    // « Plus » : 8 étincelles de plus par gerbe.
+    let plus = s.rects_of("Button")[1].center();
+    s.handle(InputEvent::PointerDown {
+        position: plus,
+        button: PointerButton::Primary,
+    });
+    s.handle(InputEvent::PointerUp {
+        position: plus,
+        button: PointerButton::Primary,
+    });
+    at(&mut s, 2.0);
+    assert!(
+        s.texts().contains(&"48 étincelles".to_string()),
+        "{:?}",
+        s.texts()
+    );
+}
+
+#[test]
+fn boutique_c_se_charge() {
+    let p = program(include_str!("../../../examples/c/boutique.vk"));
+    p.set_model(veka::lang::Val::record([(
+        "articles",
+        veka::lang::Val::from(vec![veka::lang::Val::record([
+            ("nom", veka::lang::Val::from("Épée")),
+            ("prix", veka::lang::Val::from(12)),
+            ("nouveau", veka::lang::Val::from(true)),
+        ])]),
+    )]));
+    let s = surface(p.view("Boutique"));
+    assert_eq!(
+        s.texts(),
+        [
+            "Boutique",
+            "Épée",
+            "NOUVEAU",
+            "Acheter 12 or",
+            "Dernier achat : rien, 0 or dépensés"
+        ]
+    );
+}

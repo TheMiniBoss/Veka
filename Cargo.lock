@@ -1334,6 +1334,7 @@ dependencies = [
  "veka-colora",
  "veka-foundation",
  "veka-graphics",
+ "veka-lang",
  "veka-platform",
  "veka-ui",
 ]

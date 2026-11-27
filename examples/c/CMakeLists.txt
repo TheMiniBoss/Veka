@@ -41,8 +41,9 @@ if(WIN32)
 endif()
 add_dependencies(veka veka_cargo)
 
-# Les exemples : compteur (étape 1), fenetre_perso (étape 2), colora (étape 3) et anima (étape 4).
-foreach(exemple compteur fenetre_perso colora anima)
+# Les exemples : compteur (étape 1), fenetre_perso (étape 2), colora (étape 3), anima (étape 4) et
+# boutique (étape 5, le langage .vk).
+foreach(exemple compteur fenetre_perso colora anima boutique)
     add_executable(${exemple} ${exemple}.c)
     target_link_libraries(${exemple} PRIVATE veka)
     if(MSVC)
@@ -58,3 +59,5 @@ foreach(exemple compteur fenetre_perso colora anima)
         set_target_properties(${exemple} PROPERTIES BUILD_RPATH "${VEKA_LIB_DIR}")
     endif()
 endforeach()
+# `boutique` lit `boutique.vk` dans ce dossier.
+target_compile_definitions(boutique PRIVATE VEKA_VK_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

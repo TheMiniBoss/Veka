@@ -123,11 +123,31 @@ typedef enum VekaWindowControl {
   VEKA_WINDOW_CONTROL_FULLSCREEN,
 } VekaWindowControl;
 
+// La nature d'une `VekaData`.
+typedef enum VekaDataKind {
+  VEKA_DATA_KIND_NONE,
+  VEKA_DATA_KIND_BOOL,
+  VEKA_DATA_KIND_INT,
+  VEKA_DATA_KIND_FLOAT,
+  VEKA_DATA_KIND_STRING,
+  VEKA_DATA_KIND_ARRAY,
+  VEKA_DATA_KIND_RECORD,
+  // Couleur, symbole, peinture… : lisible seulement en texte.
+  VEKA_DATA_KIND_OTHER,
+} VekaDataKind;
+
 // Une application. Opaque.
 typedef struct VekaApp VekaApp;
 
 // Le contexte passé aux fonctions de rappel. Opaque ; à repasser tel quel à Veka.
 typedef struct VekaContext VekaContext;
+
+// Une donnée pour (ou de) un fichier `.vk` : nombre, texte, booléen, tableau, enregistrement.
+// Opaque. Celles que crée le C lui appartiennent jusqu'à ce qu'il les donne (`veka_data_push`,
+// `veka_data_set`, `veka_vk_set_model` les consomment).
+//
+// (Côté Rust, un pointeur `VekaData` est un pointeur vers une `Val`.)
+typedef struct VekaData VekaData;
 
 // Un élément d'interface (texte, forme, pile…). Opaque.
 typedef struct VekaElement VekaElement;
@@ -147,6 +167,9 @@ typedef struct VekaTimeline VekaTimeline;
 
 // Une transition d'entrée et de sortie. Opaque, consommée quand elle est passée à une fonction.
 typedef struct VekaTransition VekaTransition;
+
+// Un fichier `.vk` chargé. Opaque ; à libérer avec `veka_vk_free`.
+typedef struct VekaVk VekaVk;
 
 // Une animation, passée par valeur. Se construit avec `veka_animation_linear`,
 // `veka_animation_spring`… puis `veka_animation_delay`, `veka_animation_repeat`…
@@ -253,6 +276,13 @@ typedef struct VekaParam {
   const char *name;
   struct VekaValue value;
 } VekaParam;
+
+// Reçoit un `emit` qu'aucune vue du fichier n'écoute. `value` n'est valable que pendant l'appel
+// (NULL pour un événement sans valeur).
+typedef void (*VekaVkEventFn)(const char *view,
+                              const char *event,
+                              const struct VekaData *value,
+                              void *user);
 
 #define VEKA_UNIT_TOP_LEADING (VekaUnitPoint){ .x = 0.0, .y = 0.0 }
 
@@ -771,6 +801,86 @@ struct VekaValue veka_animation_value(struct VekaAnimation animation);
 
 // Une transition comme valeur de paramètre (copiée à l'usage : le C la garde).
 struct VekaValue veka_transition_value(const struct VekaTransition *transition);
+
+// Charge un fichier `.vk` depuis son texte. NULL si le texte a des erreurs (`veka_last_error`
+// les donne, une par ligne, avec leur position).
+struct VekaVk *veka_vk_load(const char *source);
+
+// Charge un fichier `.vk` depuis le disque ; ses `import` sont relatifs à son dossier.
+struct VekaVk *veka_vk_load_file(const char *path);
+
+// Remplace le texte du fichier ; les états des vues affichées gardent leurs valeurs. Renvoie 0,
+// ou -1 si le nouveau texte a des erreurs (l'ancien reste alors en place).
+int32_t veka_vk_reload(struct VekaVk *vk, const char *source);
+
+// La vue `name` du fichier, comme un élément (à donner à une pile ou à renvoyer de `body`).
+struct VekaElement *veka_vk_view(struct VekaVk *vk, const char *name);
+
+// Donne ses données au fichier (`model` dans le `.vk`) ; consomme `model`. Les vues affichées
+// sont ré-évaluées.
+int32_t veka_vk_set_model(struct VekaVk *vk, struct VekaData *model);
+
+// Installe le rappel d'événements du fichier (remplace le précédent).
+int32_t veka_vk_on_event(struct VekaVk *vk, VekaVkEventFn f, void *user);
+
+// Libère un fichier `.vk` (les vues déjà construites restent valables).
+void veka_vk_free(struct VekaVk *vk);
+
+// Ajoute une fenêtre qui affiche la vue `view` du fichier `path`, relu à chaud en debug. Rend le
+// fichier chargé (pour `veka_vk_set_model` et `veka_vk_on_event`), à libérer avec
+// `veka_vk_free` ; NULL en cas d'erreur.
+struct VekaVk *veka_app_add_window_vk(struct VekaApp *app,
+                                      const struct VekaWindowDesc *desc,
+                                      const char *path,
+                                      const char *view);
+
+struct VekaData *veka_data_int(int64_t v);
+
+struct VekaData *veka_data_float(double v);
+
+struct VekaData *veka_data_bool(bool v);
+
+// Un texte (copié). NULL si `s` n'est pas une chaîne UTF-8.
+struct VekaData *veka_data_string(const char *s);
+
+// Un tableau vide (`veka_data_push` le remplit).
+struct VekaData *veka_data_array(void);
+
+// Un enregistrement vide (`veka_data_set` le remplit).
+struct VekaData *veka_data_record(void);
+
+// Ajoute `item` à la fin du tableau `array` ; consomme `item`. Renvoie 0, ou -1.
+int32_t veka_data_push(struct VekaData *array, struct VekaData *item);
+
+// Donne au champ `key` de l'enregistrement `record` la valeur `value` ; consomme `value`.
+int32_t veka_data_set(struct VekaData *record, const char *key, struct VekaData *value);
+
+// Libère une donnée que le C n'a donnée à personne.
+void veka_data_free(struct VekaData *d);
+
+// La nature de `d` (`VEKA_DATA_KIND_NONE` pour NULL).
+enum VekaDataKind veka_data_kind(const struct VekaData *d);
+
+// Un nombre (entier ou non) ; 0 sinon.
+double veka_data_as_float(const struct VekaData *d);
+
+// Un entier (un nombre est arrondi vers zéro) ; 0 sinon.
+int64_t veka_data_as_int(const struct VekaData *d);
+
+bool veka_data_as_bool(const struct VekaData *d);
+
+// La donnée en texte, copiée dans `buffer` (`size` octets, zéro final compris). Renvoie la
+// longueur complète en octets (sans le zéro), même si elle ne tient pas.
+size_t veka_data_text(const struct VekaData *d, char *buffer, size_t size);
+
+// Le nombre d'éléments d'un tableau (ou de champs d'un enregistrement) ; 0 sinon.
+size_t veka_data_len(const struct VekaData *d);
+
+// L'élément `i` d'un tableau, emprunté (valable tant que `d` l'est) ; NULL hors du tableau.
+const struct VekaData *veka_data_at(const struct VekaData *d, size_t i);
+
+// Le champ `key` d'un enregistrement, emprunté (valable tant que `d` l'est) ; NULL s'il manque.
+const struct VekaData *veka_data_get(const struct VekaData *d, const char *key);
 
 #ifdef __cplusplus
 }  // extern "C"

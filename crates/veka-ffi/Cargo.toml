@@ -16,6 +16,7 @@ crate-type = ["cdylib", "staticlib"]
 veka-foundation.workspace = true
 veka-colora.workspace = true
 veka-ui.workspace = true
+veka-lang.workspace = true
 veka-platform.workspace = true
 veka-app.workspace = true
 
