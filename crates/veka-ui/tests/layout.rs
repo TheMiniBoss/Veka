@@ -118,3 +118,22 @@ fn bouton_dans_une_pile_reste_sur_une_ligne() {
         assert_eq!(s.rects_of("Text")[0].height(), seul.height(), "largeur {largeur}");
     }
 }
+
+#[test]
+fn deux_boutons_dans_une_pile() {
+    let seul = layout(Button("Mode : système", || {}), 2000.0, 400.0).rects_of("Text")[0];
+    let s = layout(
+        VStack![spacing: 20;
+            Text("Colora").font(Font::LargeTitle),
+            HStack![spacing: 12;
+                Button("Mode : système", || {}),
+                Button("Niveaux de gris", || {}),
+            ],
+        ]
+        .padding(24),
+        680.0,
+        520.0,
+    );
+    let t = s.rects_of("Text");
+    assert_eq!(t[1].height(), seul.height(), "{t:?}");
+}

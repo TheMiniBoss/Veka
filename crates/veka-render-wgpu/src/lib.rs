@@ -10,6 +10,7 @@
 
 mod atlas;
 mod painter;
+mod ramps;
 mod window;
 
 pub use painter::Painter;

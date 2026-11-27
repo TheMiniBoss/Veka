@@ -1,11 +1,14 @@
 //! Les modifiers. Chacun enveloppe l'élément dans un primitive (`padding`, `frame`…) ou modifie
 //! directement le primitive quand c'est le sien (`fill` sur une forme).
 
-use veka_foundation::{Color, Insets, Rect};
+use std::sync::Arc;
+
+use veka_colora::{ColorAdjust, Paint, Theme};
+use veka_foundation::{ColorScheme, Insets, Rect};
 use veka_graphics::Shape;
 
 use crate::element::{Action, Element};
-use crate::env::{Environment, Font};
+use crate::env::{Environment, Font, ThemeRef};
 use crate::layout::{Alignment, Frame, Padding};
 use crate::primitive::{EventCx, EventResult, PaintCx, PointerEvent, Primitive};
 use crate::views::ShapePrim;
@@ -26,8 +29,11 @@ impl_length!(i32, i64, u32, u64, usize, f32, f64);
 pub enum EnvModifier {
     Font(Font),
     FontWeight(Weight),
-    Foreground(Color),
-    Accent(Color),
+    Foreground(Paint),
+    Accent(Paint),
+    Theme(ThemeRef),
+    ColorScheme(ColorScheme),
+    ColorAdjust(ColorAdjust),
 }
 
 impl EnvModifier {
@@ -37,6 +43,15 @@ impl EnvModifier {
             EnvModifier::FontWeight(_) => "fontWeight",
             EnvModifier::Foreground(_) => "foregroundColor",
             EnvModifier::Accent(_) => "tint",
+            EnvModifier::Theme(_) => "theme",
+            EnvModifier::ColorScheme(_) => "colorScheme",
+            EnvModifier::ColorAdjust(a) => match a {
+                ColorAdjust::Brightness(_) => "brightness",
+                ColorAdjust::Contrast(_) => "contrast",
+                ColorAdjust::Saturation(_) => "saturation",
+                ColorAdjust::HueRotation(_) => "hueRotation",
+                ColorAdjust::Grayscale(_) => "grayscale",
+            },
         }
     }
 }
@@ -47,14 +62,17 @@ impl Primitive for EnvModifier {
     }
 
     fn update_env(&self, env: &mut Environment) -> bool {
-        match *self {
+        match self {
             EnvModifier::Font(f) => {
-                env.font = f;
+                env.font = *f;
                 env.font_weight = None;
             }
-            EnvModifier::FontWeight(w) => env.font_weight = Some(w),
-            EnvModifier::Foreground(c) => env.foreground = c,
-            EnvModifier::Accent(c) => env.accent = c,
+            EnvModifier::FontWeight(w) => env.font_weight = Some(*w),
+            EnvModifier::Foreground(p) => env.foreground = p.clone(),
+            EnvModifier::Accent(p) => env.accent = p.clone(),
+            EnvModifier::Theme(t) => env.theme = Some(t.clone()),
+            EnvModifier::ColorScheme(s) => env.color_scheme = *s,
+            EnvModifier::ColorAdjust(a) => env.adjust(*a),
         }
         true
     }
@@ -63,7 +81,7 @@ impl Primitive for EnvModifier {
 /// Fond : une forme remplie derrière le contenu, à sa taille.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Background {
-    pub color: Color,
+    pub paint: Paint,
     pub shape: Shape,
 }
 
@@ -73,7 +91,8 @@ impl Primitive for Background {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, rect: Rect) {
-        cx.list().fill(self.shape, rect, self.color);
+        let paint = cx.env().resolve(&self.paint);
+        cx.list().fill(self.shape, rect, paint);
         cx.paint_children();
     }
 }
@@ -170,23 +189,25 @@ impl Element {
         })
     }
 
-    /// Remplit une forme (sur une autre vue : couleur de premier plan).
-    pub fn fill(self, color: Color) -> Element {
-        match self.map_primitive(|s: ShapePrim| ShapePrim {
-            fill: Some(color),
+    /// Remplit une forme : couleur, jeton ou dégradé (sur une autre vue : premier plan).
+    pub fn fill(self, paint: impl Into<Paint>) -> Element {
+        let paint = paint.into();
+        let p = paint.clone();
+        match self.map_primitive(move |s: ShapePrim| ShapePrim {
+            fill: Some(p),
             stroke: None,
             ..s
         }) {
             Ok(e) => e,
-            Err(e) => e.foreground(color),
+            Err(e) => e.foreground(paint),
         }
     }
 
     /// Dessine seulement le contour d'une forme.
-    pub fn stroke(self, color: Color, width: impl Length) -> Element {
-        let w = width.points();
-        match self.map_primitive(|s: ShapePrim| ShapePrim {
-            stroke: Some((color, w)),
+    pub fn stroke(self, paint: impl Into<Paint>, width: impl Length) -> Element {
+        let (paint, w) = (paint.into(), width.points());
+        match self.map_primitive(move |s: ShapePrim| ShapePrim {
+            stroke: Some((paint, w)),
             ..s
         }) {
             Ok(e) => e,
@@ -195,13 +216,13 @@ impl Element {
     }
 
     /// Couleur du texte et des formes du sous-arbre.
-    pub fn foreground(self, color: Color) -> Element {
-        self.wrap(EnvModifier::Foreground(color))
+    pub fn foreground(self, paint: impl Into<Paint>) -> Element {
+        self.wrap(EnvModifier::Foreground(paint.into()))
     }
 
     /// Couleur d'accent (fond des boutons…).
-    pub fn tint(self, color: Color) -> Element {
-        self.wrap(EnvModifier::Accent(color))
+    pub fn tint(self, paint: impl Into<Paint>) -> Element {
+        self.wrap(EnvModifier::Accent(paint.into()))
     }
 
     pub fn font(self, font: Font) -> Element {
@@ -212,17 +233,55 @@ impl Element {
         self.wrap(EnvModifier::FontWeight(weight))
     }
 
-    /// Fond rectangulaire de la couleur donnée.
-    pub fn background(self, color: Color) -> Element {
+    /// Fond rectangulaire.
+    pub fn background(self, paint: impl Into<Paint>) -> Element {
         self.wrap(Background {
-            color,
+            paint: paint.into(),
             shape: Shape::Rectangle,
         })
     }
 
     /// Fond de la forme donnée (ex. `.background_shape(Color::Blue, Shape::Capsule)`).
-    pub fn background_shape(self, color: Color, shape: Shape) -> Element {
-        self.wrap(Background { color, shape })
+    pub fn background_shape(self, paint: impl Into<Paint>, shape: Shape) -> Element {
+        self.wrap(Background {
+            paint: paint.into(),
+            shape,
+        })
+    }
+
+    /// Thème Colora du sous-arbre.
+    pub fn theme(self, theme: impl Into<Arc<Theme>>) -> Element {
+        self.wrap(EnvModifier::Theme(ThemeRef(theme.into())))
+    }
+
+    /// Force le mode clair ou sombre du sous-arbre.
+    pub fn color_scheme(self, scheme: ColorScheme) -> Element {
+        self.wrap(EnvModifier::ColorScheme(scheme))
+    }
+
+    /// Ajoute `amount` (-1 à 1) à chaque composante.
+    pub fn brightness(self, amount: f32) -> Element {
+        self.wrap(EnvModifier::ColorAdjust(ColorAdjust::Brightness(amount)))
+    }
+
+    /// 1 = inchangé.
+    pub fn contrast(self, amount: f32) -> Element {
+        self.wrap(EnvModifier::ColorAdjust(ColorAdjust::Contrast(amount)))
+    }
+
+    /// 0 = gris, 1 = inchangé.
+    pub fn saturation(self, amount: f32) -> Element {
+        self.wrap(EnvModifier::ColorAdjust(ColorAdjust::Saturation(amount)))
+    }
+
+    /// Rotation de teinte, en degrés.
+    pub fn hue_rotation(self, degrees: f32) -> Element {
+        self.wrap(EnvModifier::ColorAdjust(ColorAdjust::HueRotation(degrees)))
+    }
+
+    /// 0 = inchangé, 1 = gris.
+    pub fn grayscale(self, amount: f32) -> Element {
+        self.wrap(EnvModifier::ColorAdjust(ColorAdjust::Grayscale(amount)))
     }
 
     /// Action au clic.

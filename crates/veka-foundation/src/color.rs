@@ -80,6 +80,15 @@ impl Color {
     }
 }
 
+/// Mode clair ou sombre.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ColorScheme {
+    #[default]
+    Light,
+    Dark,
+}
+
 pub fn srgb_to_linear(c: f32) -> f32 {
     let c = c.clamp(0.0, 1.0);
     if c <= 0.04045 {

@@ -6,6 +6,7 @@ use veka_graphics::{DrawCommand, DrawList, Paint, Shape};
 use veka_render::FrameInfo;
 
 use crate::atlas::{Atlas, Full, GlyphKey};
+use crate::ramps::{self, Ramps, RampsFull};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -19,9 +20,16 @@ struct Globals {
 struct ShapeInstance {
     rect: [f32; 4],
     radii: [f32; 4],
+    /// Couleur unie ; pour un dégradé, l'opacité du calque sur les quatre composantes.
     color: [f32; 4],
     xform: [f32; 4],
     extra: [f32; 4],
+    /// Sorte de remplissage (0 uni, 1 linéaire, 2 radial, 3 elliptique, 4 angulaire, 5 maillé), puis
+    /// position de la rampe dans l'atlas (texels).
+    fill: [f32; 4],
+    /// Géométrie du dégradé, en points du repère local.
+    geo: [f32; 4],
+    geo2: [f32; 4],
 }
 
 #[repr(C)]
@@ -55,6 +63,8 @@ pub struct Painter {
     glyph_pipeline: wgpu::RenderPipeline,
     glyph_layout: wgpu::BindGroupLayout,
     glyph_bg: Option<(u32, wgpu::BindGroup)>,
+    ramps: Ramps,
+    ramps_bg: wgpu::BindGroup,
     blit_pipeline: wgpu::RenderPipeline,
     blit_layout: wgpu::BindGroupLayout,
     sampler_linear: wgpu::Sampler,
@@ -112,8 +122,10 @@ fn pipeline(
     })
 }
 
-const SHAPE_ATTRS: [wgpu::VertexAttribute; 5] =
-    wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4];
+const SHAPE_ATTRS: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array![
+    0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
+    4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4
+];
 const GLYPH_ATTRS: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
 
@@ -180,9 +192,10 @@ impl Painter {
         };
         let glyph_layout = texture_layout("veka atlas");
         let blit_layout = texture_layout("veka blit");
+        let ramps_layout = texture_layout("veka dégradés");
         let shape_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("veka formes"),
-            bind_group_layouts: &[Some(&globals_layout)],
+            bind_group_layouts: &[Some(&globals_layout), Some(&ramps_layout)],
             immediate_size: 0,
         });
         let glyph_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -241,6 +254,22 @@ impl Painter {
                 ..Default::default()
             })
         };
+        let ramps = Ramps::new(device);
+        let sampler_linear = sampler(wgpu::FilterMode::Linear);
+        let ramps_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("veka dégradés"),
+            layout: &ramps_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&ramps.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler_linear),
+                },
+            ],
+        });
         Self {
             format,
             globals,
@@ -249,9 +278,11 @@ impl Painter {
             glyph_pipeline,
             glyph_layout,
             glyph_bg: None,
+            ramps,
+            ramps_bg,
             blit_pipeline,
             blit_layout,
-            sampler_linear: sampler(wgpu::FilterMode::Linear),
+            sampler_linear,
             sampler_nearest: sampler(wgpu::FilterMode::Nearest),
             atlas: Atlas::new(device, 1024),
             intermediate: None,
@@ -277,9 +308,17 @@ impl Painter {
         target: &wgpu::TextureView,
     ) {
         let (w, h) = (frame.width.max(1), frame.height.max(1));
-        // Préparation des instances ; si l'atlas déborde, il est agrandi et on recommence une fois.
-        if self.prepare(device, queue, list, frame).is_err() {
-            let _ = self.prepare(device, queue, list, frame);
+        // Préparation des instances ; si un atlas déborde, il est agrandi (glyphes) ou vidé (dégradés) et
+        // on recommence une fois.
+        match self.prepare(device, queue, list, frame) {
+            Ok(()) => {}
+            Err(Overflow::Glyphs) => {
+                let _ = self.prepare(device, queue, list, frame);
+            }
+            Err(Overflow::Ramps) => {
+                self.ramps.clear();
+                let _ = self.prepare(device, queue, list, frame);
+            }
         }
         queue.write_buffer(
             &self.globals,
@@ -348,6 +387,7 @@ impl Painter {
                 match b.kind {
                     Kind::Shapes => {
                         pass.set_pipeline(&self.shape_pipeline);
+                        pass.set_bind_group(1, &self.ramps_bg, &[]);
                         pass.set_vertex_buffer(0, shape_buf.as_ref().expect("formes").slice(..));
                     }
                     Kind::Glyphs => {
@@ -430,7 +470,7 @@ impl Painter {
         queue: &wgpu::Queue,
         list: &DrawList,
         frame: FrameInfo,
-    ) -> Result<(), Full> {
+    ) -> Result<(), Overflow> {
         self.shapes.clear();
         self.glyphs.clear();
         self.batches.clear();
@@ -447,7 +487,7 @@ impl Painter {
             let alpha = *opacity.last().expect("pile");
             match cmd {
                 DrawCommand::FillShape { shape, rect, paint } => {
-                    let inst = shape_instance(shape, rect, paint, &t, s, alpha, 0.0);
+                    let inst = shape_instance(&mut self.ramps, queue, shape, rect, paint, &t, s, alpha, 0.0)?;
                     push(&mut self.batches, Kind::Shapes, self.shapes.len() as u32, scissor);
                     self.shapes.push(inst);
                 }
@@ -457,7 +497,8 @@ impl Painter {
                     paint,
                     width,
                 } => {
-                    let inst = shape_instance(shape, rect, paint, &t, s, alpha, *width);
+                    let inst =
+                        shape_instance(&mut self.ramps, queue, shape, rect, paint, &t, s, alpha, *width)?;
                     push(&mut self.batches, Kind::Shapes, self.shapes.len() as u32, scissor);
                     self.shapes.push(inst);
                 }
@@ -469,6 +510,7 @@ impl Painter {
                     // Échelle de la transformation (pas de rotation des glyphes à l'étape 1).
                     let ts = (t.a * t.d - t.b * t.c).abs().sqrt().max(1e-4);
                     let size_px = run.size * s * ts;
+                    // Texte : couleur unie (moyenne d'un dégradé) pour l'instant.
                     let color = premul(paint_color(&run.paint), alpha);
                     for g in &list.glyphs[run.glyphs.start as usize..run.glyphs.end as usize] {
                         let p = t.apply(veka_foundation::Point::new(g.x, g.y));
@@ -531,6 +573,24 @@ impl Painter {
     }
 }
 
+/// Un atlas est plein pendant la préparation.
+enum Overflow {
+    Glyphs,
+    Ramps,
+}
+
+impl From<Full> for Overflow {
+    fn from(_: Full) -> Self {
+        Overflow::Glyphs
+    }
+}
+
+impl From<RampsFull> for Overflow {
+    fn from(_: RampsFull) -> Self {
+        Overflow::Ramps
+    }
+}
+
 fn push(batches: &mut Vec<Batch>, kind: Kind, index: u32, scissor: [u32; 4]) {
     if let Some(b) = batches.last_mut()
         && b.kind == kind
@@ -549,9 +609,9 @@ fn push(batches: &mut Vec<Batch>, kind: Kind, index: u32, scissor: [u32; 4]) {
 
 fn paint_color(p: &Paint) -> veka_foundation::Color {
     match p {
-        Paint::Solid(c) => *c,
-        #[allow(unreachable_patterns)]
-        _ => veka_foundation::Color::Black,
+        // Un jeton n'aurait pas dû arriver jusqu'ici : bien visible.
+        Paint::Token(..) => veka_colora::UNKNOWN,
+        p => p.average(),
     }
 }
 
@@ -559,7 +619,15 @@ fn premul(c: veka_foundation::Color, alpha: f32) -> [f32; 4] {
     c.opacity(alpha).to_linear_premultiplied()
 }
 
+/// Position d'une rampe pour le shader : (x du premier texel, v du milieu de la ligne).
+fn ramp_uv(slot: ramps::Slot) -> (f32, f32) {
+    (slot.x as f32, (slot.y as f32 + 0.5) / ramps::SIZE as f32)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn shape_instance(
+    atlas: &mut Ramps,
+    queue: &wgpu::Queue,
     shape: &Shape,
     rect: &Rect,
     paint: &Paint,
@@ -567,7 +635,7 @@ fn shape_instance(
     s: f32,
     alpha: f32,
     stroke: f32,
-) -> ShapeInstance {
+) -> Result<ShapeInstance, RampsFull> {
     // Le cercle est dessiné comme une boîte carrée centrée aux coins entièrement arrondis.
     let rect = if matches!(shape, Shape::Circle) {
         rect.centered(veka_foundation::Size::new(
@@ -579,13 +647,76 @@ fn shape_instance(
     };
     let r = shape.corner_radii(&rect);
     let kind = if matches!(shape, Shape::Ellipse) { 1.0 } else { 0.0 };
-    ShapeInstance {
+    let gradient_alpha = [alpha; 4];
+    let (color, fill, geo, geo2) = match paint {
+        Paint::Linear(g) => {
+            let (u, v) = ramp_uv(atlas.ramp(queue, &g.gradient)?);
+            let (a, b) = (g.start.in_rect(&rect), g.end.in_rect(&rect));
+            (gradient_alpha, [1.0, u, v, 0.0], [a.x, a.y, b.x, b.y], [0.0; 4])
+        }
+        Paint::Radial(g) => {
+            let (u, v) = ramp_uv(atlas.ramp(queue, &g.gradient)?);
+            let c = g.center.in_rect(&rect);
+            (
+                gradient_alpha,
+                [2.0, u, v, 0.0],
+                [c.x, c.y, g.start_radius, g.end_radius],
+                [0.0; 4],
+            )
+        }
+        Paint::Elliptical(g) => {
+            let (u, v) = ramp_uv(atlas.ramp(queue, &g.gradient)?);
+            let c = g.center.in_rect(&rect);
+            (
+                gradient_alpha,
+                [3.0, u, v, 0.0],
+                [c.x, c.y, rect.width() * 0.5, rect.height() * 0.5],
+                [g.start_fraction, g.end_fraction, 0.0, 0.0],
+            )
+        }
+        Paint::Angular(g) => {
+            let (u, v) = ramp_uv(atlas.ramp(queue, &g.gradient)?);
+            let c = g.center.in_rect(&rect);
+            (
+                gradient_alpha,
+                [4.0, u, v, 0.0],
+                [
+                    c.x,
+                    c.y,
+                    g.start_angle.to_radians(),
+                    (g.end_angle - g.start_angle).to_radians(),
+                ],
+                [0.0; 4],
+            )
+        }
+        Paint::Mesh(m) if m.is_valid() => {
+            let slot = atlas.mesh(queue, m)?;
+            let n = ramps::SIZE as f32;
+            // Une demi-cellule de marge pour ne pas lire la voisine.
+            let (x0, y0) = (slot.x as f32 + 0.5, slot.y as f32 + 0.5);
+            let (x1, y1) = (
+                (slot.x + ramps::MESH) as f32 - 0.5,
+                (slot.y + ramps::MESH) as f32 - 0.5,
+            );
+            (
+                gradient_alpha,
+                [5.0, 0.0, 0.0, 0.0],
+                [rect.x(), rect.y(), rect.width(), rect.height()],
+                [x0 / n, y0 / n, x1 / n, y1 / n],
+            )
+        }
+        p => (premul(paint_color(p), alpha), [0.0; 4], [0.0; 4], [0.0; 4]),
+    };
+    Ok(ShapeInstance {
         rect: [rect.x(), rect.y(), rect.width(), rect.height()],
         radii: [r.top_left, r.top_right, r.bottom_right, r.bottom_left],
-        color: premul(paint_color(paint), alpha),
+        color,
         xform: [t.a * s, t.b * s, t.c * s, t.d * s],
         extra: [t.tx * s, t.ty * s, kind, stroke],
-    }
+        fill,
+        geo,
+        geo2,
+    })
 }
 
 fn transform_rect(t: &Transform2D, r: &Rect, s: f32) -> [f32; 4] {

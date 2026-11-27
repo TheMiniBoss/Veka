@@ -1310,6 +1310,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "veka-colora"
+version = "0.1.0"
+dependencies = [
+ "veka-foundation",
+]
+
+[[package]]
 name = "veka-ffi"
 version = "0.1.0"
 dependencies = [
@@ -1327,6 +1334,7 @@ version = "0.1.0"
 name = "veka-graphics"
 version = "0.1.0"
 dependencies = [
+ "veka-colora",
  "veka-foundation",
 ]
 
@@ -1374,6 +1382,7 @@ dependencies = [
  "raw-window-handle",
  "swash",
  "veka",
+ "veka-colora",
  "veka-foundation",
  "veka-graphics",
  "veka-render",
@@ -1395,6 +1404,7 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "slotmap",
+ "veka-colora",
  "veka-foundation",
  "veka-graphics",
  "veka-text",

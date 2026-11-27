@@ -10,8 +10,18 @@
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use veka_foundation::{
-    Instant, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo, WindowRegion,
+    Color, ColorScheme, Instant, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo,
+    WindowRegion,
 };
+
+/// L'apparence choisie dans les réglages du système.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Appearance {
+    /// Mode clair ou sombre des applications.
+    pub scheme: ColorScheme,
+    /// Couleur d'accent, si le système en a une.
+    pub accent: Option<Color>,
+}
 
 /// Erreur d'une plateforme.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,6 +208,10 @@ pub enum PlatformEvent {
     PointerLeft {
         window: WindowId,
     },
+    /// L'utilisateur a changé le mode clair / sombre ou la couleur d'accent du système.
+    AppearanceChanged {
+        appearance: Appearance,
+    },
 }
 
 /// Une fenêtre ouverte. Ses poignées `raw-window-handle` servent au renderer.
@@ -233,6 +247,10 @@ pub trait PlatformContext {
     fn now(&self) -> Instant;
     /// Quitte la boucle après l'événement en cours.
     fn exit(&mut self);
+    /// Mode clair / sombre et couleur d'accent du système.
+    fn appearance(&self) -> Appearance {
+        Appearance::default()
+    }
 }
 
 /// L'application, vue par la plateforme.

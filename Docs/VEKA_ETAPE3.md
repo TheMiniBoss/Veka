@@ -1,6 +1,6 @@
 # Veka : étape 3, Colora
 
-Statut : **conception, à valider**. Fait suite à `VEKA_ETAPE2.md`. Reprend la conception de Colora dans VekaUI
+Statut : **validé, en cours** (PR F). Fait suite à `VEKA_ETAPE2.md`. Reprend la conception de Colora dans VekaUI
 (Alpha 13 puis C++ phases 2 à 4), pas son code.
 
 ## 1. Objectif
@@ -146,7 +146,7 @@ renderers (wgpu aujourd'hui, Unreal et Unity demain) n'ont rien à savoir des th
 | Crate | Changement |
 |---|---|
 | `veka-colora` (nouveau) | espaces de couleur (sRGB, linéaire, Oklab, OkLCH), dégradés et leur échantillonnage, jetons et palette, `Theme`, `ColorMatrix` |
-| `veka-graphics` | `Paint` gagne les dégradés (les jetons n'y entrent pas : ils sont résolus avant) |
+| `veka-graphics` | `Paint` (celui de Colora) gagne les dégradés ; dans une `DrawList` il est toujours résolu (un jeton oublié s'afficherait en magenta) |
 | `veka-ui` | `Paint` accepté partout ; `.theme()`, `.color_scheme()`, `.brightness()`, `.contrast()`, `.saturation()`, `.hue_rotation()`, `.grayscale()` ; composants passés aux jetons ; schéma |
 | `veka-render-wgpu` | atlas de rampes, types de remplissage dans le shader |
 | `veka-platform-*` | `ColorScheme` du système et événement `ColorSchemeChanged` |

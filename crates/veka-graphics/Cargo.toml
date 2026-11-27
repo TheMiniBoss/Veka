@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 veka-foundation.workspace = true
+veka-colora.workspace = true
 
 [lints]
 workspace = true

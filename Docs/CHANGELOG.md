@@ -2,6 +2,20 @@
 
 Le plus récent en premier.
 
+## Étape 3 — Colora
+
+### Couleurs, dégradés, thèmes (PR F)
+- Nouveau crate `veka-colora` : espaces sRGB, linéaire, **Oklab**, OkLCH ; les 26 jetons d'Alpha 13 et les jetons
+  de contrôle (`ButtonAccent → ThemeAccent → Tint`) ; hiérarchie (60 %, 30 %, 18 %) ; `Theme` avec parent ;
+  réglages (luminosité, contraste, saturation, teinte, niveaux de gris).
+- `Paint` partout où l'on donne une couleur : couleur, jeton ou dégradé linéaire, radial, elliptique, angulaire,
+  maillé. Les jetons sont résolus avant le rendu.
+- Renderer : dégradés précalculés dans un atlas de rampes (demi-flottants), vérifiés pixel par pixel hors écran.
+- Windows : mode clair / sombre et couleur d'accent du système, suivis en direct ; barre de titre du système
+  sombre en mode sombre.
+- Piles : chaque enfant reçoit d'abord sa taille idéale quand elle tient (plus de bouton qui passe à la ligne).
+- Exemple `colora`.
+
 ## Étape 2 — fenêtres personnalisées
 
 ### Transparence, macOS et interface C (PR E)

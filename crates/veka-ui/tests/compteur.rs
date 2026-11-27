@@ -200,7 +200,7 @@ fn survol_et_appui_changent_la_couleur() {
                     shape: Shape::Capsule,
                     paint,
                     rect,
-                } if rect.height() < 48.0 => Some(*paint),
+                } if rect.height() < 48.0 => Some(paint.clone()),
                 _ => None,
             })
             .unwrap()

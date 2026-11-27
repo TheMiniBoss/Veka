@@ -15,7 +15,12 @@
 - [ ] Clavier et focus, saisie de texte (IME).
 - [ ] Un seul GPU partagé entre les fenêtres.
 
+## Étape 3 (Colora)
+- [ ] PR G : `VekaPaint`, dégradés et thèmes en C ; peintures dans le schéma ; clair / sombre et accent de macOS.
+- [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
+- [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
+
 ## Plus tard
-- [ ] Colora (couleurs et thèmes), Anima (animations), effets (`Backdrop`, verre).
+- [ ] Anima (animations), effets (`Backdrop`, verre).
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).
 - [ ] Liaisons C++, C#, Unreal, Unity sur `veka.h`.

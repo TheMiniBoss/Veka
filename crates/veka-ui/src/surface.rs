@@ -3,7 +3,9 @@
 
 use std::rc::Rc;
 
-use veka_foundation::{Point, Rect, RegionKind, Size, WindowAction, WindowInfo, WindowRegion};
+use veka_foundation::{
+    Color, ColorScheme, Point, Rect, RegionKind, Size, WindowAction, WindowInfo, WindowRegion,
+};
 use veka_graphics::{DrawList, Shape};
 use veka_text::TextSystem;
 
@@ -62,7 +64,7 @@ impl Primitive for Root {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, rect: Rect) {
-        let bg = cx.env().background;
+        let bg = cx.env().resolve(&cx.env().background);
         cx.list().fill(Shape::Rectangle, rect, bg);
         cx.paint_children();
     }
@@ -143,6 +145,18 @@ impl Surface {
         if self.env.window != info {
             self.env = Rc::new(Environment {
                 window: info,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    /// Le mode clair ou sombre du système et sa couleur d'accent, donnés par l'hôte.
+    pub fn set_system_appearance(&mut self, scheme: ColorScheme, accent: Option<Color>) {
+        if self.env.color_scheme != scheme || self.env.system_accent != accent {
+            self.env = Rc::new(Environment {
+                color_scheme: scheme,
+                system_accent: accent,
                 ..(*self.env).clone()
             });
             self.needs_layout = true;
