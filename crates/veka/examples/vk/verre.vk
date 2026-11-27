@@ -1,0 +1,128 @@
+// Verre en .vk : verre dépoli, verre liquide (façon 27), gouttes qui fusionnent et eau, au-dessus
+// d'un fond coloré qui bouge. `cargo run --example vk -- verre` (même dessin que `verre.rs`, testé).
+
+timeline Rotation(loop: true, length: 20) {
+    track angle { 0: 0 ; 20: 360 .linear }
+}
+
+view Verre {
+    ZStack {
+        Fond
+        VStack(spacing: 28) {
+            HStack(spacing: 28) {
+                Panneau
+                Carte
+                Goutte
+            }
+            Barre
+        }
+    }
+}
+
+view Fond {
+    @Timeline var r = Rotation(autoplay: true)
+
+    ZStack {
+        Rectangle()
+            .fill(LinearGradient([.Indigo, .Teal], from: .topLeading, to: .bottomTrailing))
+        ZStack {
+            Circle()
+                .fill(RadialGradient([.Pink, .clear], 160))
+                .frame(320, 320)
+                .offset(-180, -90)
+            Circle()
+                .fill(RadialGradient([.Orange, .clear], 130))
+                .frame(260, 260)
+                .offset(190, 110)
+            Circle()
+                .fill(RadialGradient([.Yellow, .clear], 100))
+                .frame(200, 200)
+                .offset(40, -150)
+        }
+        .rotationEffect(r.angle)
+        // Des traits nets qui passent derrière les verres : le flou et la réfraction se voient.
+        HStack(spacing: 14) {
+            ForEach(0..<40) { i in
+                Capsule()
+                    .fill(i % 2 == 0 ? .white : .black)
+                    .frame(6, 260)
+            }
+        }
+        .rotationEffect(-20)
+        HStack(spacing: 18) {
+            Text("Veka")
+                .font(.title)
+                .foregroundColor(.white)
+            Text("verre")
+                .font(.title)
+                .foregroundColor(.black)
+        }
+        .offset(-300, 230)
+    }
+}
+
+view Panneau {
+    @State var fort = true
+
+    VStack(spacing: 10) {
+        Text("Verre dépoli")
+            .font(.title2)
+        Text("Le fond est flouté, teinté et un peu granuleux.")
+            .font(.footnote)
+        Button(fort ? "Flou léger" : "Flou fort") {
+            withAnimation(.smooth) {
+                fort.toggle()
+            }
+        }
+    }
+    .padding(20)
+    .frame(300, 150)
+    .frostedGlass(radius: fort ? 30 : 8)
+}
+
+view Carte {
+    @State var clarte = 1
+
+    VStack(spacing: 10) {
+        Text("Liquid Glass")
+            .font(.title2)
+        Text(clarte == 0 ? "Clarté : Teinté" : clarte == 1 ? "Clarté : Par défaut" : "Clarté : Clair")
+            .font(.footnote)
+        Button("Changer") {
+            withAnimation(.smooth) {
+                clarte = (clarte + 1) % 3
+            }
+        }
+    }
+    .padding(22)
+    .frame(240, 150)
+    .glass(clarity: clarte == 0 ? 0 : clarte == 1 ? 0.4 : 0.9, interactive: true, cornerRadius: 28)
+}
+
+view Goutte {
+    Text("Eau")
+        .font(.headline)
+        .frame(110, 110)
+        .liquidDistortion(strength: 10, scale: 90, shape: .circle)
+        .glass(style: .clear, shape: .circle)
+}
+
+view Barre {
+    @State var serre = false
+
+    VStack(spacing: 12) {
+        HStack(spacing: serre ? 2 : 18) {
+            ForEach(["Accueil", "Recherche", "Réglages"]) { nom in
+                Text(nom)
+                    .padding(horizontal: 18, vertical: 10)
+                    .glass(interactive: true)
+            }
+        }
+        .glassGroup(smoothness: 14, interactive: true)
+        Button(serre ? "Écarter" : "Rapprocher") {
+            withAnimation(.spring(0.5, 0.7)) {
+                serre.toggle()
+            }
+        }
+    }
+}

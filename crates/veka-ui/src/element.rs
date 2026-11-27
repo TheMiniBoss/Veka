@@ -53,6 +53,7 @@ impl fmt::Debug for Action {
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum ElementKind {
     Primitive {
         prim: Rc<dyn Primitive>,
@@ -68,6 +69,8 @@ pub(crate) enum ElementKind {
 }
 
 /// Description d'un morceau d'interface : un primitive (avec ses enfants) ou une vue composée.
+/// Le cloner est peu coûteux (les primitives et les vues sont partagés).
+#[derive(Clone)]
 pub struct Element {
     pub(crate) kind: ElementKind,
     pub(crate) key: Option<Key>,

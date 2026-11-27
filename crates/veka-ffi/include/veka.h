@@ -45,6 +45,15 @@ typedef enum VekaChrome {
   VEKA_CHROME_CUSTOM,
 } VekaChrome;
 
+// Matériau du système derrière le contenu d'une fenêtre : Windows 11 (Mica, Mica Alt, Acrylic) et
+// macOS (fond de fenêtre, barre latérale, HUD). Veka se dessine par-dessus, sur un fond transparent.
+typedef enum VekaSystemBackdrop {
+  VEKA_SYSTEM_BACKDROP_NONE,
+  VEKA_SYSTEM_BACKDROP_MICA,
+  VEKA_SYSTEM_BACKDROP_MICA_ALT,
+  VEKA_SYSTEM_BACKDROP_ACRYLIC,
+} VekaSystemBackdrop;
+
 // Niveau d'un jeton : 100 %, 60 %, 30 % ou 18 % d'opacité.
 typedef enum VekaHierarchy {
   VEKA_HIERARCHY_PRIMARY,
@@ -239,6 +248,8 @@ typedef struct VekaWindowDesc {
   float corner_radius;
   // Largeur des bords de redimensionnement, en points (0 : 6 points).
   float resize_margin;
+  // Matériau du système derrière le contenu (Mica, Acrylic, vibrancy macOS).
+  enum VekaSystemBackdrop backdrop;
 } VekaWindowDesc;
 
 // Un point dans le rectangle d'une forme : (0, 0) en haut à gauche, (1, 1) en bas à droite.
@@ -278,6 +289,27 @@ typedef struct VekaBackdrop {
   // Grain, de 0 à 1.
   float noise;
 } VekaBackdrop;
+
+// Réglages d'un verre liquide (façon Liquid Glass 27). Partir de `veka_glass_regular` ou de
+// `veka_glass_clear`.
+typedef struct VekaGlass {
+  // De 0 (teinté) à 1 (clair).
+  float clarity;
+  // Non nul : le reflet suit le pointeur.
+  int32_t interactive;
+  enum VekaBackdropShape shape;
+  float corner_radius;
+  // Déplacement du fond au bord, en points.
+  float refraction;
+  // Largeur du bord courbe, en points.
+  float bezel;
+  // Séparation des couleurs au bord, de 0 à 1.
+  float aberration;
+  // Reflet du bord, de 0 à 1.
+  float highlight;
+  // Ombre portée, de 0 à 1.
+  float shadow;
+} VekaGlass;
 
 // Une action : la fonction et son pointeur `user`.
 typedef struct VekaAction {
@@ -706,6 +738,34 @@ struct VekaElement *veka_backdrop_blur(struct VekaElement *element, float radius
 
 // Verre dépoli avec ses réglages par défaut.
 struct VekaElement *veka_frosted_glass(struct VekaElement *element);
+
+// Le réglage « Par défaut » : clarté 0,4, capsule, réfraction 22, bord 18.
+struct VekaGlass veka_glass_regular(void);
+
+// Le réglage « Clair » : comme `veka_glass_regular`, clarté 0,9.
+struct VekaGlass veka_glass_clear(void);
+
+// Pose un verre liquide sous `element` (consommé). `glass` NULL : `veka_glass_regular`. `tint`
+// (consommée) peut être NULL. Dans un `veka_glass_group`, l'élément donne seulement sa forme au groupe.
+struct VekaElement *veka_glass(struct VekaElement *element,
+                               const struct VekaGlass *glass,
+                               struct VekaPaint *tint);
+
+// Un seul verre pour tous les `veka_glass` de `element` (consommé) : leurs formes fusionnent comme des
+// gouttes à moins de `smoothness` points. `glass` (NULL : par défaut) et `tint` règlent ce verre.
+struct VekaElement *veka_glass_group(struct VekaElement *element,
+                                     float smoothness,
+                                     const struct VekaGlass *glass,
+                                     struct VekaPaint *tint);
+
+// Le fond ondule dans la forme d'`element` (consommé) : `strength` points de déplacement, vagues de
+// `scale` points, `speed` 1 = normal, 0 = figé.
+struct VekaElement *veka_liquid_distortion(struct VekaElement *element,
+                                           float strength,
+                                           float scale,
+                                           float speed,
+                                           enum VekaBackdropShape shape,
+                                           float corner_radius);
 
 // Règle la qualité des effets d'arrière-plan de toutes les fenêtres (par défaut : `HIGH`).
 int32_t veka_app_set_backdrop_quality(struct VekaApp *app, enum VekaBackdropQuality quality);

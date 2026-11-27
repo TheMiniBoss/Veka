@@ -6,7 +6,7 @@ use veka_graphics::{BackdropEffect, DrawCommand, DrawList, Paint, Shape};
 use veka_render::FrameInfo;
 
 use crate::atlas::{Atlas, Full, GlyphKey};
-use crate::backdrop::{self, Backdrop, Capture, EffectInstance};
+use crate::backdrop::{self, Backdrop, Capture, EffectInstance, GlassInstance, GlassShapeGpu};
 use crate::ramps::{self, Ramps, RampsFull};
 
 #[repr(C)]
@@ -46,6 +46,7 @@ enum Kind {
     Shapes,
     Glyphs,
     Effects,
+    Glass,
 }
 
 /// Une suite d'instances du même pipeline, avec le même découpage.
@@ -94,6 +95,9 @@ pub struct Painter {
     backdrop: Backdrop,
     effects: Vec<EffectInstance>,
     effect_capture: Vec<usize>,
+    glasses: Vec<GlassInstance>,
+    glass_capture: Vec<usize>,
+    glass_shapes: Vec<GlassShapeGpu>,
     captures: Vec<Capture>,
     stats: FrameStats,
 }
@@ -315,6 +319,9 @@ impl Painter {
             backdrop,
             effects: Vec::new(),
             effect_capture: Vec::new(),
+            glasses: Vec::new(),
+            glass_capture: Vec::new(),
+            glass_shapes: Vec::new(),
             captures: Vec::new(),
             stats: FrameStats::default(),
         }
@@ -399,10 +406,18 @@ impl Painter {
             bytemuck::cast_slice(&self.effects),
             "veka effets",
         );
+        let glass_buf = upload(
+            device,
+            queue,
+            &mut self.backdrop.glass_buf,
+            bytemuck::cast_slice(&self.glasses),
+            "veka verres",
+        );
+        self.backdrop.upload_shapes(device, queue, &self.glass_shapes);
         let (inter_tex, inter_view, inter_bg) = self.intermediate.as_ref().expect("texture intermédiaire");
         let mut stats = FrameStats {
             captures: self.captures.len() as u32,
-            effects: self.effects.len() as u32,
+            effects: (self.effects.len() + self.glasses.len()) as u32,
             passes: 0,
         };
 
@@ -480,6 +495,18 @@ impl Painter {
                         pass.set_pipeline(&self.backdrop.effect_pipeline);
                         pass.set_bind_group(1, bg, &[]);
                         pass.set_vertex_buffer(0, effect_buf.as_ref().expect("effets").slice(..));
+                    }
+                    Kind::Glass => {
+                        let (Some(bg), Some(shapes)) = (
+                            self.backdrop.effect_bind_group(),
+                            self.backdrop.shapes_bind_group(),
+                        ) else {
+                            continue;
+                        };
+                        pass.set_pipeline(&self.backdrop.glass_pipeline);
+                        pass.set_bind_group(1, bg, &[]);
+                        pass.set_bind_group(2, shapes, &[]);
+                        pass.set_vertex_buffer(0, glass_buf.as_ref().expect("verres").slice(..));
                     }
                 }
                 pass.draw(0..6, b.range.clone());
@@ -566,6 +593,9 @@ impl Painter {
         self.batches.clear();
         self.effects.clear();
         self.effect_capture.clear();
+        self.glasses.clear();
+        self.glass_capture.clear();
+        self.glass_shapes.clear();
         self.captures.clear();
         let (fw, fh) = (frame.width.max(1) as f32, frame.height.max(1) as f32);
         // Ce qui a été dessiné depuis la dernière capture (pixels), pour savoir si un effet peut la
@@ -691,10 +721,18 @@ impl Painter {
                     }
                 }
                 DrawCommand::Backdrop { shape, rect, effect } => {
-                    let BackdropEffect::Blur(blur) = effect else {
-                        continue;
+                    let (radius, low, extra_margin) = match effect {
+                        BackdropEffect::Blur(b) => (b.radius, b.low_quality, 0.0),
+                        BackdropEffect::Glass(g) => (g.blur, g.low_quality, g.shadow_radius.max(0.0) * 1.6),
+                        _ => continue,
                     };
-                    let b = transform_bounds(&t, rect, 1.0, s);
+                    // Les formes (un verre de groupe en a plusieurs) et leur boîte.
+                    let glass_shapes = match effect {
+                        BackdropEffect::Glass(g) => g.shapes_or(*shape, *rect),
+                        _ => Vec::new(),
+                    };
+                    let bounds_local = glass_shapes.iter().fold(*rect, |acc, g| acc.union(&g.rect));
+                    let b = transform_bounds(&t, &bounds_local, 1.0 + extra_margin, s);
                     let clip = [
                         scissor[0] as f32,
                         scissor[1] as f32,
@@ -711,15 +749,16 @@ impl Painter {
                         continue;
                     }
                     let ts = (t.a * t.d - t.b * t.c).abs().sqrt().max(1e-4);
-                    let reach = effect.reach() * s * ts + 2.0;
+                    let px_per_pt = s * ts;
+                    let reach = effect.reach() * px_per_pt + 2.0;
                     let region = [
                         (visible[0] - reach).max(0.0).floor(),
                         (visible[1] - reach).max(0.0).floor(),
                         (visible[2] + reach).min(fw).ceil(),
                         (visible[3] + reach).min(fh).ceil(),
                     ];
-                    let mut lf = backdrop::blur_level(blur.radius.max(0.0) * s * ts);
-                    if blur.low_quality {
+                    let mut lf = backdrop::blur_level(radius.max(0.0) * px_per_pt);
+                    if low {
                         lf = lf.round();
                     }
                     let levels = (lf.ceil() as u32).min(backdrop::LEVELS as u32 - 1);
@@ -742,44 +781,118 @@ impl Painter {
                     };
                     // La composition change ces pixels : un effet suivant dessus devra recapturer.
                     mark(&mut dirty, visible);
-                    let (grect, radii, kind) = geometry(shape, rect);
-                    let tint = veka_foundation::Color { a: 1.0, ..blur.tint }.to_linear_premultiplied();
-                    let index = self.effects.len() as u32;
+                    let lin = |c: veka_foundation::Color| {
+                        veka_foundation::Color { a: 1.0, ..c }.to_linear_premultiplied()
+                    };
+                    let xform = [t.a * s, t.b * s, t.c * s, t.d * s];
+                    let (kind, index) = match effect {
+                        BackdropEffect::Glass(g) => {
+                            let first = self.glass_shapes.len();
+                            for gs in &glass_shapes {
+                                let (r, radii, k) = geometry(&gs.shape, &gs.rect);
+                                self.glass_shapes.push(GlassShapeGpu {
+                                    rect: [r.x(), r.y(), r.width(), r.height()],
+                                    radii,
+                                    kind: [k, 0.0, 0.0, 0.0],
+                                });
+                            }
+                            let tint = lin(g.tint);
+                            let light = list.pointer.filter(|_| g.interactive);
+                            self.glasses.push(GlassInstance {
+                                rect: [
+                                    bounds_local.x(),
+                                    bounds_local.y(),
+                                    bounds_local.width(),
+                                    bounds_local.height(),
+                                ],
+                                xform,
+                                extra: [t.tx * s, t.ty * s, first as f32, glass_shapes.len() as f32],
+                                p1: [
+                                    lf,
+                                    g.refraction * px_per_pt,
+                                    g.bezel.max(1.0) * px_per_pt,
+                                    g.aberration.clamp(0.0, 1.0),
+                                ],
+                                p2: [
+                                    g.highlight.max(0.0),
+                                    g.smoothness.max(0.0),
+                                    g.saturation.max(0.0),
+                                    alpha,
+                                ],
+                                tint: [
+                                    tint[0],
+                                    tint[1],
+                                    tint[2],
+                                    (g.tint_amount * g.tint.a).clamp(0.0, 1.0),
+                                ],
+                                region,
+                                light: [
+                                    light.map_or(0.0, |p| p.x * s),
+                                    light.map_or(0.0, |p| p.y * s),
+                                    if light.is_some() { 1.0 } else { 0.0 },
+                                    if g.low_quality { 1.0 } else { 0.0 },
+                                ],
+                                p3: [
+                                    g.rim_dark.clamp(0.0, 1.0),
+                                    g.inner_light.max(0.0),
+                                    g.shadow.clamp(0.0, 1.0),
+                                    g.shadow_radius.max(0.0) * px_per_pt,
+                                ],
+                            });
+                            self.glass_capture.push(c);
+                            (Kind::Glass, self.glasses.len() as u32 - 1)
+                        }
+                        BackdropEffect::Blur(blur) => {
+                            let (grect, radii, k) = geometry(shape, rect);
+                            let tint = lin(blur.tint);
+                            self.effects.push(EffectInstance {
+                                rect: [grect.x(), grect.y(), grect.width(), grect.height()],
+                                radii,
+                                xform,
+                                extra: [t.tx * s, t.ty * s, k, alpha],
+                                params: [
+                                    lf,
+                                    blur.saturation,
+                                    if blur.low_quality { 0.0 } else { blur.noise },
+                                    if blur.low_quality { 1.0 } else { 0.0 },
+                                ],
+                                tint: [
+                                    tint[0],
+                                    tint[1],
+                                    tint[2],
+                                    (blur.tint_amount * blur.tint.a).clamp(0.0, 1.0),
+                                ],
+                                region,
+                                flow: [
+                                    blur.distortion.max(0.0) * px_per_pt,
+                                    1.0 / (blur.wave.max(1.0) * px_per_pt),
+                                    blur.time,
+                                    0.0,
+                                ],
+                            });
+                            self.effect_capture.push(c);
+                            (Kind::Effects, self.effects.len() as u32 - 1)
+                        }
+                        _ => unreachable!("filtré plus haut"),
+                    };
                     if capture.is_some() {
                         self.batches.push(Batch {
-                            kind: Kind::Effects,
+                            kind,
                             range: index..index + 1,
                             scissor,
                             capture,
                         });
                     } else {
-                        push(&mut self.batches, Kind::Effects, index, scissor, None);
+                        push(&mut self.batches, kind, index, scissor, None);
                     }
-                    self.effects.push(EffectInstance {
-                        rect: [grect.x(), grect.y(), grect.width(), grect.height()],
-                        radii,
-                        xform: [t.a * s, t.b * s, t.c * s, t.d * s],
-                        extra: [t.tx * s, t.ty * s, kind, alpha],
-                        params: [
-                            lf,
-                            blur.saturation,
-                            if blur.low_quality { 0.0 } else { blur.noise },
-                            if blur.low_quality { 1.0 } else { 0.0 },
-                        ],
-                        tint: [
-                            tint[0],
-                            tint[1],
-                            tint[2],
-                            (blur.tint_amount * blur.tint.a).clamp(0.0, 1.0),
-                        ],
-                        region,
-                    });
-                    self.effect_capture.push(c);
                 }
             }
         }
         // Chaque effet lit toute la zone de sa capture (agrandie par les effets qui la partagent).
         for (e, &c) in self.effects.iter_mut().zip(&self.effect_capture) {
+            e.region = self.captures[c].region;
+        }
+        for (e, &c) in self.glasses.iter_mut().zip(&self.glass_capture) {
             e.region = self.captures[c].region;
         }
         Ok(())

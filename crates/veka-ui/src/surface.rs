@@ -92,6 +92,8 @@ pub struct Surface {
     animating_watchers: Vec<NodeId>,
     /// Vrai une fois que l'hôte a donné l'heure (`frame_at`) : avant, les timelines n'avancent pas.
     clock: bool,
+    /// Le pointeur, s'il est dans la fenêtre (lumière des verres `interactive`).
+    pointer: Option<Point>,
 }
 
 impl std::fmt::Debug for Surface {
@@ -131,6 +133,7 @@ impl Surface {
             now: 0.0,
             animating_watchers: Vec::new(),
             clock: false,
+            pointer: None,
         }
     }
 
@@ -319,6 +322,7 @@ impl Surface {
             tree::paint(&self.tree, &mut self.list, self.root);
             self.needs_paint = false;
         }
+        self.list.pointer = self.pointer;
         for a in self.finished_animations() {
             a.call();
         }
@@ -371,6 +375,27 @@ impl Surface {
         &self.list
     }
 
+    /// Le pointeur a bougé : une image de plus seulement s'il y a un verre qui suit la lumière.
+    fn set_pointer(&mut self, p: Option<Point>) {
+        if self.pointer == p {
+            return;
+        }
+        self.pointer = p;
+        let interactive = self.list.commands.iter().any(|c| {
+            matches!(
+                c,
+                veka_graphics::DrawCommand::Backdrop {
+                    effect: veka_graphics::BackdropEffect::Glass(g),
+                    ..
+                } if g.interactive
+            )
+        });
+        if interactive {
+            self.list.pointer = p;
+            self.needs_paint = true;
+        }
+    }
+
     /// Traite un événement. Renvoie `true` si une nouvelle image est nécessaire.
     pub fn handle(&mut self, event: InputEvent) -> bool {
         if self.needs_layout || state::has_dirty(self.id) {
@@ -378,6 +403,13 @@ impl Surface {
             self.frame();
         }
         let mut actions = Vec::new();
+        match event {
+            InputEvent::PointerMoved { position } | InputEvent::PointerDown { position, .. } => {
+                self.set_pointer(Some(position));
+            }
+            InputEvent::PointerLeft => self.set_pointer(None),
+            _ => {}
+        }
         match event {
             InputEvent::PointerMoved { position } => {
                 if let Some(c) = self.captured.filter(|c| self.tree.nodes.contains_key(*c)) {

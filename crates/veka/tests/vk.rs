@@ -278,3 +278,25 @@ view Verre {
     same(&vk, &rs);
     assert_eq!(rs.draw_list().to_string().matches("backdrop").count(), 3);
 }
+
+const VERRE: &str = include_str!("../examples/vk/verre.vk");
+
+#[path = "../examples/verre.rs"]
+#[allow(dead_code)]
+mod verre_rs;
+
+#[test]
+fn verre_meme_dessin_que_rust() {
+    let p = program(VERRE);
+    let mut vk = Surface::new(p.view("Verre"));
+    let mut rs = Surface::new(component(verre_rs::vue));
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(900.0, 560.0), 2.0);
+        at(s, 0.0);
+        at(s, 1.5);
+    }
+    same(&vk, &rs);
+    let d = rs.draw_list().to_string();
+    assert_eq!(d.matches("Glass(").count(), 3, "{d}");
+    assert!(!d.contains("GlassMember"), "{d}");
+}

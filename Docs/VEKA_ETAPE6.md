@@ -1,6 +1,6 @@
 # Veka : étape 6, Liquid Glass
 
-Statut : **validé** (les 9 choix recommandés) ; PR L faite. Fait suite à `VEKA_ETAPE5.md`. Reprend la Phase 4 de VekaUI
+Statut : **validé** (les 9 choix recommandés) ; PR L et PR M faites. Fait suite à `VEKA_ETAPE5.md`. Reprend la Phase 4 de VekaUI
 (spike 4.0, 4a flou d'arrière-plan, 4b verre liquide : `backdropBlur`, `frostedGlass`, `glass`, `glassGroup`,
 `liquidDistortion`, shader `VekaBackdrop.usf`). On garde la conception et les formules des shaders, pas le code.
 **Référence visuelle : le Liquid Glass d'iOS / macOS 27** (demande de l'utilisateur), pas celui de 26 (§2.1).
@@ -155,6 +155,11 @@ où il le faut.
   - fonds du système sur la fenêtre (`SystemBackdrop`) ;
   - exemple `verre` en Rust, `.vk` et C ;
   - essais sur le PC (rendu, coût GPU, 0 % CPU au repos).
+  - Fait. Écarts : pas encore de gonflement à l'appui ; un groupe ne prend pas les clics sur sa forme fusionnée
+    (chaque vue garde sa boîte) et réunit au plus 8 formes ; la forme se donne par `shape` (capsule par défaut) ;
+    sur un fond transparent (Mica, vibrancy), le corps du verre garde la transparence du fond et seule sa lumière
+    s'ajoute ; les noms macOS des fonds suivent ceux de Windows (`Mica` = fond de fenêtre, `MicaAlt` = barre
+    latérale, `Acrylic` = HUD).
 
 ## 5. Choix à valider
 

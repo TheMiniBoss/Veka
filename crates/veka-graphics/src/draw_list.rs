@@ -51,13 +51,103 @@ pub struct GlyphRun {
 }
 
 /// Effet qui lit ce qui est déjà dessiné derrière lui (flou, verre).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum BackdropEffect {
     /// Aucun effet : sert à tester le découpage en segments (étape 1).
     None,
     /// Flou de l'arrière-plan, teinté, découpé à la forme (`backdrop_blur`, `frosted_glass`).
     Blur(BlurEffect),
+    /// Verre liquide : réfraction au bord, couleurs séparées, reflet (`glass`, `glass_group`).
+    /// En boîte : ses formes alourdiraient toutes les commandes de la liste.
+    Glass(Box<GlassEffect>),
+    /// Forme d'un verre qui appartient à un `glass_group` : le groupe la reprend et retire la commande
+    /// (un renderer ne la voit jamais).
+    GlassMember,
+}
+
+/// Une forme d'un verre (dans le repère de la commande).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlassShape {
+    pub shape: Shape,
+    pub rect: Rect,
+}
+
+/// Formes d'un groupe de verre au plus.
+pub const MAX_GLASS_SHAPES: usize = 8;
+
+/// Réglages d'un verre liquide. Les longueurs sont en points logiques.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlassEffect {
+    /// Léger flou de ce qu'on voit à travers.
+    pub blur: f32,
+    /// Déplacement du fond tout au bord.
+    pub refraction: f32,
+    /// Largeur du bord courbe (réfraction et reflet).
+    pub bezel: f32,
+    /// Séparation des couleurs de la réfraction, de 0 à 1.
+    pub aberration: f32,
+    /// Reflet spéculaire du bord, de 0 à 1.
+    pub highlight: f32,
+    /// Anneau sombre juste à l'intérieur du bord (Liquid Glass 27), de 0 à 1.
+    pub rim_dark: f32,
+    /// Lumière propre au verre, du haut vers le bas (27), de 0 à 1.
+    pub inner_light: f32,
+    pub tint: veka_foundation::Color,
+    /// Part de la teinte, de 0 à 1.
+    pub tint_amount: f32,
+    pub saturation: f32,
+    /// Opacité de l'ombre portée (0 : aucune).
+    pub shadow: f32,
+    /// Rayon de l'ombre.
+    pub shadow_radius: f32,
+    /// Le reflet suit le pointeur ([`DrawList::pointer`]) ; sinon lumière fixe en haut à gauche.
+    pub interactive: bool,
+    /// Qualité réduite : un seul niveau de flou, sans séparation des couleurs.
+    pub low_quality: bool,
+    /// Fusion des formes d'un groupe (minimum lisse), en points.
+    pub smoothness: f32,
+    /// Les formes d'un groupe ; `count == 0` : la forme de la commande.
+    pub shapes: [GlassShape; MAX_GLASS_SHAPES],
+    pub count: u8,
+}
+
+impl Default for GlassEffect {
+    fn default() -> Self {
+        Self {
+            blur: 3.0,
+            refraction: 24.0,
+            bezel: 20.0,
+            aberration: 0.35,
+            highlight: 0.75,
+            rim_dark: 0.35,
+            inner_light: 0.5,
+            tint: veka_foundation::Color::White,
+            tint_amount: 0.08,
+            saturation: 1.25,
+            shadow: 0.18,
+            shadow_radius: 14.0,
+            interactive: false,
+            low_quality: false,
+            smoothness: 0.0,
+            shapes: [GlassShape {
+                shape: Shape::Rectangle,
+                rect: Rect::ZERO,
+            }; MAX_GLASS_SHAPES],
+            count: 0,
+        }
+    }
+}
+
+impl GlassEffect {
+    /// Les formes du verre : celles du groupe, sinon `(shape, rect)` de la commande.
+    pub fn shapes_or(&self, shape: Shape, rect: Rect) -> Vec<GlassShape> {
+        if self.count == 0 {
+            vec![GlassShape { shape, rect }]
+        } else {
+            self.shapes[..(self.count as usize).min(MAX_GLASS_SHAPES)].to_vec()
+        }
+    }
 }
 
 /// Réglages d'un flou d'arrière-plan. Les longueurs sont en points logiques.
@@ -75,6 +165,12 @@ pub struct BlurEffect {
     pub noise: f32,
     /// Qualité réduite : un seul niveau de flou, sans mélange ni grain.
     pub low_quality: bool,
+    /// Ondulation du fond (`liquid_distortion`) : déplacement en points (0 : aucune).
+    pub distortion: f32,
+    /// Taille des vagues, en points.
+    pub wave: f32,
+    /// Temps de l'ondulation, en secondes.
+    pub time: f32,
 }
 
 impl Default for BlurEffect {
@@ -86,6 +182,9 @@ impl Default for BlurEffect {
             saturation: 1.4,
             noise: 0.0,
             low_quality: false,
+            distortion: 0.0,
+            wave: 120.0,
+            time: 0.0,
         }
     }
 }
@@ -94,8 +193,13 @@ impl BackdropEffect {
     /// Jusqu'où l'effet lit autour de sa forme, en points (le flou déborde).
     pub fn reach(&self) -> f32 {
         match self {
-            BackdropEffect::None => 0.0,
-            BackdropEffect::Blur(b) => b.radius.max(0.0) * 2.0,
+            BackdropEffect::None | BackdropEffect::GlassMember => 0.0,
+            BackdropEffect::Blur(b) => b.radius.max(0.0) * 2.0 + b.distortion.max(0.0) * 1.5,
+            BackdropEffect::Glass(g) => {
+                g.blur.max(0.0) * 2.0
+                    + g.refraction.abs() * (1.0 + g.aberration.abs())
+                    + g.shadow_radius.max(0.0) * 1.5
+            }
         }
     }
 }
@@ -151,6 +255,8 @@ pub struct DrawList {
     pub commands: Vec<DrawCommand>,
     pub glyphs: Vec<Glyph>,
     pub fonts: Vec<FontRef>,
+    /// Position du pointeur (points), pour les verres `interactive`.
+    pub pointer: Option<Point>,
 }
 
 impl DrawList {

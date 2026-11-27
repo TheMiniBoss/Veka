@@ -809,7 +809,7 @@ impl PlatformContext for Ctx {
             info: Cell::new(window_info(&window)),
         });
         let view = VekaView::new(mtm, data.clone(), rect);
-        window.setContentView(Some(&view));
+        crate::vibrancy::set_content(&window, &view, desc.backdrop);
         let delegate = WindowDelegate::new(mtm, data.clone());
         window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         window.center();

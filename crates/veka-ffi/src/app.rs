@@ -3,7 +3,7 @@
 use std::ffi::{c_char, c_void};
 
 use veka_app::App;
-use veka_platform::{Chrome, Size, WindowDesc};
+use veka_platform::{Chrome, Size, SystemBackdrop, WindowDesc};
 use veka_ui::Element;
 use veka_ui::schema::Params;
 
@@ -113,6 +113,19 @@ pub struct VekaWindowDesc {
     pub corner_radius: f32,
     /// Largeur des bords de redimensionnement, en points (0 : 6 points).
     pub resize_margin: f32,
+    /// Matériau du système derrière le contenu (Mica, Acrylic, vibrancy macOS).
+    pub backdrop: VekaSystemBackdrop,
+}
+
+/// Matériau du système derrière le contenu d'une fenêtre : Windows 11 (Mica, Mica Alt, Acrylic) et
+/// macOS (fond de fenêtre, barre latérale, HUD). Veka se dessine par-dessus, sur un fond transparent.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VekaSystemBackdrop {
+    None,
+    Mica,
+    MicaAlt,
+    Acrylic,
 }
 
 /// Réglages par défaut : 480 × 320, redimensionnable, décoration du système.
@@ -130,6 +143,7 @@ pub extern "C" fn veka_window_desc_default(title: *const c_char) -> VekaWindowDe
         shadow: true,
         corner_radius: 8.0,
         resize_margin: 6.0,
+        backdrop: VekaSystemBackdrop::None,
     }
 }
 
@@ -180,6 +194,12 @@ pub(crate) unsafe fn window_desc(d: &VekaWindowDesc) -> Result<WindowDesc, Strin
         if d.resize_margin > 0.0 {
             desc = desc.resize_margin(d.resize_margin);
         }
+        desc = desc.backdrop(match d.backdrop {
+            VekaSystemBackdrop::None => SystemBackdrop::None,
+            VekaSystemBackdrop::Mica => SystemBackdrop::Mica,
+            VekaSystemBackdrop::MicaAlt => SystemBackdrop::MicaAlt,
+            VekaSystemBackdrop::Acrylic => SystemBackdrop::Acrylic,
+        });
         Ok(desc)
     }
 }

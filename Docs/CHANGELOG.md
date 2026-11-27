@@ -17,6 +17,27 @@ Le plus récent en premier.
 
 ## Étape 6 — Liquid Glass
 
+### Verre liquide (PR M)
+- `.glass()` et `.glass_with(Glass::regular() | Glass::clear())`, avec `.clarity(0…1)`, `.tint(…)`,
+  `.interactive(true)`, `.shape(…)`, réfraction, bord, séparation des couleurs, reflet et ombre : l'aspect de
+  Liquid Glass 27 (bord assombri à l'intérieur, reflet vif tourné vers la lumière, lumière interne plus claire en
+  haut, ombre douce). Un verre interactif est éclairé par le pointeur ; l'image n'est redessinée que si le
+  pointeur bouge au-dessus d'un tel verre.
+- `.glass_group(douceur)` : un seul verre pour tous les `glass` du sous-arbre, dont les formes fusionnent comme
+  des gouttes (minimum lisse des SDF, jusqu'à 8 formes) et suivent leurs transformations (`offset`, animations).
+- `.liquid_distortion(force, taille, vitesse, forme)` : le fond ondule dans la forme (eau, chaleur).
+- Fonds du système : `Window::backdrop(SystemBackdrop::Mica | MicaAlt | Acrylic)` (Mica, Mica Alt et Acrylic sur
+  Windows 11 ; fond de fenêtre, barre latérale et HUD sur macOS). Veka se dessine par-dessus, sur un fond
+  transparent ; un verre posé sur ce fond garde sa lumière sans noircir.
+- `.vk` : `.glass(clarity:, interactive:, shape:, cornerRadius:, …)`, `.glassGroup(smoothness:)`,
+  `.liquidDistortion(…)` ; C : `VekaGlass`, `veka_glass_regular`, `veka_glass_clear`, `veka_glass`,
+  `veka_glass_group`, `veka_liquid_distortion`, et `VekaWindowDesc.backdrop`.
+- Exemple `verre` complet en Rust, en `.vk` (`verre.vk`, même dessin, testé) et en C (`examples/c/verre.c`) ;
+  `cargo run --example verre -- mica` le montre sur le matériau du système.
+- « Réduire la transparence » et la qualité `Off` : chaque verre (et chaque forme d'un groupe) devient une
+  teinte unie.
+- `BackdropEffect::Glass` est en boîte (`Box<GlassEffect>`) pour ne pas alourdir les autres commandes.
+
 ### Flou d'arrière-plan (PR L)
 - `.backdrop_blur(rayon)`, `.frosted_glass()` et `.backdrop(BackdropBlur { … })` : ce qui est dessiné derrière
   la vue est flouté, saturé, teinté (jeton Colora) et granuleux, découpé à sa forme (rectangle, rectangle arrondi,
