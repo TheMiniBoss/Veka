@@ -4,6 +4,16 @@ Le plus récent en premier.
 
 ## Étape 3 — Colora
 
+### Interface C, schéma et macOS (PR G)
+- Schéma : `fill`, `stroke`, `foregroundColor`, `tint` et `background` prennent un paramètre `paint` (couleur,
+  jeton ou dégradé) ; nouveaux modifiers `theme`, `colorScheme`, `brightness`, `contrast`, `saturation`,
+  `hueRotation`, `grayscale`.
+- C : `VekaPaint` (`veka_solid`, `veka_token`, les cinq dégradés, `veka_paint_stops` pour des arrêts en jetons,
+  `veka_paint_space`), `veka_fill_paint` et compagnie, `VekaTheme` (`veka_theme_new`, `veka_theme_set_color`,
+  `veka_theme_set_metric`), `veka_theme`, `veka_color_scheme` et les réglages. Exemple `examples/c/colora.c`.
+- macOS : mode clair / sombre (`effectiveAppearance`, suivi en direct) et couleur d'accent du système.
+- Exemple `colora` : légendes plus lisibles.
+
 ### Couleurs, dégradés, thèmes (PR F)
 - Nouveau crate `veka-colora` : espaces sRGB, linéaire, **Oklab**, OkLCH ; les 26 jetons d'Alpha 13 et les jetons
   de contrôle (`ButtonAccent → ThemeAccent → Tint`) ; hiérarchie (60 %, 30 %, 18 %) ; `Theme` avec parent ;

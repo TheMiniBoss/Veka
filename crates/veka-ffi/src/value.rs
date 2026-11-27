@@ -7,6 +7,7 @@ use veka_foundation::Color;
 use veka_ui::Action;
 use veka_ui::schema::{Params, Value};
 
+use crate::colora::{VekaPaint, VekaTheme};
 use crate::{VekaContext, context, string};
 
 /// Une couleur sRGB, composantes de 0 à 1.
@@ -79,6 +80,10 @@ pub enum VekaValueKind {
     /// Une valeur d'énumération par son nom (`"title"`, `"leading"`…), dans `string`.
     Enum,
     Action,
+    /// Une peinture (`VekaPaint*`, copiée : le C la garde).
+    Paint,
+    /// Un thème (`VekaTheme*`, partagé : le C le garde).
+    Theme,
 }
 
 /// Contenu d'une [`VekaValue`], selon son type.
@@ -91,6 +96,8 @@ pub union VekaValueData {
     pub string: *const c_char,
     pub color: VekaColor,
     pub action: VekaAction,
+    pub paint: *const VekaPaint,
+    pub theme: *const VekaTheme,
 }
 
 /// Une valeur de paramètre. Se construit avec `veka_number`, `veka_string`…
@@ -169,6 +176,25 @@ pub extern "C" fn veka_action(callback: VekaActionFn, user: *mut c_void) -> Veka
     }
 }
 
+/// Une peinture comme valeur de paramètre (`fill`, `foregroundColor`…). Elle est copiée au moment
+/// de la construction de l'élément : le C la garde et la libère.
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_paint_value(paint: *const VekaPaint) -> VekaValue {
+    VekaValue {
+        kind: VekaValueKind::Paint,
+        data: VekaValueData { paint },
+    }
+}
+
+/// Un thème comme valeur de paramètre (modifier `theme`). Le C le garde.
+#[unsafe(no_mangle)]
+pub extern "C" fn veka_theme_value(theme: *const VekaTheme) -> VekaValue {
+    VekaValue {
+        kind: VekaValueKind::Theme,
+        data: VekaValueData { theme },
+    }
+}
+
 /// Convertit les paramètres C.
 pub(crate) unsafe fn params(params: *const VekaParam, count: usize) -> Result<Params, String> {
     let mut out = Params::new();
@@ -194,6 +220,20 @@ pub(crate) unsafe fn params(params: *const VekaParam, count: usize) -> Result<Pa
                 VekaValueKind::Action => {
                     let a = p.value.data.action;
                     Value::Action(action(a.callback, a.user)?)
+                }
+                VekaValueKind::Paint => {
+                    let p = p.value.data.paint;
+                    if p.is_null() {
+                        return Err(format!("{name} : peinture NULL"));
+                    }
+                    Value::Paint((*p).paint.clone())
+                }
+                VekaValueKind::Theme => {
+                    let t = p.value.data.theme;
+                    if t.is_null() {
+                        return Err(format!("{name} : thème NULL"));
+                    }
+                    Value::Theme((*t).theme.clone())
                 }
             }
         };

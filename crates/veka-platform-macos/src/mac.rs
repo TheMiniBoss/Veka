@@ -15,8 +15,9 @@ use objc2::runtime::ProtocolObject;
 use objc2::{AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSColor,
-    NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView,
-    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
+    NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSResponder, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask,
+    NSWindowTitleVisibility,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults,
@@ -26,9 +27,9 @@ use raw_window_handle::{
     WindowHandle,
 };
 use veka_platform::{
-    Chrome, Instant, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent,
-    PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowDesc, WindowId, WindowInfo,
-    WindowRegion,
+    Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
+    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowDesc,
+    WindowId, WindowInfo, WindowRegion,
 };
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
@@ -106,6 +107,12 @@ define_class!(
                 self.update_size();
                 self.setNeedsDisplay(true);
             }
+        }
+
+        #[unsafe(method(viewDidChangeEffectiveAppearance))]
+        fn did_change_appearance(&self) {
+            refresh_appearance(MainThreadMarker::from(self));
+            pump();
         }
 
         #[unsafe(method(mouseMoved:))]
@@ -333,6 +340,8 @@ define_class!(
 
         #[unsafe(method(windowDidBecomeKey:))]
         fn did_become_key(&self, notification: &NSNotification) {
+            // La couleur d'accent n'a pas d'avis sur la vue : on la relit quand la fenêtre revient.
+            refresh_appearance(MainThreadMarker::from(self));
             self.state_changed(notification);
         }
 
@@ -627,6 +636,10 @@ impl PlatformContext for Ctx {
         Instant::from_nanos(self.start.elapsed().as_nanos() as u64)
     }
 
+    fn appearance(&self) -> Appearance {
+        APPEARANCE.with(|a| a.get())
+    }
+
     fn exit(&mut self) {
         let app = NSApplication::sharedApplication(self.mtm);
         app.stop(None);
@@ -659,6 +672,37 @@ struct Runner {
 thread_local! {
     static RUNNER: RefCell<Option<Runner>> = const { RefCell::new(None) };
     static QUEUE: RefCell<VecDeque<PlatformEvent>> = const { RefCell::new(VecDeque::new()) };
+    static APPEARANCE: Cell<Appearance> = Cell::new(Appearance::default());
+}
+
+/// Mode clair / sombre de l'application (celui des Réglages, sauf si l'app le force) et couleur
+/// d'accent du système.
+fn read_appearance(mtm: MainThreadMarker) -> Appearance {
+    let name = NSApplication::sharedApplication(mtm).effectiveAppearance().name();
+    // `DarkAqua`, `VibrantDark`, `AccessibilityHighContrastDarkAqua`…
+    let scheme = if name.to_string().contains("Dark") {
+        ColorScheme::Dark
+    } else {
+        ColorScheme::Light
+    };
+    let accent = NSColor::controlAccentColor()
+        .colorUsingColorSpace(&NSColorSpace::sRGBColorSpace())
+        .map(|c| {
+            Color::rgb(
+                c.redComponent() as f32,
+                c.greenComponent() as f32,
+                c.blueComponent() as f32,
+            )
+        });
+    Appearance { scheme, accent }
+}
+
+/// Relit l'apparence ; prévient l'application si elle a changé.
+fn refresh_appearance(mtm: MainThreadMarker) {
+    let now = read_appearance(mtm);
+    if APPEARANCE.with(|a| a.replace(now)) != now {
+        push(PlatformEvent::AppearanceChanged { appearance: now });
+    }
 }
 
 fn push(event: PlatformEvent) {
@@ -693,6 +737,7 @@ impl Platform for MacPlatform {
             next_id: 1,
             start: std::time::Instant::now(),
         };
+        APPEARANCE.with(|a| a.set(read_appearance(mtm)));
         RUNNER.with(|r| *r.borrow_mut() = Some(Runner { app, ctx }));
         ns_app.run();
 

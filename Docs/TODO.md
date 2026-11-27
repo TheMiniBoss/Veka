@@ -16,7 +16,9 @@
 - [ ] Un seul GPU partagé entre les fenêtres.
 
 ## Étape 3 (Colora)
-- [ ] PR G : `VekaPaint`, dégradés et thèmes en C ; peintures dans le schéma ; clair / sombre et accent de macOS.
+- [x] PR G : `VekaPaint`, dégradés et thèmes en C ; peintures dans le schéma ; clair / sombre et accent de macOS.
+- [ ] Colora sur le Mac : mode clair / sombre en direct, accent, exemples Rust et C.
+- [ ] Constantes `VEKA_UNIT_*` de `veka.h` : littéraux composés du C99, à revoir pour les liaisons C++.
 - [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
 - [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
 

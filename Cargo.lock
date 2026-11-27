@@ -1321,7 +1321,9 @@ name = "veka-ffi"
 version = "0.1.0"
 dependencies = [
  "veka-app",
+ "veka-colora",
  "veka-foundation",
+ "veka-graphics",
  "veka-platform",
  "veka-ui",
 ]

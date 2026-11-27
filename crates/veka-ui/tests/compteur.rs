@@ -30,7 +30,7 @@ fn compteur_donnees() -> impl View {
     let forme = |nom: &str, params: Params, c: Color, w: f64, h: f64| {
         let f = b(
             "fill",
-            Params::new().with("color", color(c)),
+            Params::new().with("paint", color(c)),
             vec![b(nom, params, vec![])],
         );
         b(

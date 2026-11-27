@@ -228,7 +228,7 @@ pub unsafe extern "C" fn veka_frame(element: *mut VekaElement, width: f32, heigh
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn veka_fill(element: *mut VekaElement, c: VekaColor) -> *mut VekaElement {
     // SAFETY : contrat de l'API.
-    unsafe { modify(element, "fill", Params::new().with("color", color(c))) }
+    unsafe { modify(element, "fill", Params::new().with("paint", color(c))) }
 }
 
 /// Trace le contour d'une forme.
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn veka_stroke(
     line_width: f32,
 ) -> *mut VekaElement {
     let params = Params::new()
-        .with("color", color(c))
+        .with("paint", color(c))
         .with("lineWidth", num(line_width));
     // SAFETY : contrat de l'API.
     unsafe { modify(element, "stroke", params) }
@@ -249,21 +249,21 @@ pub unsafe extern "C" fn veka_stroke(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn veka_foreground(element: *mut VekaElement, c: VekaColor) -> *mut VekaElement {
     // SAFETY : contrat de l'API.
-    unsafe { modify(element, "foregroundColor", Params::new().with("color", color(c))) }
+    unsafe { modify(element, "foregroundColor", Params::new().with("paint", color(c))) }
 }
 
 /// Couleur d'accent (boutons…).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn veka_tint(element: *mut VekaElement, c: VekaColor) -> *mut VekaElement {
     // SAFETY : contrat de l'API.
-    unsafe { modify(element, "tint", Params::new().with("color", color(c))) }
+    unsafe { modify(element, "tint", Params::new().with("paint", color(c))) }
 }
 
 /// Fond coloré derrière le contenu.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn veka_background(element: *mut VekaElement, c: VekaColor) -> *mut VekaElement {
     // SAFETY : contrat de l'API.
-    unsafe { modify(element, "background", Params::new().with("color", color(c))) }
+    unsafe { modify(element, "background", Params::new().with("paint", color(c))) }
 }
 
 /// Style de texte.
