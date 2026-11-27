@@ -702,11 +702,14 @@ fn read_appearance(mtm: MainThreadMarker) -> Appearance {
                 c.blueComponent() as f32,
             )
         });
-    let reduce_motion = NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
+    let workspace = NSWorkspace::sharedWorkspace();
+    let reduce_motion = workspace.accessibilityDisplayShouldReduceMotion();
+    let reduce_transparency = workspace.accessibilityDisplayShouldReduceTransparency();
     Appearance {
         scheme,
         accent,
         reduce_motion,
+        reduce_transparency,
     }
 }
 

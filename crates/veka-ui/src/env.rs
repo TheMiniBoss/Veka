@@ -107,6 +107,23 @@ pub struct Environment {
     pub reduce_motion: bool,
     /// `.ignore_reduce_motion()` : ce sous-arbre s'anime quand même.
     pub ignore_reduce_motion: bool,
+    /// Le réglage « Réduire la transparence » du système, donné par l'hôte : les effets d'arrière-plan
+    /// deviennent des teintes unies.
+    pub reduce_transparency: bool,
+    /// Qualité des effets d'arrière-plan (réglée sur l'app).
+    pub backdrop_quality: BackdropQuality,
+}
+
+/// Qualité des effets qui lisent l'arrière-plan (flou, verre).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BackdropQuality {
+    /// Aucun effet : une teinte unie à la place.
+    Off,
+    /// Un seul niveau de flou, sans mélange ni grain.
+    Low,
+    /// Tout.
+    #[default]
+    High,
 }
 
 impl Default for Environment {
@@ -124,6 +141,8 @@ impl Default for Environment {
             window: WindowInfo::default(),
             reduce_motion: false,
             ignore_reduce_motion: false,
+            reduce_transparency: false,
+            backdrop_quality: BackdropQuality::High,
         }
     }
 }

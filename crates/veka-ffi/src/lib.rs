@@ -22,6 +22,7 @@
 mod anima;
 mod app;
 mod colora;
+mod effects;
 mod elements;
 mod state;
 mod value;
@@ -30,6 +31,7 @@ mod vk;
 pub use anima::*;
 pub use app::*;
 pub use colora::*;
+pub use effects::*;
 pub use elements::*;
 pub use state::*;
 pub use value::*;

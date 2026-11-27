@@ -241,3 +241,40 @@ fn boutique_c_se_charge() {
         ]
     );
 }
+
+#[test]
+fn flou_d_arriere_plan_en_vk() {
+    let p = program(
+        r#"
+view Verre {
+    VStack(spacing: 12) {
+        Text("Dépoli")
+            .padding(20)
+            .frostedGlass()
+        Text("Barre")
+            .padding(12)
+            .backdropBlur(radius: 16, shape: .capsule, tint: .Blue, tintAmount: 0.3)
+        Text("Coins")
+            .backdropBlur(8, cornerRadius: 10)
+    }
+}
+"#,
+    );
+    let vk = surface(p.view("Verre"));
+    let rs = surface(VStack![spacing: 12;
+        Text("Dépoli").padding(20).frosted_glass(),
+        Text("Barre").padding(12).backdrop(
+            BackdropBlur::default()
+                .radius(16.0)
+                .shape(Shape::Capsule)
+                .tint(Token::Blue, 0.3)
+        ),
+        Text("Coins").backdrop(
+            BackdropBlur::default()
+                .radius(8.0)
+                .shape(Shape::RoundedRectangle(CornerRadii::all(10.0)))
+        ),
+    ]);
+    same(&vk, &rs);
+    assert_eq!(rs.draw_list().to_string().matches("backdrop").count(), 3);
+}

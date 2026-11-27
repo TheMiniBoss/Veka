@@ -816,6 +816,22 @@ fn builtin_entries() -> Vec<Entry> {
             },
         },
         Entry {
+            name: "backdropBlur",
+            kind: Modifier,
+            children: One,
+            doc: "floute ce qui est dessiné derrière la vue",
+            params: BACKDROP_PARAMS,
+            build: |p, c| one(c).backdrop(backdrop_params(p, crate::views::BackdropBlur::default())),
+        },
+        Entry {
+            name: "frostedGlass",
+            kind: Modifier,
+            children: One,
+            doc: "verre dépoli : flou fort, teinte du fond de la fenêtre, un peu de grain",
+            params: BACKDROP_PARAMS,
+            build: |p, c| one(c).backdrop(backdrop_params(p, crate::views::BackdropBlur::frosted())),
+        },
+        Entry {
             name: "ignoreReduceMotion",
             kind: Modifier,
             children: One,
@@ -902,6 +918,64 @@ fn builtin_entries() -> Vec<Entry> {
 
 const SCHEMES: &[&str] = &["light", "dark", "system"];
 const BACKGROUND_SHAPES: &[&str] = &["rectangle", "capsule", "circle", "ellipse"];
+
+const BACKDROP_SHAPES: &[&str] = &["rectangle", "roundedRectangle", "capsule", "circle", "ellipse"];
+
+const BACKDROP_PARAMS: &[ParamSpec] = &[
+    p("radius", ValueType::Number, false, "rayon du flou, en points"),
+    p("shape", ValueType::Enum(BACKDROP_SHAPES), false, "forme découpée"),
+    p(
+        "cornerRadius",
+        ValueType::Number,
+        false,
+        "rayon des coins (roundedRectangle)",
+    ),
+    p("tint", ValueType::Paint, false, "teinte mélangée au flou"),
+    p(
+        "tintAmount",
+        ValueType::Number,
+        false,
+        "part de la teinte, de 0 à 1",
+    ),
+    p("saturation", ValueType::Number, false, "1 = inchangée"),
+    p("noise", ValueType::Number, false, "grain, de 0 à 1"),
+];
+
+/// Les réglages donnés par-dessus `base` (`backdropBlur`, `frostedGlass`).
+fn backdrop_params(p: &Params, base: crate::views::BackdropBlur) -> crate::views::BackdropBlur {
+    let mut b = base;
+    if let Some(r) = p.number("radius") {
+        b.radius = r;
+    }
+    let corner = p.number("cornerRadius");
+    match p.enumeration("shape") {
+        Some("rectangle") => b.shape = Shape::Rectangle,
+        Some("capsule") => b.shape = Shape::Capsule,
+        Some("circle") => b.shape = Shape::Circle,
+        Some("ellipse") => b.shape = Shape::Ellipse,
+        Some("roundedRectangle") => {
+            b.shape = Shape::RoundedRectangle(CornerRadii::all(corner.unwrap_or(16.0)));
+        }
+        _ => {
+            if let Some(r) = corner {
+                b.shape = Shape::RoundedRectangle(CornerRadii::all(r));
+            }
+        }
+    }
+    if let Some(t) = p.paint("tint") {
+        b.tint = t;
+    }
+    if let Some(a) = p.number("tintAmount") {
+        b.tint_amount = a;
+    }
+    if let Some(v) = p.number("saturation") {
+        b.saturation = v;
+    }
+    if let Some(v) = p.number("noise") {
+        b.noise = v;
+    }
+    b
+}
 
 /// Un réglage de couleur : un seul paramètre `amount`.
 fn adjust(name: &'static str, doc: &'static str) -> Entry {

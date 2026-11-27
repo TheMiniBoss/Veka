@@ -146,9 +146,13 @@ impl Surface {
     pub fn set_environment(&mut self, env: Environment) {
         let window = self.env.window;
         let reduce_motion = self.env.reduce_motion;
+        let reduce_transparency = self.env.reduce_transparency;
+        let backdrop_quality = self.env.backdrop_quality;
         self.env = Rc::new(Environment {
             window,
             reduce_motion,
+            reduce_transparency,
+            backdrop_quality,
             ..env
         });
         self.needs_layout = true;
@@ -182,6 +186,28 @@ impl Surface {
         if self.env.reduce_motion != reduce {
             self.env = Rc::new(Environment {
                 reduce_motion: reduce,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    /// Le réglage « Réduire la transparence » du système, donné par l'hôte.
+    pub fn set_reduce_transparency(&mut self, reduce: bool) {
+        if self.env.reduce_transparency != reduce {
+            self.env = Rc::new(Environment {
+                reduce_transparency: reduce,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
+    }
+
+    /// La qualité des effets d'arrière-plan.
+    pub fn set_backdrop_quality(&mut self, quality: crate::env::BackdropQuality) {
+        if self.env.backdrop_quality != quality {
+            self.env = Rc::new(Environment {
+                backdrop_quality: quality,
                 ..(*self.env).clone()
             });
             self.needs_layout = true;

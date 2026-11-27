@@ -45,7 +45,14 @@
 - [ ] Timelines et horloges retrouvées par nom au rechargement (aujourd'hui : relancées si leur liste change).
 - [ ] Rechargement : surveiller le dossier (événements du système) plutôt que la date toutes les 250 ms.
 
+## Étape 6 (Liquid Glass)
+- [x] PR L : flou d'arrière-plan, verre dépoli, qualité et repli, schéma, `.vk` et C.
+- [ ] PR M : verre liquide (`glass`, `glass_group`, `liquid_distortion`), fonds du système, exemple `verre`
+  complet en Rust, `.vk` et C.
+- [ ] Teinte en dégradé (aujourd'hui : couleur moyenne de la peinture).
+- [ ] Forme prise du fond ou du découpage de la vue (aujourd'hui : paramètre `shape`).
+- [ ] Mesurer le coût GPU (requêtes de temps) et l'afficher dans l'exemple.
+
 ## Plus tard
-- [ ] Effets (`Backdrop`, verre).
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).
 - [ ] Liaisons C++, C#, Unreal, Unity sur `veka.h`.

@@ -67,6 +67,25 @@ typedef enum VekaColorScheme {
   VEKA_COLOR_SCHEME_DARK,
 } VekaColorScheme;
 
+// Forme découpée par un effet.
+typedef enum VekaBackdropShape {
+  VEKA_BACKDROP_SHAPE_RECTANGLE,
+  // Coins arrondis de `corner_radius`.
+  VEKA_BACKDROP_SHAPE_ROUNDED_RECTANGLE,
+  VEKA_BACKDROP_SHAPE_CAPSULE,
+  VEKA_BACKDROP_SHAPE_CIRCLE,
+  VEKA_BACKDROP_SHAPE_ELLIPSE,
+} VekaBackdropShape;
+
+// Qualité des effets d'arrière-plan.
+typedef enum VekaBackdropQuality {
+  // Aucun effet : une teinte unie à la place.
+  VEKA_BACKDROP_QUALITY_OFF,
+  // Un seul niveau de flou, sans grain.
+  VEKA_BACKDROP_QUALITY_LOW,
+  VEKA_BACKDROP_QUALITY_HIGH,
+} VekaBackdropQuality;
+
 // Type d'une [`VekaValue`].
 typedef enum VekaValueKind {
   VEKA_VALUE_KIND_BOOL,
@@ -244,6 +263,21 @@ typedef struct VekaStop {
   enum VekaHierarchy hierarchy;
   float location;
 } VekaStop;
+
+// Réglages d'un flou d'arrière-plan. Partir de `veka_backdrop_default` ou de
+// `veka_frosted_glass_default`.
+typedef struct VekaBackdrop {
+  // Rayon du flou, en points.
+  float radius;
+  enum VekaBackdropShape shape;
+  float corner_radius;
+  // Part de la teinte, de 0 à 1.
+  float tint_amount;
+  // 1 = inchangée.
+  float saturation;
+  // Grain, de 0 à 1.
+  float noise;
+} VekaBackdrop;
 
 // Une action : la fonction et son pointeur `user`.
 typedef struct VekaAction {
@@ -654,6 +688,27 @@ int32_t veka_theme_set_metric(struct VekaTheme *theme, const char *name, float v
 
 // Libère un thème. Les éléments qui l'utilisent gardent leur copie.
 void veka_theme_free(struct VekaTheme *theme);
+
+// Flou d'arrière-plan : rayon 20, rectangle, teinte du fond de la fenêtre à 15 %, saturation 1,4.
+struct VekaBackdrop veka_backdrop_default(void);
+
+// Verre dépoli : rayon 30, coins de 16, teinte à 35 %, saturation 1,6, un peu de grain.
+struct VekaBackdrop veka_frosted_glass_default(void);
+
+// Floute ce qui est dessiné derrière `element` (consommé). `tint` (consommée) peut être NULL : teinte
+// du fond de la fenêtre.
+struct VekaElement *veka_backdrop(struct VekaElement *element,
+                                  const struct VekaBackdrop *blur,
+                                  struct VekaPaint *tint);
+
+// Flou d'arrière-plan de rayon `radius` (rectangle, réglages par défaut).
+struct VekaElement *veka_backdrop_blur(struct VekaElement *element, float radius);
+
+// Verre dépoli avec ses réglages par défaut.
+struct VekaElement *veka_frosted_glass(struct VekaElement *element);
+
+// Règle la qualité des effets d'arrière-plan de toutes les fenêtres (par défaut : `HIGH`).
+int32_t veka_app_set_backdrop_quality(struct VekaApp *app, enum VekaBackdropQuality quality);
 
 // Construit n'importe quel composant du schéma par son nom (`"VStack"`, `"Text"`…).
 // Les enfants sont consommés.
