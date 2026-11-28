@@ -75,6 +75,19 @@ pub fn with_animation<R>(spec: Animation, f: impl FnOnce() -> R) -> R {
     r
 }
 
+/// L'animation du `with_animation` en cours, s'il y en a un.
+pub(crate) fn current_transaction() -> Option<Animation> {
+    TRANSACTION.with(|t| t.get())
+}
+
+/// Réveille toutes les surfaces (une demande qui ne vient pas d'un état, comme `scroll_to`).
+pub(crate) fn wake_all() {
+    let wakers: Vec<Rc<dyn Fn()>> = WAKERS.with(|w| w.borrow().values().cloned().collect());
+    for w in wakers {
+        w();
+    }
+}
+
 /// La spec à appliquer à la prochaine image de `surface` (et l'oublie).
 pub(crate) fn take_transaction(surface: u32) -> Option<Animation> {
     PENDING.with(|p| p.borrow_mut().remove(&surface))

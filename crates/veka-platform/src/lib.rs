@@ -10,8 +10,8 @@
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use veka_foundation::{
-    Color, ColorScheme, Instant, Key, Modifiers, Point, Rect, RegionKind, Size, WindowAction, WindowControl,
-    WindowInfo, WindowRegion,
+    Color, ColorScheme, Instant, Key, Modifiers, Point, Rect, RegionKind, ScrollPhase, Size, Vector,
+    WindowAction, WindowControl, WindowInfo, WindowRegion,
 };
 
 /// L'apparence choisie dans les réglages du système.
@@ -260,6 +260,14 @@ pub enum PlatformEvent {
     /// Le pointeur a quitté la fenêtre.
     PointerLeft {
         window: WindowId,
+    },
+    /// La molette ou le pavé tactile (étape 10). `delta` : de combien faire défiler, en points (`y` positif
+    /// vers le bas du contenu, `x` positif vers la droite), sens « naturel » du système déjà appliqué.
+    Scroll {
+        window: WindowId,
+        position: Point,
+        delta: Vector,
+        phase: ScrollPhase,
     },
     /// Une touche appuyée ou relâchée (étape 9). `repeat` : répétition d'une touche tenue.
     Key {

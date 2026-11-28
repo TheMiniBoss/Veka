@@ -16,8 +16,8 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Ime, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
-    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
-    SystemBackdrop, WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, ScrollPhase,
+    Size, SystemBackdrop, Vector, WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
     ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -53,13 +53,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT,
     HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
     PostMessageW, PostQuitMessage, PostThreadMessageW, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED,
-    SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SW_MAXIMIZE, SW_MINIMIZE,
+    SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SPI_GETWHEELSCROLLCHARS,
+    SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_ACTION, SW_MAXIMIZE, SW_MINIMIZE,
     SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
     TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED,
     WM_CHAR, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND,
     WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
     WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE,
     WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW,
@@ -732,6 +734,42 @@ impl Platform for WindowsPlatform {
     }
 }
 
+/// Un cran de molette (`WHEEL_DELTA`).
+const WHEEL_DELTA: f32 = 120.0;
+/// `MK_SHIFT` dans le `wParam` de `WM_MOUSEWHEEL`.
+const MK_SHIFT_BIT: usize = 0x0004;
+/// Une ligne, en points, pour la molette.
+const LINE: f32 = 20.0;
+
+/// Lignes par cran de molette (réglage de Windows, 3 par défaut).
+fn wheel_lines() -> f32 {
+    wheel_setting(SPI_GETWHEELSCROLLLINES)
+}
+
+/// Caractères par cran de molette horizontale (3 par défaut).
+fn wheel_chars() -> f32 {
+    wheel_setting(SPI_GETWHEELSCROLLCHARS)
+}
+
+fn wheel_setting(action: SYSTEM_PARAMETERS_INFO_ACTION) -> f32 {
+    let mut n: u32 = 3;
+    // SAFETY : `n` est un u32 valide pendant l'appel.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            action,
+            0,
+            Some(&mut n as *mut u32 as *mut c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    match n {
+        // « Un écran à la fois » : environ une page.
+        u32::MAX => 20.0,
+        n if ok.is_ok() => n.clamp(1, 100) as f32,
+        _ => 3.0,
+    }
+}
+
 fn point(lparam: LPARAM, scale: f32) -> Point {
     let x = (lparam.0 & 0xffff) as u16 as i16 as f32;
     let y = ((lparam.0 >> 16) & 0xffff) as u16 as i16 as f32;
@@ -973,6 +1011,26 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 push(PlatformEvent::PointerLeft { window });
             }
             WM_CAPTURECHANGED => data.buttons.set(0),
+            WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
+                let raw = ((wparam.0 >> 16) & 0xffff) as u16 as i16;
+                let amount = raw as f32 / WHEEL_DELTA;
+                let horizontal = msg == WM_MOUSEHWHEEL || (wparam.0 & MK_SHIFT_BIT) != 0;
+                // Un cran vaut 120 : moins, c'est un pavé tactile de précision (ou une molette fine).
+                let notch = raw % 120 == 0;
+                let delta = if horizontal {
+                    // `WM_MOUSEHWHEEL` : positif vers la droite ; Maj + molette vers le haut : vers la gauche.
+                    let sign = if msg == WM_MOUSEHWHEEL { 1.0 } else { -1.0 };
+                    Vector::new(sign * amount * wheel_chars() * LINE, 0.0)
+                } else {
+                    Vector::new(0.0, -amount * wheel_lines() * LINE)
+                };
+                push(PlatformEvent::Scroll {
+                    window,
+                    position: client_point(hwnd, lparam, scale),
+                    delta,
+                    phase: if notch { ScrollPhase::Wheel } else { ScrollPhase::Changed },
+                });
+            }
             WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
                 if let Some(key) = key_of(VIRTUAL_KEY(wparam.0 as u16)) {
                     let pressed = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;

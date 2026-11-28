@@ -18,7 +18,7 @@ use objc2::{
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
     NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply, NSBackingStoreType,
-    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSPasteboard,
+    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventPhase, NSEventType, NSMenu, NSMenuItem, NSPasteboard,
     NSPasteboardTypeString, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification,
     NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton,
     NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
@@ -36,8 +36,11 @@ use raw_window_handle::{
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Ime, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
     PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
-    WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    ScrollPhase, Vector, WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
+
+/// Une ligne de molette, en points.
+const WHEEL_LINE: f32 = 20.0;
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
 #[derive(Debug, Default)]
@@ -185,6 +188,11 @@ define_class!(
         fn did_change_appearance(&self) {
             refresh_appearance(MainThreadMarker::from(self));
             pump();
+        }
+
+        #[unsafe(method(scrollWheel:))]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            self.scroll(event);
         }
 
         #[unsafe(method(mouseMoved:))]
@@ -621,6 +629,41 @@ impl VekaView {
             size,
             width,
             height,
+        });
+        pump();
+    }
+
+    /// La molette ou le pavé tactile. L'élan du système (`momentumPhase`) est ignoré : Veka calcule le
+    /// sien, le même sur Windows et sur macOS.
+    fn scroll(&self, event: &NSEvent) {
+        if event.momentumPhase() != NSEventPhase::None {
+            return;
+        }
+        let precise = event.hasPreciseScrollingDeltas();
+        // Une souris à molette donne des lignes ; le pavé tactile, des points.
+        let unit = if precise { 1.0 } else { WHEEL_LINE };
+        let delta = Vector::new(
+            -(event.scrollingDeltaX() as f32) * unit,
+            -(event.scrollingDeltaY() as f32) * unit,
+        );
+        let phase = event.phase();
+        let phase = if !precise {
+            ScrollPhase::Wheel
+        } else if phase.intersects(NSEventPhase::Began | NSEventPhase::MayBegin) {
+            ScrollPhase::Began
+        } else if phase.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled) {
+            ScrollPhase::Ended
+        } else {
+            ScrollPhase::Changed
+        };
+        if phase == ScrollPhase::Wheel && delta == Vector::new(0.0, 0.0) {
+            return;
+        }
+        push(PlatformEvent::Scroll {
+            window: self.id(),
+            position: self.position(event),
+            delta,
+            phase,
         });
         pump();
     }

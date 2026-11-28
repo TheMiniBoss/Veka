@@ -126,6 +126,27 @@ pub trait Primitive: Any {
         None
     }
 
+    /// La molette ou le pavé tactile (étape 10), proposés de la vue sous le pointeur vers la racine.
+    fn scroll(&self, _cx: &mut EventCx<'_>, _event: &ScrollEvent) -> ScrollResult {
+        ScrollResult::Passed
+    }
+
+    /// Une image, tant que le primitive bouge tout seul (voir [`EventResult::animate`]).
+    fn tick(&self, _cx: &mut EventCx<'_>) -> TickResult {
+        TickResult::default()
+    }
+
+    /// Les enfants ne reçoivent le pointeur que dans le rectangle de ce primitive (une vue qui défile
+    /// coupe son contenu).
+    fn clips_hits(&self) -> bool {
+        false
+    }
+
+    /// Ce primitive prend le pointeur en `p` avant ses enfants (la barre d'une vue qui défile).
+    fn hits_before_children(&self, _state: &dyn Any, _rect: Rect, _p: Point) -> bool {
+        false
+    }
+
     /// État propre au nœud (survol, cache de texte…), créé une fois à l'insertion du nœud.
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
@@ -285,6 +306,8 @@ pub struct EventCx<'a> {
     pub(crate) text: &'a mut TextSystem,
     pub(crate) focused: bool,
     pub(crate) env: &'a Environment,
+    /// L'heure de l'interface, en secondes (celle de la dernière image ou du dernier événement).
+    pub(crate) now: f64,
 }
 
 impl EventCx<'_> {
@@ -312,6 +335,11 @@ impl EventCx<'_> {
     pub fn rect(&self) -> Rect {
         self.rect
     }
+
+    /// L'heure de l'interface, en secondes.
+    pub fn now(&self) -> f64 {
+        self.now
+    }
 }
 
 /// Résultat d'un événement.
@@ -322,5 +350,37 @@ pub struct EventResult {
     /// Le primitive doit être redessiné (survol, appui…).
     pub repaint: bool,
     /// Action à lancer une fois l'événement traité.
+    pub action: Option<Action>,
+    /// Le primitive bouge tout seul (défilement, élan) : Veka appelle [`Primitive::tick`] à chaque
+    /// image jusqu'à ce qu'il s'arrête.
+    pub animate: bool,
+}
+
+/// Un défilement reçu par un primitive (étape 10). `delta` en points, `y` positif vers le bas du contenu.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollEvent {
+    pub delta: veka_foundation::Vector,
+    pub phase: veka_foundation::ScrollPhase,
+}
+
+/// Ce qu'un primitive fait d'un défilement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollResult {
+    /// Pris : le geste reste à ce primitive jusqu'à sa fin.
+    Consumed,
+    /// Laissé au parent.
+    Passed,
+}
+
+/// Une image d'un primitive qui bouge tout seul.
+#[derive(Default)]
+pub struct TickResult {
+    /// La position a changé : Veka replace les enfants et redessine.
+    pub moved: bool,
+    /// Le dessin a changé (une barre qui s'efface…).
+    pub repaint: bool,
+    /// Il bouge encore : une autre image est demandée.
+    pub active: bool,
+    /// Action à lancer après l'image.
     pub action: Option<Action>,
 }

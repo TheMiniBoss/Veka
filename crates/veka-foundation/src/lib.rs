@@ -12,6 +12,6 @@ mod window;
 
 pub use color::{Color, ColorScheme, linear_to_srgb, srgb_to_linear};
 pub use geometry::{Insets, Point, Rect, Size, Transform2D, Vector};
-pub use key::{Key, Modifiers};
+pub use key::{Key, Modifiers, ScrollPhase};
 pub use time::Instant;
 pub use window::{RegionKind, WindowAction, WindowControl, WindowInfo, WindowRegion};

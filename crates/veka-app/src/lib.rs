@@ -576,6 +576,7 @@ impl Host {
         let Some(w) = self.windows.get_mut(&id) else {
             return;
         };
+        w.surface.set_now(ctx.now());
         w.surface.handle(event);
         self.watch.runtime_errors();
         let w = self.windows.get_mut(&id).expect("fenêtre ouverte");
@@ -739,6 +740,20 @@ impl Host {
                 },
             ),
             PlatformEvent::Char { window, ch } => self.input(ctx, window, InputEvent::Char(ch)),
+            PlatformEvent::Scroll {
+                window,
+                position,
+                delta,
+                phase,
+            } => self.input(
+                ctx,
+                window,
+                InputEvent::Scroll {
+                    position,
+                    delta,
+                    phase,
+                },
+            ),
             PlatformEvent::Ime { window, ime } => {
                 let Some(w) = self.windows.get_mut(&window) else {
                     return;

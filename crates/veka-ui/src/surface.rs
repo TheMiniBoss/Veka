@@ -50,6 +50,12 @@ pub enum InputEvent {
     },
     /// Un caractère tapé (après les touches mortes).
     Char(char),
+    /// La molette ou le pavé tactile (étape 10). `delta` en points, `y` positif vers le bas du contenu.
+    Scroll {
+        position: Point,
+        delta: veka_foundation::Vector,
+        phase: veka_foundation::ScrollPhase,
+    },
 }
 
 /// Racine : remplit la fenêtre, peint le fond, centre le contenu.
@@ -128,6 +134,12 @@ pub struct Surface {
     system_scheme: ColorScheme,
     preferred_scheme: Option<ColorScheme>,
     preferred_changed: bool,
+    /// Les vues qui bougent toutes seules (défilement, élan) : elles reçoivent `tick` à chaque image.
+    moving: Vec<NodeId>,
+    /// La vue qui reçoit le geste de défilement en cours, et l'heure de son dernier événement.
+    scroll_latch: Option<(NodeId, f64)>,
+    /// Le focus vient de changer : les vues qui défilent le font apparaître.
+    reveal_focus: bool,
 }
 
 impl std::fmt::Debug for Surface {
@@ -171,7 +183,17 @@ impl Surface {
             system_scheme: ColorScheme::default(),
             preferred_scheme: None,
             preferred_changed: false,
+            moving: Vec::new(),
+            scroll_latch: None,
+            reveal_focus: false,
         }
+    }
+
+    /// L'heure de la plateforme, pour un événement qui en dépend (la vitesse d'un défilement). Sans
+    /// effet si elle est plus ancienne que la dernière image.
+    pub fn set_now(&mut self, now: veka_foundation::Instant) {
+        self.now = veka_anima::seconds(now).max(self.now);
+        self.clock = true;
     }
 
     /// Appelé quand un état change hors d'un événement (pour que l'hôte demande une image).
@@ -305,12 +327,16 @@ impl Surface {
 
     /// Vrai si une nouvelle image est nécessaire. Faux au repos : l'hôte ne dessine rien.
     pub fn needs_frame(&self) -> bool {
-        self.needs_layout || self.needs_paint || state::has_dirty(self.id) || self.is_animating()
+        self.needs_layout
+            || self.needs_paint
+            || state::has_dirty(self.id)
+            || self.is_animating()
+            || crate::views::has_scroll_requests()
     }
 
     /// Vrai tant qu'une animation tourne : l'hôte doit alors redessiner à chaque image.
     pub fn is_animating(&self) -> bool {
-        !self.tree.anims.is_empty() || crate::timeline::has_playing(self.id)
+        !self.tree.anims.is_empty() || crate::timeline::has_playing(self.id) || !self.moving.is_empty()
     }
 
     /// Comme [`frame`](Self::frame), à l'heure `now` (celle de la plateforme) : les animations
@@ -381,6 +407,7 @@ impl Surface {
             self.update_regions();
             self.update_preferred_scheme();
         }
+        self.scroll_frame(now);
         if self.needs_paint {
             self.list.clear();
             tree::paint(&self.tree, &mut self.list, self.root);
@@ -555,6 +582,11 @@ impl Surface {
                 &mut actions,
             ),
             InputEvent::Char(ch) => self.send_text(&TextInput::Char(ch), &mut actions),
+            InputEvent::Scroll {
+                position,
+                delta,
+                phase,
+            } => self.scroll(position, crate::primitive::ScrollEvent { delta, phase }),
             _ => {}
         }
         // Les actions tournent quand plus rien n'est emprunté : elles peuvent modifier l'état.
@@ -615,6 +647,12 @@ impl Surface {
     pub(crate) fn hit_test(&self, p: Point) -> Option<NodeId> {
         fn walk(tree: &Tree, id: NodeId, p: Point) -> Option<NodeId> {
             let node = &tree.nodes[id];
+            if node.prim.clips_hits() && !node.rect.contains(p) {
+                return None;
+            }
+            if node.prim.hits_before_children(node.state.as_ref(), node.rect, p) {
+                return Some(id);
+            }
             if node.prim.hit_children() {
                 for c in tree.live_children(id).into_iter().rev() {
                     if let Some(h) = walk(tree, c, p) {
@@ -642,11 +680,15 @@ impl Surface {
                 text: &mut self.text,
                 focused,
                 env: &env,
+                now: self.now,
             },
             event,
         );
         if r.repaint {
             self.needs_paint = true;
+        }
+        if r.animate {
+            self.start_moving(id);
         }
         actions.extend(r.action);
         r.handled
@@ -761,6 +803,7 @@ impl Surface {
                 text: &mut self.text,
                 focused: true,
                 env: &env,
+                now: self.now,
             },
             input,
         );
@@ -814,6 +857,9 @@ impl Surface {
 
     /// Donne le focus (ou le retire) et met à jour les états reliés par `.focused`.
     fn set_focus(&mut self, focus: Option<NodeId>) {
+        if focus.is_some() && focus != self.tree.focused {
+            self.reveal_focus = true;
+        }
         if self.tree.focused == focus {
             return;
         }
@@ -902,11 +948,15 @@ impl Surface {
                     text: &mut self.text,
                     focused,
                     env: &env,
+                    now: self.now,
                 },
                 &event,
             );
             if r.repaint {
                 self.needs_paint = true;
+            }
+            if r.animate {
+                self.start_moving(id);
             }
             actions.extend(r.action);
             if r.handled {
@@ -948,6 +998,160 @@ impl Surface {
                 .find_map(|n| self.tree.nodes[n].prim.primary_action())
         {
             actions.push(a);
+        }
+    }
+
+    fn start_moving(&mut self, id: NodeId) {
+        if !self.moving.contains(&id) {
+            self.moving.push(id);
+        }
+    }
+
+    /// Un défilement : à la vue qui a le geste en cours, sinon de la vue sous le pointeur vers la racine.
+    fn scroll(&mut self, position: Point, event: crate::primitive::ScrollEvent) {
+        use veka_foundation::ScrollPhase;
+        let latched = self
+            .scroll_latch
+            .filter(|&(n, t)| {
+                self.tree.nodes.contains_key(n)
+                    && match event.phase {
+                        ScrollPhase::Began => false,
+                        ScrollPhase::Changed | ScrollPhase::Ended => true,
+                        // Des crans rapprochés restent à la même vue, même si le contenu bouge dessous.
+                        ScrollPhase::Wheel => self.now - t < 0.3,
+                    }
+            })
+            .map(|(n, _)| n);
+        let chain: Vec<NodeId> = match latched {
+            Some(n) => vec![n],
+            None => {
+                let start = self.hit_test(position).unwrap_or(self.root);
+                std::iter::successors(Some(start), |&n| self.tree.nodes[n].parent).collect()
+            }
+        };
+        for id in chain {
+            let focused = self.tree.focused == Some(id);
+            let node = &mut self.tree.nodes[id];
+            let prim = node.prim.clone();
+            let env = node.env.clone();
+            let r = prim.scroll(
+                &mut EventCx {
+                    state: node.state.as_mut(),
+                    rect: node.rect,
+                    text: &mut self.text,
+                    focused,
+                    env: &env,
+                    now: self.now,
+                },
+                &event,
+            );
+            if r == crate::primitive::ScrollResult::Consumed {
+                self.scroll_latch = (event.phase != ScrollPhase::Ended).then_some((id, self.now));
+                self.start_moving(id);
+                self.needs_paint = true;
+                return;
+            }
+        }
+        if event.phase == ScrollPhase::Ended {
+            self.scroll_latch = None;
+        }
+    }
+
+    /// À chaque image : les `scroll_to` demandés, le focus à montrer, puis un pas des vues qui bougent.
+    fn scroll_frame(&mut self, now: f64) {
+        for req in crate::views::take_scroll_requests() {
+            let Some(target) = self
+                .live_nodes(self.root)
+                .into_iter()
+                .find(|&n| self.tree.nodes[n].key.as_ref() == Some(&req.key))
+            else {
+                continue;
+            };
+            self.reveal(target, req.anchor, req.animated);
+        }
+        if std::mem::take(&mut self.reveal_focus)
+            && let Some(f) = self.tree.focused.filter(|f| self.tree.nodes.contains_key(*f))
+        {
+            self.reveal(f, None, true);
+        }
+        if self.moving.is_empty() {
+            return;
+        }
+        let mut actions = Vec::new();
+        let mut still = Vec::new();
+        for id in std::mem::take(&mut self.moving) {
+            if !self.tree.nodes.contains_key(id) {
+                continue;
+            }
+            let node = &mut self.tree.nodes[id];
+            let prim = node.prim.clone();
+            let env = node.env.clone();
+            let r = prim.tick(&mut EventCx {
+                state: node.state.as_mut(),
+                rect: node.rect,
+                text: &mut self.text,
+                focused: false,
+                env: &env,
+                now,
+            });
+            if r.moved {
+                // Seul le contenu de cette vue bouge : on ne replace que lui.
+                let rect = self.tree.nodes[id].layout_rect;
+                tree::place(&mut self.tree, &mut self.text, id, rect);
+                crate::anim::after_layout(&mut self.tree, id, None, now);
+                self.revalidate_pointer();
+            }
+            if r.moved || r.repaint {
+                self.needs_paint = true;
+            }
+            actions.extend(r.action);
+            if r.active {
+                still.push(id);
+            }
+        }
+        // Une vue a pu se remettre en mouvement pendant ce temps.
+        for id in std::mem::take(&mut self.moving) {
+            if !still.contains(&id) {
+                still.push(id);
+            }
+        }
+        self.moving = still;
+        for a in actions {
+            a.call();
+        }
+    }
+
+    /// Fait défiler les vues qui contiennent `target` pour le montrer (de la plus proche à la plus haute).
+    fn reveal(&mut self, target: NodeId, anchor: Option<veka_colora::UnitPoint>, animated: bool) {
+        let mut rect = self.tree.nodes[target].layout_rect;
+        let mut n = self.tree.nodes[target].parent;
+        while let Some(id) = n {
+            n = self.tree.nodes[id].parent;
+            let node = &mut self.tree.nodes[id];
+            let Some(st) = node.state.downcast_mut::<crate::views::ScrollState>() else {
+                continue;
+            };
+            let before = st.offset();
+            let to = crate::views::reveal_offset(st, rect, anchor);
+            let max = st.max_offset();
+            let after = veka_foundation::Vector::new(to.x.clamp(0.0, max.x), to.y.clamp(0.0, max.y));
+            st.go_to(to, animated);
+            if !animated {
+                let rect = node.layout_rect;
+                tree::place(&mut self.tree, &mut self.text, id, rect);
+                crate::anim::after_layout(&mut self.tree, id, None, self.now);
+                self.needs_paint = true;
+            }
+            self.start_moving(id);
+            // La vue du dessus montre la vue qui défile, à l'endroit où la cible va arriver.
+            rect = Rect::new(
+                rect.x() - (after.x - before.x),
+                rect.y() - (after.y - before.y),
+                rect.width(),
+                rect.height(),
+            );
+            let view = self.tree.nodes[id].layout_rect;
+            rect = rect.intersection(&view).unwrap_or(view);
         }
     }
 
