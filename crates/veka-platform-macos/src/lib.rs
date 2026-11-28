@@ -16,4 +16,4 @@ mod mac;
 mod vibrancy;
 
 #[cfg(target_os = "macos")]
-pub use mac::{MacPlatform, MacWindow};
+pub use mac::{MacPlatform, MacWindow, clipboard_text, set_clipboard_text};

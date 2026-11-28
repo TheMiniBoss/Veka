@@ -11,7 +11,7 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyClass, AnyObject, ProtocolObject};
+use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
 use objc2::{
     AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel,
 };
@@ -19,20 +19,22 @@ use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
     NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply, NSBackingStoreType,
     NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSResponder,
-    NSRunningApplication, NSSystemColorsDidChangeNotification, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSPasteboard, NSPasteboardTypeString, NSRunningApplication, NSSystemColorsDidChangeNotification,
+    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView,
     NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
     NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
     NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize,
-    NSString, NSUserDefaults,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSRange, NSRangePointer, NSString,
+    NSUInteger, NSUserDefaults,
 };
 use raw_window_handle::{
     AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawWindowHandle,
     WindowHandle,
 };
 use veka_platform::{
-    Appearance, Chrome, Color, ColorScheme, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
+    Appearance, Chrome, Color, ColorScheme, Ime, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
     PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
     WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
@@ -62,6 +64,8 @@ struct WinData {
     info: Cell<WindowInfo>,
     /// Fenêtre transparente : les zones dessinées (points), hors desquelles les clics passent.
     hit_area: RefCell<Option<Vec<Rect>>>,
+    /// La zone du texte édité (points), pour la fenêtre de l'IME. `None` : rien ne reçoit de texte.
+    ime_area: Cell<Option<Rect>>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -78,6 +82,8 @@ struct ViewIvars {
     wants_frame: Cell<bool>,
     /// Fenêtre transparente : minuterie qui regarde si le pointeur est sur une zone dessinée.
     poll: RefCell<Option<Retained<AnyObject>>>,
+    /// Le texte en cours de composition (IME, touche morte), vide sinon.
+    marked: RefCell<String>,
 }
 
 define_class!(
@@ -240,6 +246,113 @@ define_class!(
             self.button(event, other_button(event), false);
         }
     }
+
+    // L'IME et les touches mortes passent par `interpretKeyEvents:`, qui rappelle ces méthodes.
+    unsafe impl NSTextInputClient for VekaView {
+        #[unsafe(method(insertText:replacementRange:))]
+        unsafe fn insert_text(&self, string: &AnyObject, _replacement: NSRange) {
+            let text = ns_text(string);
+            let had_marked = !std::mem::take(&mut *self.ivars().marked.borrow_mut()).is_empty();
+            let window = self.id();
+            let text: String = text.chars().filter(|c| !c.is_control()).collect();
+            let mut chars = text.chars();
+            match (chars.next(), chars.next()) {
+                (Some(ch), None) if !had_marked && !('\u{F700}'..='\u{F8FF}').contains(&ch) => {
+                    push(PlatformEvent::Char { window, ch })
+                }
+                _ if text.is_empty() && !had_marked => {}
+                _ => push(PlatformEvent::Ime {
+                    window,
+                    ime: Ime::Commit(text),
+                }),
+            }
+        }
+
+        #[unsafe(method(doCommandBySelector:))]
+        unsafe fn do_command_by_selector(&self, _selector: Sel) {
+            // Entrée, Retour arrière, flèches… sont déjà partis en `PlatformEvent::Key`.
+        }
+
+        #[unsafe(method(setMarkedText:selectedRange:replacementRange:))]
+        unsafe fn set_marked_text(&self, string: &AnyObject, selected: NSRange, _replacement: NSRange) {
+            let text = ns_text(string);
+            let units: Vec<u16> = text.encode_utf16().collect();
+            let start = byte_offset(&units, selected.location);
+            let end = byte_offset(&units, selected.location.saturating_add(selected.length));
+            *self.ivars().marked.borrow_mut() = text.clone();
+            let cursor = (!text.is_empty()).then_some((start, end));
+            push(PlatformEvent::Ime {
+                window: self.id(),
+                ime: Ime::Preedit { text, cursor },
+            });
+        }
+
+        #[unsafe(method(unmarkText))]
+        fn unmark_text(&self) {
+            let text = std::mem::take(&mut *self.ivars().marked.borrow_mut());
+            if !text.is_empty() {
+                push(PlatformEvent::Ime {
+                    window: self.id(),
+                    ime: Ime::Commit(text),
+                });
+            }
+        }
+
+        #[unsafe(method(selectedRange))]
+        fn selected_range(&self) -> NSRange {
+            NSRange::new(NSNotFound as usize, 0)
+        }
+
+        #[unsafe(method(markedRange))]
+        fn marked_range(&self) -> NSRange {
+            let marked = self.ivars().marked.borrow();
+            if marked.is_empty() {
+                NSRange::new(NSNotFound as usize, 0)
+            } else {
+                NSRange::new(0, marked.encode_utf16().count())
+            }
+        }
+
+        #[unsafe(method(hasMarkedText))]
+        fn has_marked_text(&self) -> bool {
+            !self.ivars().marked.borrow().is_empty()
+        }
+
+        #[unsafe(method_id(attributedSubstringForProposedRange:actualRange:))]
+        unsafe fn attributed_substring(
+            &self,
+            _range: NSRange,
+            _actual: NSRangePointer,
+        ) -> Option<Retained<NSAttributedString>> {
+            None
+        }
+
+        #[unsafe(method_id(validAttributesForMarkedText))]
+        fn valid_attributes(&self) -> Retained<NSArray<NSAttributedStringKey>> {
+            NSArray::new()
+        }
+
+        #[unsafe(method(firstRectForCharacterRange:actualRange:))]
+        unsafe fn first_rect(&self, _range: NSRange, _actual: NSRangePointer) -> NSRect {
+            let Some(area) = self.ivars().data.ime_area.get() else {
+                return NSRect::ZERO;
+            };
+            let local = NSRect::new(
+                NSPoint::new(area.x() as f64, area.y() as f64),
+                NSSize::new(area.width() as f64, area.height() as f64),
+            );
+            let in_window = self.convertRect_toView(local, None);
+            match self.window() {
+                Some(w) => w.convertRectToScreen(in_window),
+                None => in_window,
+            }
+        }
+
+        #[unsafe(method(characterIndexForPoint:))]
+        fn character_index(&self, _point: NSPoint) -> NSUInteger {
+            NSNotFound as NSUInteger
+        }
+    }
 );
 
 /// Les modificateurs d'un événement.
@@ -311,6 +424,40 @@ fn key_of(event: &NSEvent) -> Option<Key> {
     })
 }
 
+/// Le texte d'un `NSString` ou d'un `NSAttributedString` reçu de l'IME.
+fn ns_text(object: &AnyObject) -> String {
+    if let Some(s) = object.downcast_ref::<NSAttributedString>() {
+        return s.string().to_string();
+    }
+    if let Some(s) = object.downcast_ref::<NSString>() {
+        return s.to_string();
+    }
+    String::new()
+}
+
+/// La position en octets UTF-8 qui correspond à `units` unités UTF-16 du texte.
+fn byte_offset(text: &[u16], units: usize) -> usize {
+    char::decode_utf16(text[..units.min(text.len())].iter().copied())
+        .map(|c| c.map_or(3, char::len_utf8))
+        .sum()
+}
+
+/// Le texte du presse-papiers du système.
+pub fn clipboard_text() -> Option<String> {
+    // SAFETY : `NSPasteboardTypeString` est une constante d'AppKit.
+    let kind = unsafe { NSPasteboardTypeString };
+    NSPasteboard::generalPasteboard().stringForType(kind).map(|s| s.to_string())
+}
+
+/// Met du texte dans le presse-papiers du système.
+pub fn set_clipboard_text(text: &str) {
+    let board = NSPasteboard::generalPasteboard();
+    board.clearContents();
+    // SAFETY : voir `clipboard_text`.
+    let kind = unsafe { NSPasteboardTypeString };
+    board.setString_forType(&NSString::from_str(text), kind);
+}
+
 fn other_button(event: &NSEvent) -> MouseButton {
     match event.buttonNumber() {
         2 => MouseButton::Middle,
@@ -325,6 +472,7 @@ impl VekaView {
             link: RefCell::new(None),
             wants_frame: Cell::new(false),
             poll: RefCell::new(None),
+            marked: RefCell::new(String::new()),
         });
         // SAFETY : `initWithFrame:` est l'initialiseur désigné de NSView.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -357,7 +505,9 @@ impl VekaView {
     fn key(&self, event: &NSEvent, pressed: bool) {
         let window = self.id();
         let modifiers = modifiers_of(event);
-        if let Some(key) = key_of(event) {
+        let composing = !self.ivars().marked.borrow().is_empty();
+        // Pendant une composition, les touches (Entrée, flèches…) sont à l'IME.
+        if !composing && let Some(key) = key_of(event) {
             push(PlatformEvent::Key {
                 window,
                 key,
@@ -366,7 +516,13 @@ impl VekaView {
                 repeat: pressed && event.isARepeat(),
             });
         }
-        if pressed && !modifiers.contains(Modifiers::META) && !modifiers.contains(Modifiers::CONTROL) {
+        let shortcut = modifiers.contains(Modifiers::META) || modifiers.contains(Modifiers::CONTROL);
+        if pressed && self.ivars().data.ime_area.get().is_some() && (composing || !shortcut) {
+            // Un champ a le focus : l'IME et les touches mortes, qui rappellent `insertText:` et
+            // `setMarkedText:`.
+            let events = NSArray::from_retained_slice(&[event.retain()]);
+            self.interpretKeyEvents(&events);
+        } else if pressed && !shortcut {
             let text = event.characters().map(|s| s.to_string()).unwrap_or_default();
             for ch in text.chars() {
                 if !ch.is_control() && !('\u{F700}'..='\u{F8FF}').contains(&ch) {
@@ -868,6 +1024,20 @@ impl PlatformWindow for MacWindow {
         *self.data.regions.borrow_mut() = regions.to_vec();
     }
 
+    fn set_ime_area(&self, area: Option<Rect>) {
+        self.data.ime_area.set(area);
+        if area.is_none() && !self.view.ivars().marked.borrow().is_empty() {
+            self.view.ivars().marked.borrow_mut().clear();
+            if let Some(cx) = self.view.inputContext() {
+                cx.discardMarkedText();
+            }
+        } else if area.is_some()
+            && let Some(cx) = self.view.inputContext()
+        {
+            cx.invalidateCharacterCoordinates();
+        }
+    }
+
     fn set_hit_area(&self, area: Option<&[Rect]>) {
         if !self.data.transparent {
             return;
@@ -991,6 +1161,7 @@ impl PlatformContext for Ctx {
             custom,
             info: Cell::new(window_info(&window)),
             hit_area: RefCell::new(None),
+            ime_area: Cell::new(None),
             transparent: desc.chrome.is_transparent(),
         });
         let view = VekaView::new(mtm, data.clone(), rect);

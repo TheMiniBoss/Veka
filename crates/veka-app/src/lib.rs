@@ -36,13 +36,13 @@ use veka_lang::Diagnostic;
 pub use veka_lang::{Program, Val};
 
 use veka_platform::{
-    MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, WindowId,
+    Ime, MouseButton, Platform, PlatformApp, PlatformContext, PlatformError, PlatformEvent, Rect, WindowId,
 };
 use veka_render::{FrameInfo, RenderError, Renderer};
 use veka_render_wgpu::{SurfaceOptions, WindowRenderer};
 use veka_ui::{
-    Axis, BackdropQuality, Color, Element, Font, InputEvent, PointerButton, State, Surface, View, component,
-    views,
+    Axis, BackdropQuality, Color, Element, Font, InputEvent, PointerButton, State, Surface, TextInput, View,
+    component, views,
 };
 
 pub use veka_platform::{Chrome, Size, SystemBackdrop, WindowDesc};
@@ -278,6 +278,8 @@ impl App {
 
     /// Ouvre les fenêtres avec la plateforme de l'OS et tourne jusqu'à la fermeture de la dernière.
     pub fn run(self) -> Result<(), AppError> {
+        #[cfg(any(windows, target_os = "macos"))]
+        veka_ui::set_clipboard(Rc::new(SystemClipboard));
         #[cfg(windows)]
         return self.run_on(veka_platform_windows::WindowsPlatform::new());
         #[cfg(target_os = "macos")]
@@ -330,6 +332,27 @@ impl PlatformApp for Reporter {
     }
 }
 
+/// Le presse-papiers du système, pour les champs de texte.
+#[cfg(any(windows, target_os = "macos"))]
+struct SystemClipboard;
+
+#[cfg(any(windows, target_os = "macos"))]
+impl veka_ui::Clipboard for SystemClipboard {
+    fn get(&self) -> Option<String> {
+        #[cfg(windows)]
+        return veka_platform_windows::clipboard_text();
+        #[cfg(target_os = "macos")]
+        return veka_platform_macos::clipboard_text();
+    }
+
+    fn set(&self, text: &str) {
+        #[cfg(windows)]
+        veka_platform_windows::set_clipboard_text(text);
+        #[cfg(target_os = "macos")]
+        veka_platform_macos::set_clipboard_text(text);
+    }
+}
+
 struct HostWindow {
     surface: Surface,
     renderer: WindowRenderer,
@@ -337,6 +360,8 @@ struct HostWindow {
     stats: Option<Stats>,
     /// Fenêtre transparente : les clics passent là où rien n'est dessiné.
     click_through: bool,
+    /// La zone donnée à l'IME la dernière fois.
+    ime_area: Option<Rect>,
 }
 
 /// Le temps passé par image, cumulé sur une seconde.
@@ -532,6 +557,7 @@ impl Host {
                 renderer,
                 stats: Stats::from_env(),
                 click_through,
+                ime_area: None,
             },
         );
         Ok(())
@@ -628,6 +654,11 @@ impl Host {
                 if let Some(scheme) = w.surface.take_preferred_color_scheme_if_changed() {
                     ctx.window(window).set_color_scheme(scheme);
                 }
+                let ime = w.surface.text_input_area();
+                if ime != w.ime_area {
+                    w.ime_area = ime;
+                    ctx.window(window).set_ime_area(ime);
+                }
                 match result {
                     Ok(()) => {
                         if self.exit_after_first_frame {
@@ -708,6 +739,19 @@ impl Host {
                 },
             ),
             PlatformEvent::Char { window, ch } => self.input(ctx, window, InputEvent::Char(ch)),
+            PlatformEvent::Ime { window, ime } => {
+                let Some(w) = self.windows.get_mut(&window) else {
+                    return;
+                };
+                let input = match ime {
+                    Ime::Preedit { text, cursor } => TextInput::Compose { text, cursor },
+                    Ime::Commit(text) => TextInput::Commit(text),
+                };
+                if w.surface.text_input(input) {
+                    ctx.window(window).request_redraw();
+                }
+                self.watch.runtime_errors();
+            }
         }
     }
 }

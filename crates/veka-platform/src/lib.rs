@@ -200,8 +200,21 @@ pub enum MouseButton {
     Other(u16),
 }
 
+/// Un événement d'IME (étape 9).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ime {
+    /// Le texte en cours de composition, souligné dans le champ (vide : la composition est annulée).
+    /// `cursor` : la sélection dans ce texte, en octets.
+    Preedit {
+        text: String,
+        cursor: Option<(usize, usize)>,
+    },
+    /// Le texte choisi, qui remplace la composition.
+    Commit(String),
+}
+
 /// Événement envoyé par la plateforme à l'application.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PlatformEvent {
     /// La boucle démarre : c'est le moment de créer les fenêtres.
     Resumed,
@@ -262,6 +275,11 @@ pub enum PlatformEvent {
         window: WindowId,
         ch: char,
     },
+    /// La composition d'un IME (japonais, chinois, coréen…) : le texte en cours, puis le texte choisi.
+    Ime {
+        window: WindowId,
+        ime: Ime,
+    },
     /// L'utilisateur a changé le mode clair / sombre ou la couleur d'accent du système.
     AppearanceChanged {
         appearance: Appearance,
@@ -299,6 +317,11 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// Fenêtre transparente : les zones où Veka dessine, en points. Ailleurs, les clics passent aux
     /// fenêtres de dessous. `None` : toute la fenêtre prend les clics.
     fn set_hit_area(&self, area: Option<&[Rect]>) {
+        let _ = area;
+    }
+    /// La zone du texte en cours d'édition, en points, pour placer la fenêtre de l'IME juste dessous.
+    /// `None` : rien ne reçoit de texte, l'IME peut être coupé.
+    fn set_ime_area(&self, area: Option<Rect>) {
         let _ = area;
     }
     /// L'état actuel (agrandie, plein écran, active).
