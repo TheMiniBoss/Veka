@@ -122,9 +122,10 @@ pub struct LayoutCx<'a> {
 }
 
 impl LayoutCx<'_> {
-    /// Les enfants à mesurer et placer (sans ceux qui sont en train de sortir).
-    pub fn children(&self) -> Vec<NodeId> {
-        self.tree.live_children(self.node)
+    /// Les enfants à mesurer et placer (sans ceux qui sont en train de sortir). Sur la pile jusqu'à 4 :
+    /// mesurer et placer ne doit rien allouer pour les modifiers (un seul enfant).
+    pub fn children(&self) -> smallvec::SmallVec<[NodeId; 4]> {
+        self.tree.live_children_iter(self.node).collect()
     }
 
     pub fn env(&self) -> &Environment {

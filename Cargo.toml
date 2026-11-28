@@ -29,6 +29,7 @@ veka-app = { path = "crates/veka-app" }
 # `libm` plutôt que `std` : sans `std`, fontique ne lit aucun fichier (pas de memmap2 / libc).
 parley = { version = "0.13", default-features = false, features = ["libm"] }
 slotmap = "1.1"
+smallvec = "1"
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "dx12", "metal", "vulkan"] }
 swash = "0.2"
 bytemuck = { version = "1.25", features = ["derive"] }

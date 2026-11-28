@@ -1355,6 +1355,7 @@ dependencies = [
 name = "veka-lang"
 version = "0.1.0"
 dependencies = [
+ "smallvec",
  "veka-anima",
  "veka-colora",
  "veka-foundation",
@@ -1428,6 +1429,7 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "slotmap",
+ "smallvec",
  "veka-anima",
  "veka-colora",
  "veka-foundation",

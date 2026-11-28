@@ -58,8 +58,10 @@
 
 ## Étape 7 (un `.vk` rapide)
 - [x] PR N : cœur optimisé en debug, gains côté interface, allocations de l'interpréteur, mesure et `VEKA_STATS`.
-- [ ] PR O : interpréteur compilé au chargement (cases, schéma résolu, constantes, fermetures), fonctions pures
-  mémorisées. Cibles : feux ≤ 4 ms en debug, ≤ 1,5 ms en release.
+- [x] PR O : caches par nœud (constantes, places des variables, schéma et fonctions résolus), fonctions pures
+  mémorisées, allocations du layout et de la réconciliation.
+- [ ] Traduction complète en fermetures (cible de départ : feux ≤ 1,5 ms en release), si le besoin s'en fait
+  sentir : les feux tiennent déjà 60 images/s avec de la marge.
 - [ ] Plus tard : ne pas réévaluer les sous-arbres qui ne lisent pas l'horloge.
 
 ## Plus tard

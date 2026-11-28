@@ -300,3 +300,46 @@ fn verre_meme_dessin_que_rust() {
     assert_eq!(d.matches("Glass(").count(), 3, "{d}");
     assert!(!d.contains("GlassMember"), "{d}");
 }
+
+#[test]
+fn les_caches_suivent_model_et_le_rechargement() {
+    // `double` est pure (mémorisée) ; `prix` lit `model` : elle ne l'est pas.
+    let source = r#"
+func double(x: Int) -> Int {
+    x * 2
+}
+
+func prix(i: Int) -> Int {
+    model.base + i
+}
+
+view Caches {
+    @State var n = 1
+
+    VStack {
+        Text("\(double(n)) \(prix(1)) \(2 * 3)")
+        Button("Plus") {
+            n += 1
+        }
+    }
+}
+"#;
+    let p = program(source);
+    p.set_model(veka::lang::Val::record([("base", veka::lang::Val::from(10))]));
+    let mut s = surface(p.view("Caches"));
+    assert_eq!(s.texts()[0], "2 11 6");
+    p.set_model(veka::lang::Val::record([("base", veka::lang::Val::from(20))]));
+    s.frame();
+    assert_eq!(
+        s.texts()[0],
+        "2 21 6",
+        "une fonction qui lit model n'est pas mémorisée"
+    );
+    let bouton = s.rects_of("Button")[0].center();
+    click(&mut s, bouton);
+    assert_eq!(s.texts()[0], "4 21 6");
+    // Rechargé : nouvel arbre, caches vides (la constante change).
+    p.reload(&source.replace("2 * 3", "2 * 4")).expect("rechargement");
+    s.frame();
+    assert_eq!(s.texts()[0], "4 21 8");
+}

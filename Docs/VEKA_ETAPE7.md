@@ -1,6 +1,6 @@
 # Veka : étape 7, un `.vk` rapide
 
-Statut : **validé** (les 6 choix recommandés) ; PR N faite. Fait suite à `VEKA_ETAPE6.md`. Reprend la note de `VEKA_ETAPE5.md` :
+Statut : **validé** (les 6 choix recommandés) ; PR N et PR O faites. Fait suite à `VEKA_ETAPE6.md`. Reprend la note de `VEKA_ETAPE5.md` :
 « pas de bytecode au départ ». L'interpréteur d'arbre a tenu tant que les vues ne bougeaient qu'au clic. Avec
 `@Clock` et les feux d'artifice, une vue est réévaluée à chaque image : c'est maintenant le goulot.
 
@@ -117,6 +117,13 @@ reste pure.
   - fonctions pures mémorisées ;
   - tous les tests `.vk` actuels inchangés (même dessin que Rust) ;
   - essais sur le PC et le Mac.
+  - Fait, avec un écart : plutôt qu'une traduction complète en fermetures, chaque nœud de l'arbre garde un
+    cache rempli à sa première évaluation (valeur constante, place de la variable, fonction ou entrée du
+    schéma appelée, résultats d'une fonction pure). Même effet sur les recherches de noms et les constantes,
+    pour bien moins de code et sans changer l'évaluation. Les allocations du layout, d'Anima et de la
+    réconciliation (une liste d'enfants copiée par nœud) pesaient autant que l'interpréteur : supprimées.
+    Feux : −31 % d'instructions par image ; reste surtout le parcours de l'arbre lui-même. La traduction
+    en fermetures reste possible plus tard si un cas l'exige.
 
 ## 5. Choix à valider
 

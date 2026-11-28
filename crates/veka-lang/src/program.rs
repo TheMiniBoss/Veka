@@ -271,7 +271,7 @@ impl Program {
         base.slots = Rc::new(inst.slots.clone());
         base.handlers = Rc::new(inst.handlers.clone());
         // Les paramètres : ceux de l'appelant, sinon leur défaut.
-        let mut params = Vars::new();
+        let mut params = Vars::default();
         for p in &decl.params {
             let v = match inst.params.get(&p.name) {
                 Some(v) => v.clone(),
@@ -294,7 +294,7 @@ impl Program {
         base.params = Rc::new(params);
         // Les valeurs initiales, dans l'ordre : chacune voit les précédentes.
         let init = |only_missing: Option<&Vars>| -> Result<Vars, Diagnostic> {
-            let mut pre = Vars::new();
+            let mut pre = Vars::default();
             for s in &decl.states {
                 if let Some(v) = only_missing.and_then(|m| m.get(&s.name)) {
                     pre.insert(s.name.clone(), v.clone());
@@ -315,7 +315,7 @@ impl Program {
             Ok(v) => v,
             Err(d) => {
                 first_err = Some(d);
-                Vars::new()
+                Vars::default()
             }
         });
         if let Some(d) = first_err {
