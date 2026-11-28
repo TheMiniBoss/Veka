@@ -2,6 +2,19 @@
 
 Le plus récent en premier.
 
+## Étape 9 — clavier, focus et saisie de texte
+
+### Clavier et focus (PR T)
+- Touches et caractères tapés sur Windows (`WM_KEYDOWN`, `WM_CHAR`) et macOS (`keyDown:`), avec les
+  modificateurs ; `Modifiers::COMMAND` vaut ⌘ sur le Mac et Ctrl ailleurs.
+- Focus : `.focusable()`, un clic le donne, Tab et Maj+Tab le passent, anneau à la couleur d'accent.
+  `.focused(état)` et `.focused_equals(état, valeur)` le relient à un état, dans les deux sens.
+- `.on_key_press(touche, …)` : la touche remonte de la vue qui a le focus jusqu'à la racine.
+  `.keyboard_shortcut(touche, modificateurs)` déclenche un bouton de n'importe où.
+- `.vk` : `$nom` passe un `@State` à une vue qui l'écrit ; `.focusable()`, `.focused($focus, equals: …)`,
+  `.onKeyPress(.return) { … }`, `.keyboardShortcut("r", modifiers: .command)`, `.keyboardShortcut(.cancelAction)`.
+- Exemple `clavier` en Rust et en `.vk` (même dessin, testé après les mêmes touches).
+
 ## Correction des modes de fusion (PR S)
 - Comme SwiftUI, un `.blend_mode` se mélange avec tout ce que l'interface a dessiné derrière la vue, mais plus
   avec le fond de la fenêtre, qui ne fait pas partie du contenu. Avant, un cercle en `multiply` devenait

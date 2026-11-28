@@ -11,7 +11,9 @@ use veka_text::TextSystem;
 
 use crate::element::{Element, View};
 use crate::env::Environment;
-use crate::primitive::{EventCx, EventResult, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
+use crate::primitive::{
+    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal,
+};
 use crate::state;
 use crate::tree::{self, NodeId, Tree};
 
@@ -39,6 +41,15 @@ pub enum InputEvent {
     },
     /// Le pointeur a quitté la fenêtre.
     PointerLeft,
+    /// Une touche appuyée ou relâchée (étape 9).
+    Key {
+        key: veka_foundation::Key,
+        modifiers: veka_foundation::Modifiers,
+        pressed: bool,
+        repeat: bool,
+    },
+    /// Un caractère tapé (après les touches mortes).
+    Char(char),
 }
 
 /// Racine : remplit la fenêtre, peint le fond, centre le contenu.
@@ -327,17 +338,26 @@ impl Surface {
         self.needs_layout |= ticked.layout;
         let mut spec = None;
         let mut dirty = state::take_dirty(self.id);
-        while !dirty.is_empty() {
-            // Les plus hauts d'abord : ré-évaluer un parent ré-évalue ses enfants.
-            dirty.sort_by_key(|&n| self.depth(n));
-            for n in dirty {
-                if self.tree.nodes.contains_key(n) {
-                    self.tree.rebuild(n);
+        // Les états `.focused` ne changent qu'avec un état ou l'arbre : on ne les relit qu'alors.
+        let mut focus_check = self.needs_layout || !dirty.is_empty();
+        loop {
+            while !dirty.is_empty() {
+                // Les plus hauts d'abord : ré-évaluer un parent ré-évalue ses enfants.
+                dirty.sort_by_key(|&n| self.depth(n));
+                for n in dirty {
+                    if self.tree.nodes.contains_key(n) {
+                        self.tree.rebuild(n);
+                    }
                 }
+                self.needs_layout = true;
+                spec = spec.or(state::take_transaction(self.id));
+                // Une vue a pu changer un état pendant son évaluation.
+                dirty = state::take_dirty(self.id);
             }
-            self.needs_layout = true;
-            spec = spec.or(state::take_transaction(self.id));
-            // Une vue a pu changer un état pendant son évaluation.
+            if !std::mem::take(&mut focus_check) || !self.apply_focus_requests() {
+                break;
+            }
+            // Le focus a changé : les états reliés aussi (une seule fois de plus).
             dirty = state::take_dirty(self.id);
         }
         // Deux tours au plus : un `.preferred_color_scheme` qui change refait l'environnement.
@@ -483,7 +503,11 @@ impl Surface {
                 position,
                 button: PointerButton::Primary,
             } => {
-                if let Some(h) = self.hit_test(position)
+                // Un clic donne le focus à la vue qui peut le prendre sous le pointeur, ou le retire.
+                let hit = self.hit_test(position);
+                let target = hit.and_then(|h| self.focusable_ancestor(h));
+                self.set_focus(target);
+                if let Some(h) = hit
                     && self.send(h, PointerEvent::Down { position }, &mut actions)
                 {
                     self.captured = Some(h);
@@ -517,6 +541,19 @@ impl Surface {
                     self.send(old, PointerEvent::Leave, &mut actions);
                 }
             }
+            InputEvent::Key {
+                key,
+                modifiers,
+                pressed: true,
+                repeat,
+            } => self.key_down(
+                KeyEvent {
+                    key,
+                    modifiers,
+                    repeat,
+                },
+                &mut actions,
+            ),
             _ => {}
         }
         // Les actions tournent quand plus rien n'est emprunté : elles peuvent modifier l'état.
@@ -680,6 +717,182 @@ impl Surface {
     }
 
     /// Après un nouveau layout, le nœud survolé peut avoir disparu.
+    /// La vue qui a le focus du clavier, s'il y en a une (sert aux tests et aux hôtes).
+    pub fn focused_rect(&self) -> Option<Rect> {
+        self.tree.focused.map(|f| self.tree.nodes[f].rect)
+    }
+
+    /// Le nœud ou son premier parent qui peut prendre le focus.
+    fn focusable_ancestor(&self, mut id: NodeId) -> Option<NodeId> {
+        loop {
+            let node = &self.tree.nodes[id];
+            if node.prim.focusable() && !node.leaving {
+                return Some(id);
+            }
+            id = node.parent?;
+        }
+    }
+
+    /// `ancestor` est `id` ou l'un de ses parents.
+    fn is_within(&self, mut id: NodeId, ancestor: NodeId) -> bool {
+        loop {
+            if id == ancestor {
+                return true;
+            }
+            match self.tree.nodes.get(id).and_then(|n| n.parent) {
+                Some(p) => id = p,
+                None => return false,
+            }
+        }
+    }
+
+    /// Les nœuds affichés, dans l'ordre de l'arbre.
+    fn live_nodes(&self, from: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut stack = vec![from];
+        while let Some(id) = stack.pop() {
+            out.push(id);
+            let mut children: Vec<NodeId> = self.tree.live_children_iter(id).collect();
+            children.reverse();
+            stack.extend(children);
+        }
+        out
+    }
+
+    /// Donne le focus (ou le retire) et met à jour les états reliés par `.focused`.
+    fn set_focus(&mut self, focus: Option<NodeId>) {
+        if self.tree.focused == focus {
+            return;
+        }
+        self.tree.focused = focus;
+        self.needs_paint = true;
+        let bindings: Vec<(NodeId, crate::views::FocusBinding)> = self
+            .live_nodes(self.root)
+            .into_iter()
+            .filter_map(|id| {
+                let prim = self.tree.nodes[id].prim.as_ref() as &dyn std::any::Any;
+                prim.downcast_ref::<crate::views::FocusBinding>()
+                    .map(|b| (id, b.clone()))
+            })
+            .collect();
+        // D'abord ceux qui perdent le focus, puis celui qui le prend (un même état peut être relié à
+        // plusieurs vues).
+        let (gain, lose): (Vec<_>, Vec<_>) = bindings
+            .into_iter()
+            .partition(|(id, _)| focus.is_some_and(|f| self.is_within(f, *id)));
+        for (_, b) in lose {
+            (b.set)(false);
+        }
+        for (_, b) in gain {
+            (b.set)(true);
+        }
+    }
+
+    /// Les états `.focused` changés par le code : donne le focus au sous-arbre qui le demande, ou le
+    /// retire à celui qui ne le veut plus. Renvoie `true` si le focus a changé.
+    fn apply_focus_requests(&mut self) -> bool {
+        if self
+            .tree
+            .focused
+            .is_some_and(|f| self.tree.nodes.get(f).is_none_or(|n| n.leaving))
+        {
+            self.set_focus(None);
+        }
+        let mut want = None;
+        let mut release = false;
+        for id in self.live_nodes(self.root) {
+            let prim = self.tree.nodes[id].prim.as_ref() as &dyn std::any::Any;
+            let Some(b) = prim.downcast_ref::<crate::views::FocusBinding>() else {
+                continue;
+            };
+            let inside = self.tree.focused.is_some_and(|f| self.is_within(f, id));
+            match ((b.is_on)(), inside) {
+                (true, false) if want.is_none() => {
+                    want = self
+                        .live_nodes(id)
+                        .into_iter()
+                        .find(|&n| self.tree.nodes[n].prim.focusable());
+                }
+                (false, true) => release = true,
+                _ => {}
+            }
+        }
+        let before = self.tree.focused;
+        if let Some(w) = want {
+            self.set_focus(Some(w));
+        } else if release {
+            self.set_focus(None);
+        }
+        self.tree.focused != before
+    }
+
+    /// Une touche appuyée : la vue qui a le focus et ses parents, puis Tab, puis les raccourcis.
+    fn key_down(&mut self, event: KeyEvent, actions: &mut Vec<crate::Action>) {
+        let chain: Vec<NodeId> = match self.tree.focused {
+            Some(f) => std::iter::successors(Some(f), |&n| self.tree.nodes[n].parent).collect(),
+            // Sans focus : toutes les vues, les plus profondes d'abord.
+            None => {
+                let mut all = self.live_nodes(self.root);
+                all.reverse();
+                all
+            }
+        };
+        for id in chain {
+            let node = &mut self.tree.nodes[id];
+            let prim = node.prim.clone();
+            let r = prim.key(
+                &mut EventCx {
+                    state: node.state.as_mut(),
+                    rect: node.rect,
+                },
+                &event,
+            );
+            if r.repaint {
+                self.needs_paint = true;
+            }
+            actions.extend(r.action);
+            if r.handled {
+                return;
+            }
+        }
+        let plain = event.modifiers.without_shift().is_empty();
+        if event.key == veka_foundation::Key::Tab && plain {
+            let back = event.modifiers.contains(veka_foundation::Modifiers::SHIFT);
+            let order: Vec<NodeId> = self
+                .live_nodes(self.root)
+                .into_iter()
+                .filter(|&n| self.tree.nodes[n].prim.focusable())
+                .collect();
+            if order.is_empty() {
+                return;
+            }
+            let at = self.tree.focused.and_then(|f| order.iter().position(|&n| n == f));
+            let next = match (at, back) {
+                (None, false) => 0,
+                (None, true) => order.len() - 1,
+                (Some(i), false) => (i + 1) % order.len(),
+                (Some(i), true) => (i + order.len() - 1) % order.len(),
+            };
+            self.set_focus(Some(order[next]));
+            return;
+        }
+        if event.repeat {
+            return;
+        }
+        let nodes = self.live_nodes(self.root);
+        let found = nodes
+            .iter()
+            .find(|&&n| self.tree.nodes[n].prim.keyboard_shortcut() == Some((event.key, event.modifiers)));
+        if let Some(&s) = found
+            && let Some(a) = self
+                .live_nodes(s)
+                .into_iter()
+                .find_map(|n| self.tree.nodes[n].prim.primary_action())
+        {
+            actions.push(a);
+        }
+    }
+
     fn revalidate_pointer(&mut self) {
         let alive = |tree: &Tree, h: NodeId| tree.nodes.get(h).is_some_and(|n| !n.leaving);
         if self.hovered.is_some_and(|h| !alive(&self.tree, h)) {

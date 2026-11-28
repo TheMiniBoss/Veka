@@ -272,6 +272,8 @@ pub enum ExprKind {
     Str(Vec<StrPart>),
     Color(Color),
     Ident(String),
+    /// `$nom` : un `@State` passé à une vue qui le lit et l'écrit.
+    Binding(String),
     /// `.nom` : énumération, jeton, animation… selon l'endroit.
     Symbol(String),
     Array(Vec<Expr>),

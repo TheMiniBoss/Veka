@@ -5,6 +5,7 @@
 mod anima;
 mod button;
 mod effects;
+mod keyboard;
 mod modifiers;
 mod shape;
 mod text;
@@ -15,6 +16,10 @@ pub use anima::{
 };
 pub use button::{ButtonPrim, ButtonState};
 pub use effects::{BackdropBlur, CompositingGroup, Glass, GlassGroup, GlassPrim, LiquidDistortion};
+pub(crate) use keyboard::handled as key_handled;
+pub use keyboard::{
+    FocusBinding, Focusable, KeyPress, KeyPressPrim, KeyPressResult, KeyboardShortcut, paint_focus_ring,
+};
 pub use modifiers::{Background, EnvModifier, Length, PreferredColorScheme, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};

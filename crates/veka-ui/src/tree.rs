@@ -77,6 +77,8 @@ pub(crate) struct Tree {
     pub created: usize,
     /// Les animations en cours, par nœud.
     pub anims: HashMap<NodeId, NodeAnims>,
+    /// La vue qui a le focus du clavier.
+    pub focused: Option<NodeId>,
 }
 
 impl Tree {
@@ -86,6 +88,7 @@ impl Tree {
             surface,
             created: 0,
             anims: HashMap::new(),
+            focused: None,
         }
     }
 

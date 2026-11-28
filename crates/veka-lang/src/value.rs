@@ -41,6 +41,8 @@ pub enum Val {
     Record(Rc<Vec<(Rc<str>, Val)>>),
     /// Une `@Timeline` (ou une `@Clock`) de la vue.
     Timeline(TimelineState),
+    /// `$nom` : un `@State` lu et écrit par une vue (`.focused($focus)`, `TextField(text: $nom)`).
+    Binding(veka_ui::schema::Binding),
 }
 
 impl Val {
@@ -155,6 +157,7 @@ impl PartialEq for Val {
             (Theme(a), Theme(b)) => Arc::ptr_eq(a, b),
             (Record(a), Record(b)) => a == b,
             (Timeline(a), Timeline(b)) => a.to_bits() == b.to_bits(),
+            (Binding(a), Binding(b)) => Rc::ptr_eq(&a.get, &b.get),
             _ => false,
         }
     }
@@ -200,6 +203,7 @@ impl fmt::Display for Val {
                 f.write_str(" }")
             }
             Val::Timeline(_) => f.write_str("<timeline>"),
+            Val::Binding(_) => f.write_str("<binding>"),
         }
     }
 }
@@ -221,6 +225,7 @@ impl Val {
             Val::Theme(_) => "Theme",
             Val::Record(_) => "Record",
             Val::Timeline(_) => "Timeline",
+            Val::Binding(_) => "Binding",
         }
     }
 
@@ -559,6 +564,34 @@ pub fn gradient(name: &str, a: &Args) -> Option<Result<Paint, String>> {
     Some(r)
 }
 
+/// Une valeur simple du schéma (pour un `$nom`) : booléen, nombre, texte, couleur.
+pub(crate) fn to_simple(v: &Val) -> Value {
+    match v {
+        Val::Bool(b) => Value::Bool(*b),
+        Val::Int(i) => Value::Int(*i),
+        Val::Float(f) => Value::Float(*f),
+        Val::Str(s) => Value::String(s.clone()),
+        Val::Color(c) => Value::Color(*c),
+        other => Value::String(Rc::from(other.to_string())),
+    }
+}
+
+/// L'inverse de [`to_simple`], au type de l'ancienne valeur (`None` : type différent).
+pub(crate) fn from_simple(v: &Value, old: &Val) -> Option<Val> {
+    let new = match v {
+        Value::Bool(b) => Val::Bool(*b),
+        Value::Int(i) => match old {
+            Val::Float(_) => Val::Float(*i as f64),
+            _ => Val::Int(*i),
+        },
+        Value::Float(f) => Val::Float(*f),
+        Value::String(s) | Value::Enum(s) => Val::Str(s.clone()),
+        Value::Color(c) => Val::Color(*c),
+        _ => return None,
+    };
+    (std::mem::discriminant(&new) == std::mem::discriminant(old)).then_some(new)
+}
+
 /// Convertit une valeur pour un paramètre du schéma de type `ty`.
 pub fn to_schema(v: &Val, ty: ValueType) -> Result<Value, String> {
     let wrong = || format!("{} attendu, trouvé {} ({v})", type_label(ty), v.type_name());
@@ -599,6 +632,15 @@ pub fn to_schema(v: &Val, ty: ValueType) -> Result<Value, String> {
         ValueType::Animation => Value::Animation(to_animation(v)?),
         ValueType::Transition => Value::Transition(to_transition(v)?),
         ValueType::Action => return Err("une action s'écrit entre `{ }`".into()),
+        ValueType::Binding => match v {
+            Val::Binding(b) => Value::Binding(b.clone()),
+            _ => {
+                return Err(format!(
+                    "un état attendu (`$nom`), trouvé {} ({v})",
+                    v.type_name()
+                ));
+            }
+        },
         ValueType::Any => match v {
             Val::Bool(b) => Value::Bool(*b),
             Val::Int(i) => Value::Int(*i),
@@ -622,6 +664,7 @@ fn type_label(ty: ValueType) -> &'static str {
         ValueType::Action => "une action",
         ValueType::Animation => "une animation",
         ValueType::Transition => "une transition",
+        ValueType::Binding => "un état (`$nom`)",
         ValueType::Any => "une valeur",
     }
 }

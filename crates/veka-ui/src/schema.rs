@@ -41,6 +41,22 @@ pub enum Value {
     Animation(Animation),
     /// Une transition d'entrée et de sortie.
     Transition(Transition),
+    /// Un état lu et écrit par la vue (`$nom` en `.vk`), comme un `Binding` de SwiftUI (étape 9).
+    Binding(Binding),
+}
+
+/// Un état lu et écrit par une vue (`.focused($focus)`, `TextField(text: $nom)`), sous forme de valeurs
+/// simples du schéma.
+#[derive(Clone)]
+pub struct Binding {
+    pub get: Rc<dyn Fn() -> Value>,
+    pub set: Rc<dyn Fn(Value)>,
+}
+
+impl fmt::Debug for Binding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Binding({:?})", (self.get)())
+    }
 }
 
 impl Value {
@@ -72,6 +88,8 @@ pub enum ValueType {
     Action,
     Animation,
     Transition,
+    /// Un état lu et écrit par la vue (`$nom`).
+    Binding,
     /// Une valeur simple quelconque (booléen, nombre, texte, couleur), comparée par empreinte.
     Any,
 }
@@ -183,6 +201,22 @@ impl Params {
             Value::Animation(a) => Some(*a),
             _ => None,
         }
+    }
+
+    pub fn binding(&self, name: &str) -> Option<Binding> {
+        match self.get(name)? {
+            Value::Binding(b) => Some(b.clone()),
+            _ => None,
+        }
+    }
+
+    /// Une touche : un nom (`"return"`, `".escape"`) ou un caractère (`"s"`).
+    pub fn key(&self, name: &str) -> Option<veka_foundation::Key> {
+        let text = match self.get(name)? {
+            Value::String(s) | Value::Enum(s) => s.clone(),
+            _ => return None,
+        };
+        veka_foundation::Key::from_name(text.strip_prefix('.').unwrap_or(&text))
     }
 
     pub fn transition(&self, name: &str) -> Option<Transition> {
@@ -357,6 +391,7 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         | (ValueType::Action, Value::Action(_))
         | (ValueType::Animation, Value::Animation(_))
         | (ValueType::Transition, Value::Transition(_))
+        | (ValueType::Binding, Value::Binding(_))
         | (
             ValueType::Any,
             Value::Bool(_)
@@ -369,6 +404,64 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         (ValueType::Enum(names), Value::Enum(s) | Value::String(s)) => names.contains(&&**s),
         _ => false,
     }
+}
+
+/// Le primitive de `.focused` à partir d'un état du schéma.
+fn focus_binding(b: Binding, equals: Option<Value>) -> views::FocusBinding {
+    let get = b.get.clone();
+    match equals {
+        // Un booléen.
+        None => views::FocusBinding {
+            is_on: Rc::new(move || matches!(get(), Value::Bool(true))),
+            set: Rc::new(move |on| {
+                if !matches!((b.get)(), Value::Bool(v) if v == on) {
+                    (b.set)(Value::Bool(on));
+                }
+            }),
+        },
+        // Une valeur : l'état la prend avec le focus, et revient à « rien » (texte vide, 0, faux) sans.
+        Some(want) => {
+            let key = want.key();
+            let empty = match want {
+                Value::String(_) | Value::Enum(_) => Value::String(Rc::from("")),
+                Value::Int(_) | Value::Float(_) => Value::Int(0),
+                _ => Value::Bool(false),
+            };
+            views::FocusBinding {
+                is_on: Rc::new(move || get().key() == key),
+                set: Rc::new(move |on| {
+                    let now = (b.get)().key() == key;
+                    if on && !now {
+                        (b.set)(want.clone());
+                    } else if !on && now {
+                        (b.set)(empty.clone());
+                    }
+                }),
+            }
+        }
+    }
+}
+
+/// Les modificateurs d'un raccourci : `.command` par défaut, ou les noms écrits (`[.command, .shift]`).
+fn modifiers(v: Option<&Value>) -> veka_foundation::Modifiers {
+    use veka_foundation::Modifiers as M;
+    let text = match v {
+        None => return M::COMMAND,
+        Some(Value::String(s) | Value::Enum(s)) => s.clone(),
+        Some(_) => return M::COMMAND,
+    };
+    let mut m = M::NONE;
+    for (name, bit) in [
+        ("command", M::COMMAND),
+        ("shift", M::SHIFT),
+        ("option", M::ALT),
+        ("control", M::CONTROL),
+    ] {
+        if text.contains(name) {
+            m |= bit;
+        }
+    }
+    m
 }
 
 const fn p(name: &'static str, ty: ValueType, required: bool, doc: &'static str) -> ParamSpec {
@@ -977,6 +1070,98 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, c| {
                 let a = p.action("action").expect("vérifié par le schéma");
                 one(c).wrap(views::TapGesture { action: a })
+            },
+        },
+        Entry {
+            name: "focusable",
+            kind: Modifier,
+            children: One,
+            doc: "la vue prend le focus du clavier (clic, Tab)",
+            params: NO_PARAMS,
+            build: |_, c| one(c).focusable(),
+        },
+        Entry {
+            name: "focused",
+            kind: Modifier,
+            children: One,
+            doc: "relie le focus à un état : un booléen, ou une valeur avec `equals`",
+            params: const {
+                &[
+                    p("binding", ValueType::Binding, true, "état relié (`$focus`)"),
+                    p(
+                        "equals",
+                        ValueType::Any,
+                        false,
+                        "valeur de l'état quand ce sous-arbre a le focus",
+                    ),
+                ]
+            },
+            build: |p, c| {
+                let b = p.binding("binding").expect("vérifié par le schéma");
+                one(c).wrap(focus_binding(b, p.get("equals").cloned()))
+            },
+        },
+        Entry {
+            name: "onKeyPress",
+            kind: Modifier,
+            children: One,
+            doc: "action à l'appui d'une touche (`.return`, `.escape`, `\"r\"`…), qui la prend",
+            params: const {
+                &[
+                    p("key", ValueType::Any, true, "touche"),
+                    p("action", ValueType::Action, true, "action"),
+                ]
+            },
+            build: |p, c| {
+                let a = p.action("action").expect("vérifié par le schéma");
+                let Some(key) = p.key("key") else { return one(c) };
+                one(c).wrap(views::KeyPressPrim {
+                    key: Some(key),
+                    action: views::key_handled(a),
+                })
+            },
+        },
+        Entry {
+            name: "keyboardShortcut",
+            kind: Modifier,
+            children: One,
+            doc: "déclenche le bouton au clavier (`.defaultAction`, `.cancelAction`, ou une touche et ses modificateurs)",
+            params: const {
+                &[
+                    p(
+                        "key",
+                        ValueType::Any,
+                        true,
+                        "touche, `.defaultAction` ou `.cancelAction`",
+                    ),
+                    p(
+                        "modifiers",
+                        ValueType::Any,
+                        false,
+                        "`.command` (par défaut), `.shift`, `.option`, `.control`, `[]`",
+                    ),
+                ]
+            },
+            build: |p, c| {
+                let name = match p.get("key") {
+                    Some(Value::String(s) | Value::Enum(s)) => s.trim_start_matches('.').to_owned(),
+                    _ => String::new(),
+                };
+                let (key, modifiers) = match name.as_str() {
+                    "defaultAction" => (
+                        Some(veka_foundation::Key::Enter),
+                        veka_foundation::Modifiers::NONE,
+                    ),
+                    "cancelAction" => (
+                        Some(veka_foundation::Key::Escape),
+                        veka_foundation::Modifiers::NONE,
+                    ),
+                    _ => (p.key("key"), modifiers(p.get("modifiers"))),
+                };
+                match key {
+                    Some(key) => one(c).keyboard_shortcut(key, modifiers),
+                    Option::None => one(c),
+                }
             },
         },
         Entry {

@@ -691,6 +691,23 @@ impl Host {
                 self.input(ctx, window, event);
             }
             PlatformEvent::PointerLeft { window } => self.input(ctx, window, InputEvent::PointerLeft),
+            PlatformEvent::Key {
+                window,
+                key,
+                modifiers,
+                pressed,
+                repeat,
+            } => self.input(
+                ctx,
+                window,
+                InputEvent::Key {
+                    key,
+                    modifiers,
+                    pressed,
+                    repeat,
+                },
+            ),
+            PlatformEvent::Char { window, ch } => self.input(ctx, window, InputEvent::Char(ch)),
         }
     }
 }
