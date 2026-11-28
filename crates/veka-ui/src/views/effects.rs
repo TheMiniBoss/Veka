@@ -2,7 +2,9 @@
 
 use veka_colora::{Paint, Token};
 use veka_foundation::{Color, Rect};
-use veka_graphics::{BackdropEffect, BlurEffect, GlassEffect, GlassShape, MAX_GLASS_SHAPES, Shape};
+use veka_graphics::{
+    BackdropEffect, BlendMode, BlurEffect, DrawCommand, GlassEffect, GlassShape, MAX_GLASS_SHAPES, Shape,
+};
 
 use crate::element::Element;
 use crate::env::{BackdropQuality, Environment};
@@ -562,6 +564,48 @@ impl Element {
                 shape,
                 time: clock.value("t"),
             })
+        })
+    }
+}
+
+/// Un calque (étape 8) : le sous-arbre est dessiné à part, puis composé d'un bloc sur ce qui est
+/// derrière (`.blend_mode`, `.compositing_group`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompositingGroup {
+    pub blend: BlendMode,
+}
+
+impl Primitive for CompositingGroup {
+    fn name(&self) -> &'static str {
+        if self.blend == BlendMode::Normal {
+            "compositingGroup"
+        } else {
+            "blendMode"
+        }
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, _rect: Rect) {
+        cx.list().push(DrawCommand::PushGroup {
+            blend: self.blend,
+            opacity: 1.0,
+        });
+        cx.paint_children();
+        cx.list().push(DrawCommand::PopGroup);
+    }
+}
+
+impl Element {
+    /// Mélange la vue avec ce qui est dessiné derrière elle (`multiply`, `screen`…), d'un bloc : comme
+    /// SwiftUI, le sous-arbre est d'abord dessiné à part.
+    pub fn blend_mode(self, blend: BlendMode) -> Element {
+        self.wrap(CompositingGroup { blend })
+    }
+
+    /// Dessine le sous-arbre à part avant de le composer : une `.opacity` appliquée ensuite rend le
+    /// groupe transparent d'un bloc (les recouvrements ne se voient plus).
+    pub fn compositing_group(self) -> Element {
+        self.wrap(CompositingGroup {
+            blend: BlendMode::Normal,
         })
     }
 }

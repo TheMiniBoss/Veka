@@ -866,6 +866,35 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, c| one(c).glass_group_with(p.number("smoothness").unwrap_or(16.0), glass_params(p)),
         },
         Entry {
+            name: "blendMode",
+            kind: Modifier,
+            children: One,
+            doc: "mélange la vue avec ce qui est derrière (multiply, screen, overlay…)",
+            params: const {
+                &[p(
+                    "mode",
+                    ValueType::Enum(&veka_graphics::BlendMode::NAMES),
+                    true,
+                    "le mode de fusion",
+                )]
+            },
+            build: |p, c| {
+                let mode = p
+                    .enumeration("mode")
+                    .and_then(veka_graphics::BlendMode::from_name)
+                    .unwrap_or_default();
+                one(c).blend_mode(mode)
+            },
+        },
+        Entry {
+            name: "compositingGroup",
+            kind: Modifier,
+            children: One,
+            doc: "dessine le sous-arbre à part : une opacité ensuite s'applique d'un bloc",
+            params: &[],
+            build: |_, c| one(c).compositing_group(),
+        },
+        Entry {
             name: "liquidDistortion",
             kind: Modifier,
             children: One,

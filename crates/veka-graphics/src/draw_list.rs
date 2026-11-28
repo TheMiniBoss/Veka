@@ -230,6 +230,13 @@ pub enum DrawCommand {
         opacity: f32,
     },
     PopLayer,
+    /// Début d'un **calque** (étape 8) : le sous-arbre est dessiné à part, puis composé d'un bloc sur ce
+    /// qui est derrière avec `blend` et `opacity`. Sert à `blend_mode` et à `compositing_group`.
+    PushGroup {
+        blend: crate::BlendMode,
+        opacity: f32,
+    },
+    PopGroup,
     /// Lit ce qui est déjà dessiné derrière `rect` (Liquid Glass) : coupe la liste en segments.
     Backdrop {
         shape: Shape,
@@ -424,7 +431,10 @@ impl fmt::Display for DrawList {
         for c in &self.commands {
             if matches!(
                 c,
-                DrawCommand::PopClip | DrawCommand::PopTransform | DrawCommand::PopLayer
+                DrawCommand::PopClip
+                    | DrawCommand::PopTransform
+                    | DrawCommand::PopLayer
+                    | DrawCommand::PopGroup
             ) {
                 depth = depth.saturating_sub(1);
             }
@@ -457,9 +467,13 @@ impl fmt::Display for DrawList {
                 DrawCommand::PushClip { shape, rect: x } => writeln!(f, "clip {shape:?} {}", rect(x))?,
                 DrawCommand::PushTransform(t) => writeln!(f, "transform {t:?}")?,
                 DrawCommand::PushLayer { opacity } => writeln!(f, "layer opacity={}", r(*opacity))?,
-                DrawCommand::PopClip | DrawCommand::PopTransform | DrawCommand::PopLayer => {
-                    writeln!(f, "end")?
+                DrawCommand::PushGroup { blend, opacity } => {
+                    writeln!(f, "group {} opacity={}", blend.name(), r(*opacity))?
                 }
+                DrawCommand::PopClip
+                | DrawCommand::PopTransform
+                | DrawCommand::PopLayer
+                | DrawCommand::PopGroup => writeln!(f, "end")?,
                 DrawCommand::Backdrop {
                     shape,
                     rect: x,
@@ -468,7 +482,10 @@ impl fmt::Display for DrawList {
             }
             if matches!(
                 c,
-                DrawCommand::PushClip { .. } | DrawCommand::PushTransform(_) | DrawCommand::PushLayer { .. }
+                DrawCommand::PushClip { .. }
+                    | DrawCommand::PushTransform(_)
+                    | DrawCommand::PushLayer { .. }
+                    | DrawCommand::PushGroup { .. }
             ) {
                 depth += 1;
             }

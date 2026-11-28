@@ -21,7 +21,8 @@
 - [ ] Constantes `VEKA_UNIT_*` de `veka.h` : littéraux composés du C99, à revoir pour les liaisons C++.
 - [ ] Hiérarchie (`secondary` 60 %…) : le mélange alpha se fait en lumière linéaire, donc un noir à 60 % sur fond clair paraît bien plus pâle que chez Apple (mélange en sRGB) ; à corriger (mélange en sRGB pour le texte, ou alphas compensés).
 - [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
-- [ ] Modes de fusion (avec les effets) ; images comme remplissage (avec la vue `Image`).
+- [x] Modes de fusion (étape 8).
+- [ ] Images comme remplissage (avec la vue `Image`).
 
 ## Étape 4 (Anima)
 - [x] PR I : timelines, `matched_geometry_effect`, `.on_animation_end`, interface C et exemple C, schéma,
@@ -63,6 +64,11 @@
 - [ ] Traduction complète en fermetures (cible de départ : feux ≤ 1,5 ms en release), si le besoin s'en fait
   sentir : les feux tiennent déjà 60 images/s avec de la marge.
 - [ ] Plus tard : ne pas réévaluer les sous-arbres qui ne lisent pas l'horloge.
+
+## Étape 8 (modes de fusion)
+- [x] PR P : calques, 21 modes, `blend_mode` et `compositing_group` en Rust et en `.vk`, exemple `fusion`.
+- [ ] PR Q : liaisons C, C++ et C#, exemple C.
+- [ ] Calques à la taille du groupe (aujourd'hui : de la fenêtre, vidés en entier à chaque groupe).
 
 ## Plus tard
 - [ ] Langage `.vk` : tout faire sans autre langage (maths, hasard, temps…).

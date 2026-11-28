@@ -14,7 +14,7 @@ pub use anima::{
     ScaleEffectPrim, TransitionPrim, value_key,
 };
 pub use button::{ButtonPrim, ButtonState};
-pub use effects::{BackdropBlur, Glass, GlassGroup, GlassPrim, LiquidDistortion};
+pub use effects::{BackdropBlur, CompositingGroup, Glass, GlassGroup, GlassPrim, LiquidDistortion};
 pub use modifiers::{Background, EnvModifier, Length, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};
