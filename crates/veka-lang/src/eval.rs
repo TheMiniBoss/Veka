@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -14,9 +15,209 @@ pub(crate) use crate::ast::*;
 use crate::value::{Sym, Val, gradient, to_animation, to_paint, to_schema};
 use crate::{Diagnostic, Span};
 
-pub(crate) type Vars = HashMap<String, Val>;
+pub(crate) type Vars = HashMap<String, Val, BuildHasherDefault<FxHasher>>;
+
+/// Des arguments évalués : sur la pile jusqu'à 4.
+type ArgVals = smallvec::SmallVec<[(Option<String>, Val); 4]>;
 
 type R<T> = Result<T, Diagnostic>;
+
+/// Les derniers résultats d'une fonction pure, à un site d'appel : par arguments exacts. Petit et borné :
+/// au-delà, on repart d'une table vide.
+#[derive(Default)]
+pub(crate) struct Memo {
+    map: HashMap<[ArgKey; MEMO_ARGS], Val, BuildHasherDefault<FxHasher>>,
+}
+
+const MEMO_MAX: usize = 4096;
+/// Au-delà de 4 arguments, pas de mémoire (la clé reste sur la pile).
+const MEMO_ARGS: usize = 4;
+
+impl Memo {
+    fn key(args: &[(Option<String>, Val)]) -> Option<[ArgKey; MEMO_ARGS]> {
+        if args.len() > MEMO_ARGS {
+            return None;
+        }
+        let mut key = [const { ArgKey::Unit }; MEMO_ARGS];
+        for (k, (_, v)) in key.iter_mut().zip(args) {
+            *k = ArgKey::of(v)?;
+        }
+        Some(key)
+    }
+}
+
+/// Un argument comparable bit à bit (les flottants par leurs bits : `0.1 + 0.2` n'est pas `0.3`).
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum ArgKey {
+    Unit,
+    Bool(bool),
+    Int(i64),
+    Float(u64),
+    Str(Rc<str>),
+}
+
+impl ArgKey {
+    fn of(v: &Val) -> Option<ArgKey> {
+        Some(match v {
+            Val::Unit => ArgKey::Unit,
+            Val::Bool(b) => ArgKey::Bool(*b),
+            Val::Int(i) => ArgKey::Int(*i),
+            Val::Float(f) => ArgKey::Float(f.to_bits()),
+            Val::Str(s) => ArgKey::Str(s.clone()),
+            _ => return None,
+        })
+    }
+}
+
+/// Ce qu'un nom appelé désigne (gardé par site d'appel).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Callee {
+    /// Une fonction du fichier ; `pure` : elle peut être mémorisée.
+    Func { pure: bool },
+    /// Une fonction de base (ou une erreur, signalée à chaque appel).
+    Other,
+}
+
+/// Une expression constante : littéraux, symboles, et ce qui ne combine qu'eux (opérations, fonctions
+/// pures du fichier, fonctions de base). Aucun nom n'y est lu : une variable peut tout masquer.
+fn is_const(module: &Module, e: &Expr) -> bool {
+    let k = |e: &Expr| is_const(module, e);
+    match &e.kind {
+        ExprKind::Bool(_)
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Color(_)
+        | ExprKind::Symbol(_) => true,
+        ExprKind::Ident(_) => false,
+        ExprKind::Str(parts) => parts.iter().all(|p| match p {
+            StrPart::Text(_) => true,
+            StrPart::Expr(e) => k(e),
+        }),
+        ExprKind::Array(items) => items.iter().all(k),
+        ExprKind::Record(fields) => fields.iter().all(|(_, e)| k(e)),
+        ExprKind::Index { recv, index } => k(recv) && k(index),
+        ExprKind::Range { lo, hi, .. } => k(lo) && k(hi),
+        ExprKind::Unary { expr, .. } => k(expr),
+        ExprKind::Binary { lhs, rhs, .. } => k(lhs) && k(rhs),
+        ExprKind::Ternary { cond, then, els } => k(cond) && k(then) && k(els),
+        ExprKind::Member { recv, .. } => k(recv),
+        ExprKind::Call {
+            callee,
+            args,
+            trailing,
+        } => {
+            trailing.is_none()
+                && args.iter().all(|a| k(&a.value))
+                && match &callee.kind {
+                    ExprKind::Symbol(_) => true,
+                    ExprKind::Member { recv, .. } => k(recv),
+                    ExprKind::Ident(n) => match module.func(n) {
+                        Some(f) => func_is_pure(module, f, 0),
+                        None => module.timeline(n).is_none() && n != "model",
+                    },
+                    _ => false,
+                }
+        }
+    }
+}
+
+/// Une fonction est pure si ni elle ni celles qu'elle appelle ne lisent `model` (les données de
+/// l'hôte, qui changent). Le reste de ce qu'elle voit (paramètres, `let`, thèmes, `pi`) est fixe.
+fn func_is_pure(module: &Module, f: &FuncDecl, depth: u32) -> bool {
+    fn expr(module: &Module, e: &Expr, depth: u32) -> bool {
+        let all = |es: &mut dyn Iterator<Item = &Expr>| {
+            let mut ok = true;
+            for e in es {
+                ok &= expr(module, e, depth);
+            }
+            ok
+        };
+        match &e.kind {
+            ExprKind::Ident(n) => n != "model",
+            ExprKind::Bool(_)
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Color(_)
+            | ExprKind::Symbol(_) => true,
+            ExprKind::Str(parts) => parts.iter().all(|p| match p {
+                StrPart::Text(_) => true,
+                StrPart::Expr(e) => expr(module, e, depth),
+            }),
+            ExprKind::Array(items) => all(&mut items.iter()),
+            ExprKind::Record(fields) => all(&mut fields.iter().map(|(_, e)| e)),
+            ExprKind::Index { recv, index } => expr(module, recv, depth) && expr(module, index, depth),
+            ExprKind::Range { lo, hi, .. } => expr(module, lo, depth) && expr(module, hi, depth),
+            ExprKind::Unary { expr: x, .. } => expr(module, x, depth),
+            ExprKind::Binary { lhs, rhs, .. } => expr(module, lhs, depth) && expr(module, rhs, depth),
+            ExprKind::Ternary { cond, then, els } => {
+                expr(module, cond, depth) && expr(module, then, depth) && expr(module, els, depth)
+            }
+            ExprKind::Member { recv, .. } => expr(module, recv, depth),
+            ExprKind::Call {
+                callee,
+                args,
+                trailing,
+            } => {
+                if trailing.is_some() {
+                    return false;
+                }
+                let callee_ok = match &callee.kind {
+                    ExprKind::Ident(n) => match module.func(n) {
+                        Some(g) => func_is_pure(module, g, depth + 1),
+                        None => n != "model",
+                    },
+                    _ => expr(module, callee, depth),
+                };
+                callee_ok && all(&mut args.iter().map(|a| &a.value))
+            }
+        }
+    }
+    // Une récursion profonde : on ne mémorise pas (la vraie erreur viendra à l'exécution).
+    if depth > 16 {
+        return false;
+    }
+    f.body.iter().all(|st| match st {
+        Stmt::Let { value, .. } | Stmt::Expr(value) => expr(module, value, depth),
+        _ => false,
+    })
+}
+
+/// Un hachage rapide (celui de rustc) : les clés sont petites et ne viennent pas de l'extérieur.
+#[derive(Default)]
+pub(crate) struct FxHasher(u64);
+
+impl std::hash::Hasher for FxHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            self.add(u64::from_le_bytes(c.try_into().expect("8 octets")));
+        }
+        for &b in chunks.remainder() {
+            self.add(u64::from(b));
+        }
+    }
+    fn write_u8(&mut self, i: u8) {
+        self.add(u64::from(i));
+    }
+    fn write_u64(&mut self, i: u64) {
+        self.add(i);
+    }
+    fn write_i64(&mut self, i: i64) {
+        self.add(i as u64);
+    }
+    fn write_usize(&mut self, i: usize) {
+        self.add(i as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+impl FxHasher {
+    fn add(&mut self, i: u64) {
+        self.0 = (self.0.rotate_left(5) ^ i).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
 
 /// Ce que l'évaluation partage : le fichier, le schéma, les thèmes construits.
 pub(crate) struct Shared {
@@ -97,7 +298,7 @@ impl Cx {
         }
         thread_local! {
             static EMPTY: Empty = Empty {
-                vars: Rc::new(Vars::new()),
+                vars: Rc::new(Vars::default()),
                 name: Rc::from(""),
                 slots: Rc::new(HashMap::new()),
                 handlers: Rc::new(HashMap::new()),
@@ -160,10 +361,32 @@ pub(crate) fn suggest<'a>(name: &str, candidates: impl Iterator<Item = &'a str>)
 }
 
 impl Cx {
+    /// Comme [`lookup`](Self::lookup), en retenant dans `back` la place d'une locale : au même endroit
+    /// du fichier, elle est à la même distance du sommet de la pile (vérifié par son nom).
+    fn lookup_at(&self, name: &str, back: &std::cell::Cell<u32>) -> Option<Val> {
+        let b = back.get() as usize;
+        if b > 0
+            && let Some(i) = self.locals.len().checked_sub(b)
+            && *self.locals[i].0 == *name
+        {
+            return Some(self.locals[i].1.clone());
+        }
+        if let Some(i) = self.locals.iter().rposition(|(n, _)| &**n == name) {
+            back.set((self.locals.len() - i) as u32);
+            return Some(self.locals[i].1.clone());
+        }
+        self.lookup_outer(name)
+    }
+
     fn lookup(&self, name: &str) -> Option<Val> {
         if let Some((_, v)) = self.locals.iter().rev().find(|(n, _)| &**n == name) {
             return Some(v.clone());
         }
+        self.lookup_outer(name)
+    }
+
+    /// Ce qui n'est pas une locale : états, paramètres, thèmes, `model`, `pi`.
+    fn lookup_outer(&self, name: &str) -> Option<Val> {
         if let Some(v) = self.pre.get(name) {
             return Some(v.clone());
         }
@@ -191,6 +414,26 @@ impl Cx {
     // --- Expressions ---------------------------------------------------------------------------
 
     pub fn eval(&self, e: &Expr) -> R<Val> {
+        match e.cache.konst.get() {
+            Some(Some(v)) => Ok(v.clone()),
+            Some(None) => self.eval_raw(e),
+            None => {
+                // Première évaluation : une expression constante est calculée une fois pour toutes.
+                let k = if is_const(&self.shared.module, e) {
+                    self.eval_raw(e).ok()
+                } else {
+                    None
+                };
+                let _ = e.cache.konst.set(k.clone());
+                match k {
+                    Some(v) => Ok(v),
+                    None => self.eval_raw(e),
+                }
+            }
+        }
+    }
+
+    fn eval_raw(&self, e: &Expr) -> R<Val> {
         let span = e.span;
         Ok(match &e.kind {
             ExprKind::Bool(b) => Val::Bool(*b),
@@ -207,7 +450,7 @@ impl Cx {
                 }
                 Val::Str(Rc::from(s))
             }
-            ExprKind::Ident(n) => self.lookup(n).ok_or_else(|| {
+            ExprKind::Ident(n) => self.lookup_at(n, &e.cache.back).ok_or_else(|| {
                 let mut names: Vec<String> = self.locals.iter().map(|(n, _)| n.to_string()).collect();
                 names.extend(self.pre.keys().cloned());
                 names.extend(self.params.keys().cloned());
@@ -320,21 +563,47 @@ impl Cx {
                 if trailing.is_some() {
                     return Err(err(span, "une fermeture `{ }` n'a pas de valeur ici"));
                 }
-                let args = self.args(args)?;
+                let mut vals = ArgVals::new();
+                self.args_into(args, &mut vals)?;
+                let args = vals;
                 match &callee.kind {
                     ExprKind::Symbol(n) => Val::Sym(Rc::new(Sym {
                         name: n.clone(),
-                        args: Some(args),
+                        args: Some(args.into_vec()),
                         chain: Vec::new(),
                     })),
                     ExprKind::Member { recv, name } => {
                         let r = self.eval(recv)?;
-                        member(&r, name, Some(args)).map_err(|m| err(span, m))?
+                        member(&r, name, Some(args.into_vec())).map_err(|m| err(span, m))?
                     }
                     ExprKind::Ident(n) => {
                         let shared = self.shared.clone();
-                        if let Some(f) = shared.module.func(n) {
-                            return self.call_func(f, args, span);
+                        let module = &shared.module;
+                        // Fonction du fichier ou de base : décidé une fois par site d'appel.
+                        let callee = *e.cache.callee.get_or_init(|| match module.func(n) {
+                            Some(f) => Callee::Func {
+                                pure: func_is_pure(module, f, 0),
+                            },
+                            None => Callee::Other,
+                        });
+                        if let Callee::Func { pure } = callee {
+                            // Pure : même arguments, même résultat (seulement des `let` et une valeur).
+                            let key = Memo::key(&args).filter(|_| pure);
+                            if let Some(key) = &key
+                                && let Some(v) = e.cache.memo.borrow().map.get(key)
+                            {
+                                return Ok(v.clone());
+                            }
+                            let f = module.func(n).expect("trouvée au premier appel");
+                            let v = self.call_func(f, args, span)?;
+                            if let Some(key) = key {
+                                let mut memo = e.cache.memo.borrow_mut();
+                                if memo.map.len() >= MEMO_MAX {
+                                    memo.map.clear();
+                                }
+                                memo.map.insert(key, v.clone());
+                            }
+                            return Ok(v);
                         }
                         if shared.module.timeline(n).is_some() {
                             return Err(err(
@@ -361,7 +630,7 @@ impl Cx {
     }
 
     /// Une fonction du fichier : pure, elle ne voit que ses paramètres (et les autres fonctions).
-    fn call_func(&self, f: &FuncDecl, args: Vec<(Option<String>, Val)>, span: Span) -> R<Val> {
+    fn call_func(&self, f: &FuncDecl, args: ArgVals, span: Span) -> R<Val> {
         if self.depth > 64 {
             return Err(err(
                 span,
@@ -427,18 +696,33 @@ impl Cx {
         }
     }
 
-    fn args(&self, args: &[Arg]) -> R<Vec<(Option<String>, Val)>> {
-        args.iter()
-            .map(|a| Ok((a.label.clone(), self.eval(&a.value)?)))
-            .collect()
+    /// Les arguments évalués, sur la pile jusqu'à 4 (la plupart des appels).
+    fn args(&self, args: &[Arg]) -> R<ArgVals> {
+        let mut out = ArgVals::new();
+        self.args_into(args, &mut out)?;
+        Ok(out)
+    }
+
+    /// Comme [`args`](Self::args), dans `out` (sans recopier la liste au retour).
+    fn args_into(&self, args: &[Arg], out: &mut ArgVals) -> R<()> {
+        for a in args {
+            out.push((a.label.clone(), self.eval(&a.value)?));
+        }
+        Ok(())
     }
 
     // --- Vues ----------------------------------------------------------------------------------
 
     /// Un corps : les vues qu'il donne.
     pub fn body(&mut self, stmts: &[Stmt]) -> R<Vec<Element>> {
-        let mark = self.locals.len();
         let mut out = Vec::new();
+        self.body_into(stmts, &mut out)?;
+        Ok(out)
+    }
+
+    /// Comme [`body`](Self::body), en ajoutant à `out` (un `ForEach` remplit une seule liste).
+    fn body_into(&mut self, stmts: &[Stmt], out: &mut Vec<Element>) -> R<()> {
+        let mark = self.locals.len();
         for s in stmts {
             match s {
                 Stmt::Expr(e) => {
@@ -449,7 +733,7 @@ impl Cx {
                     } = &e.kind
                         && matches!(&callee.kind, ExprKind::Ident(n) if n == "ForEach")
                     {
-                        self.for_each(e.span, args, trailing.as_ref(), &mut out)?;
+                        self.for_each(e.span, args, trailing.as_ref(), out)?;
                     } else if let Some(name) = slot_name(e) {
                         out.extend(self.slot(name, e.span)?);
                     } else {
@@ -458,9 +742,9 @@ impl Cx {
                 }
                 Stmt::If { cond, then, els, .. } => {
                     if self.bool(cond)? {
-                        out.extend(self.body(then)?);
+                        self.body_into(then, out)?;
                     } else if let Some(els) = els {
-                        out.extend(self.body(els)?);
+                        self.body_into(els, out)?;
                     }
                 }
                 Stmt::Let { name, value, .. } => {
@@ -476,7 +760,7 @@ impl Cx {
             }
         }
         self.locals.truncate(mark);
-        Ok(out)
+        Ok(())
     }
 
     /// Le contenu de `Slot(nom)` (rien si l'appelant n'en a pas donné).
@@ -520,9 +804,9 @@ impl Cx {
             if let Some(p) = body.params.get(1) {
                 self.locals.push((p.clone(), Val::Int(i as i64)));
             }
-            let r = self.body(&body.body);
+            let r = self.body_into(&body.body, out);
             self.locals.truncate(mark);
-            out.extend(r?);
+            r?;
         }
         Ok(())
     }
@@ -538,13 +822,15 @@ impl Cx {
     fn element_h(&mut self, e: &Expr, handlers: &mut Vec<(String, Span, Handler)>) -> R<Element> {
         let span = e.span;
         match &e.kind {
-            ExprKind::Ident(n) => self.entry_or_view(n, &[], None, handlers, span),
+            ExprKind::Ident(n) => self.entry_or_view(n, &[], None, handlers, span, &e.cache),
             ExprKind::Call {
                 callee,
                 args,
                 trailing,
             } => match &callee.kind {
-                ExprKind::Ident(n) => self.entry_or_view(n, args, trailing.as_ref(), handlers, span),
+                ExprKind::Ident(n) => {
+                    self.entry_or_view(n, args, trailing.as_ref(), handlers, span, &e.cache)
+                }
                 ExprKind::Member { recv, name } if name == "on" => {
                     let event = match args.first().map(|a| &a.value.kind) {
                         Some(ExprKind::Ident(ev)) if args.len() == 1 => ev.clone(),
@@ -595,13 +881,13 @@ impl Cx {
                 }
                 ExprKind::Member { recv, name } => {
                     let child = self.element_h(recv, handlers)?;
-                    self.modifier(child, name, args, trailing.as_ref(), callee.span)
+                    self.modifier(child, name, args, trailing.as_ref(), callee.span, &e.cache)
                 }
                 _ => Err(err(span, "une vue attendue")),
             },
             ExprKind::Member { recv, name } => {
                 let child = self.element_h(recv, handlers)?;
-                self.modifier(child, name, &[], None, span)
+                self.modifier(child, name, &[], None, span, &e.cache)
             }
             ExprKind::Ternary { cond, then, els } => {
                 if self.bool(cond)? {
@@ -724,7 +1010,14 @@ impl Cx {
         args: &[Arg],
         trailing: Option<&Closure>,
         span: Span,
+        cache: &Cache,
     ) -> R<Element> {
+        // L'entrée du schéma, trouvée une fois pour ce site.
+        if let Some(Some(entry)) = cache.entry.get()
+            && entry.kind == EntryKind::Modifier
+        {
+            return self.build(entry, args, trailing, vec![child], span);
+        }
         if name == "id" {
             let a = args
                 .first()
@@ -739,6 +1032,7 @@ impl Cx {
         let shared = self.shared.clone();
         match shared.schema.get(name) {
             Some(entry) if entry.kind == EntryKind::Modifier => {
+                let _ = cache.entry.set(Some(entry.clone()));
                 self.build(entry, args, trailing, vec![child], span)
             }
             Some(_) => Err(err(span, format!("`{name}` est une vue, pas un modifier"))),
@@ -763,7 +1057,15 @@ impl Cx {
         trailing: Option<&Closure>,
         handlers: &mut Vec<(String, Span, Handler)>,
         span: Span,
+        cache: &Cache,
     ) -> R<Element> {
+        // Une primitive du schéma déjà vue ici (le nom n'est donc pas une vue du fichier).
+        if let Some(Some(entry)) = cache.entry.get()
+            && entry.kind == EntryKind::Primitive
+            && handlers.is_empty()
+        {
+            return self.build(entry, args, trailing, Vec::new(), span);
+        }
         let shared = self.shared.clone();
         if let Some(decl) = shared.module.view(name) {
             let inst = self.instance(decl, args, trailing, handlers)?;
@@ -792,6 +1094,7 @@ impl Cx {
         }
         match shared.schema.get(name) {
             Some(entry) if entry.kind == EntryKind::Primitive => {
+                let _ = cache.entry.set(Some(entry.clone()));
                 self.build(entry, args, trailing, Vec::new(), span)
             }
             Some(_) => Err(err(
@@ -822,8 +1125,9 @@ impl Cx {
         mut children: Vec<Element>,
         span: Span,
     ) -> R<Element> {
-        let mut params = Params::new();
-        let mut given: Vec<&str> = Vec::new();
+        let mut params = Params(Vec::with_capacity(args.len() + usize::from(trailing.is_some())));
+        // Les paramètres déjà donnés, par nom (une petite liste sur la pile).
+        let mut given: smallvec::SmallVec<[&str; 8]> = smallvec::SmallVec::new();
         let mut positional = entry.params.iter().filter(|p| p.ty != ValueType::Action);
         for a in args {
             let spec = match &a.label {
@@ -857,7 +1161,7 @@ impl Cx {
             let v = self.eval(&a.value)?;
             let value =
                 to_schema(&v, spec.ty).map_err(|m| err(a.value.span, format!("`{}` : {m}", spec.name)))?;
-            params = params.with(spec.name, value);
+            params = params.with_static(spec.name, value);
         }
         if let Some(c) = trailing {
             let action = entry
@@ -866,7 +1170,7 @@ impl Cx {
                 .find(|p| p.ty == ValueType::Action && !given.contains(&p.name));
             match action {
                 Some(p) => {
-                    params = params.with(p.name, Value::Action(self.action(c)));
+                    params = params.with_static(p.name, Value::Action(self.action(c)));
                 }
                 None if entry.children == Children::Many && entry.kind == EntryKind::Primitive => {
                     children = self.body(&c.body)?;
@@ -874,10 +1178,7 @@ impl Cx {
                 None => return Err(err(span, format!("`{}` ne prend pas de `{{ … }}`", entry.name))),
             }
         }
-        self.shared
-            .schema
-            .build(entry.name, params, children)
-            .map_err(|e| err(span, e.to_string()))
+        Schema::build_entry(entry, params, children).map_err(|e| err(span, e.to_string()))
     }
 
     // --- Actions -------------------------------------------------------------------------------

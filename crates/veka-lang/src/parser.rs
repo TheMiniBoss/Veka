@@ -323,6 +323,7 @@ impl Parser {
                 ExprKind::Member { recv, name } if is_curve(&name) => (*recv, Some(name)),
                 kind => (
                     Expr {
+                        cache: Cache::default(),
                         kind,
                         span: value.span,
                     },
@@ -525,6 +526,7 @@ impl Parser {
             } if !matches!(lhs.kind, ExprKind::Int(_) | ExprKind::Float(_)) => (*lhs, Some(*rhs)),
             kind => (
                 Expr {
+                    cache: Cache::default(),
                     kind,
                     span: value.span,
                 },
@@ -666,6 +668,7 @@ impl Parser {
             self.expect(":")?;
             let els = self.expr(no_trailing)?;
             return Ok(Expr {
+                cache: Cache::default(),
                 kind: ExprKind::Ternary {
                     cond: Box::new(cond),
                     then: Box::new(then),
@@ -707,6 +710,7 @@ impl Parser {
             let rhs = self.binary(prec + 1, nt)?;
             let span = lhs.span;
             lhs = Expr {
+                cache: Cache::default(),
                 kind: ExprKind::Binary {
                     op,
                     lhs: Box::new(lhs),
@@ -730,6 +734,7 @@ impl Parser {
         let hi = self.additive(nt)?;
         let span = lo.span;
         Ok(Expr {
+            cache: Cache::default(),
             kind: ExprKind::Range {
                 lo: Box::new(lo),
                 hi: Box::new(hi),
@@ -777,12 +782,14 @@ impl Parser {
             match expr.kind {
                 ExprKind::Int(v) => {
                     return Ok(Expr {
+                        cache: Cache::default(),
                         kind: ExprKind::Int(-v),
                         span,
                     });
                 }
                 ExprKind::Float(v) => {
                     return Ok(Expr {
+                        cache: Cache::default(),
                         kind: ExprKind::Float(-v),
                         span,
                     });
@@ -791,6 +798,7 @@ impl Parser {
             }
         }
         Ok(Expr {
+            cache: Cache::default(),
             kind: ExprKind::Unary {
                 op,
                 expr: Box::new(expr),
@@ -812,6 +820,7 @@ impl Parser {
                 };
                 let span = e.span;
                 e = Expr {
+                    cache: Cache::default(),
                     kind: ExprKind::Call {
                         callee: Box::new(e),
                         args,
@@ -827,6 +836,7 @@ impl Parser {
                 self.expect("]")?;
                 let span = e.span;
                 e = Expr {
+                    cache: Cache::default(),
                     kind: ExprKind::Index {
                         recv: Box::new(e),
                         index: Box::new(index),
@@ -847,6 +857,7 @@ impl Parser {
                 let span = self.span();
                 let name = self.ident("un nom")?;
                 e = Expr {
+                    cache: Cache::default(),
                     kind: ExprKind::Member {
                         recv: Box::new(e),
                         name,
@@ -857,6 +868,7 @@ impl Parser {
                 if !nt && self.is("{") {
                     let trailing = Some(self.closure()?);
                     e = Expr {
+                        cache: Cache::default(),
                         kind: ExprKind::Call {
                             callee: Box::new(e),
                             args: Vec::new(),
@@ -959,6 +971,7 @@ impl Parser {
                     "false" => ExprKind::Bool(false),
                     _ => {
                         let e = Expr {
+                            cache: Cache::default(),
                             kind: ExprKind::Ident(n),
                             span,
                         };
@@ -966,6 +979,7 @@ impl Parser {
                         if !nt && self.is("{") {
                             let trailing = Some(self.closure()?);
                             return Ok(Expr {
+                                cache: Cache::default(),
                                 kind: ExprKind::Call {
                                     callee: Box::new(e),
                                     args: Vec::new(),
@@ -1028,7 +1042,11 @@ impl Parser {
             }
             _ => return Err(self.unexpected("une expression")),
         };
-        Ok(Expr { kind, span })
+        Ok(Expr {
+            kind,
+            span,
+            cache: Cache::default(),
+        })
     }
 }
 
@@ -1045,6 +1063,7 @@ pub(crate) fn is_curve(name: &str) -> bool {
 fn bin(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {
     let span = lhs.span;
     Expr {
+        cache: Cache::default(),
         kind: ExprKind::Binary {
             op,
             lhs: Box::new(lhs),

@@ -224,13 +224,13 @@ impl Tree {
     pub fn reconcile_children(&mut self, id: NodeId, elements: Vec<Element>) {
         let all = std::mem::take(&mut self.nodes[id].children);
         // Ceux qui sortent déjà ne comptent plus : ils gardent seulement leur place à l'écran.
-        let mut leaving: Vec<(usize, NodeId)> = all
+        let mut leaving: smallvec::SmallVec<[(usize, NodeId); 4]> = all
             .iter()
             .enumerate()
             .filter(|&(_, &o)| self.nodes[o].leaving)
             .map(|(i, &o)| (i, o))
             .collect();
-        let mut old: Vec<(usize, NodeId)> = all
+        let mut old: smallvec::SmallVec<[(usize, NodeId); 8]> = all
             .iter()
             .enumerate()
             .filter(|&(_, &o)| !self.nodes[o].leaving)
@@ -286,8 +286,11 @@ impl Tree {
         };
         node.cache.clear();
         let env = node.env.clone();
-        for child in node.children.clone() {
+        // Par indice : sans copier la liste des enfants.
+        let mut i = 0;
+        while let Some(&child) = self.nodes[id].children.get(i) {
             self.resolve_env(child, &env);
+            i += 1;
         }
     }
 }

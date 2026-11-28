@@ -260,6 +260,8 @@ impl AssignOp {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+    /// Ce que l'interpréteur retient de ce nœud d'une évaluation à l'autre (voir [`Cache`]).
+    pub cache: Cache,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -380,5 +382,53 @@ impl BinaryOp {
             BinaryOp::Add | BinaryOp::Sub => 5,
             BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => 6,
         }
+    }
+}
+
+/// Ce que l'interpréteur apprend d'un nœud à sa première évaluation et garde pour les suivantes : la
+/// place d'une variable, la valeur d'une expression constante, l'entrée du schéma d'un appel, les
+/// résultats d'une fonction pure. L'arbre est refait à chaque rechargement : le cache repart vide.
+///
+/// Il ne compte pas dans les comparaisons, et une copie de l'arbre repart vide.
+/// En boîte : l'arbre reste compact (le cache n'est lu qu'à l'évaluation).
+#[derive(Default)]
+pub struct Cache(Box<CacheData>);
+
+impl std::ops::Deref for Cache {
+    type Target = CacheData;
+    fn deref(&self) -> &CacheData {
+        &self.0
+    }
+}
+
+#[derive(Default)]
+pub struct CacheData {
+    /// Variable locale : sa distance au sommet de la pile des locales, plus 1 (0 : pas encore vue).
+    pub(crate) back: std::cell::Cell<u32>,
+    /// Expression constante : sa valeur (`None` : elle ne l'est pas).
+    pub(crate) konst: std::cell::OnceCell<Option<crate::value::Val>>,
+    /// Appel d'une vue ou d'un modifier du schéma.
+    pub(crate) entry: std::cell::OnceCell<Option<veka_ui::schema::Entry>>,
+    /// Appel d'une fonction du fichier : ses derniers résultats.
+    pub(crate) memo: std::cell::RefCell<crate::eval::Memo>,
+    /// Appel par un nom : fonction du fichier (mémorisable ou non) ou fonction de base.
+    pub(crate) callee: std::cell::OnceCell<crate::eval::Callee>,
+}
+
+impl Clone for Cache {
+    fn clone(&self) -> Self {
+        Cache::default()
+    }
+}
+
+impl PartialEq for Cache {
+    fn eq(&self, _: &Cache) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Cache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Cache")
     }
 }

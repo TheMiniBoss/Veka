@@ -12,6 +12,7 @@ veka-foundation.workspace = true
 veka-colora.workspace = true
 veka-anima.workspace = true
 veka-ui.workspace = true
+smallvec.workspace = true
 
 [dev-dependencies]
 veka-graphics.workspace = true

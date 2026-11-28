@@ -17,6 +17,18 @@ Le plus récent en premier.
 
 ## Étape 7 — un `.vk` rapide
 
+### Interpréteur avec caches (PR O)
+- Chaque nœud de l'arbre garde ce que l'interpréteur apprend à sa première évaluation : valeur d'une
+  expression constante (`2 * 3`, `.white`, `[.clear, .white]`), place d'une variable locale, fonction ou
+  fonction de base appelée, entrée du schéma d'une vue ou d'un modifier. L'arbre est refait au rechargement :
+  les caches repartent vides.
+- Fonctions pures mémorisées par site d'appel (au plus 4 096 résultats, arguments de base seulement) ; une
+  fonction qui lit `model`, elle ou celles qu'elle appelle, ne l'est pas.
+- Moins d'allocations : arguments sur la pile, une seule liste pour un `ForEach`, noms du schéma sans copie
+  (`Params::with_static`, `Schema::build_entry`), enfants parcourus sans copie dans le layout, Anima, la
+  réconciliation et l'environnement. Les états et paramètres utilisent un hachage rapide.
+- Feux d'artifice : −31 % d'instructions par image (release).
+
 ### Gains simples (PR N)
 - Le cœur de Veka (`veka-foundation`, `veka-graphics`, `veka-colora`, `veka-anima`, `veka-text`, `veka-ui`,
   `veka-lang`) est compilé en `opt-level = 1` même en debug : les feux d'artifice passent de 31 à 6,5 ms par

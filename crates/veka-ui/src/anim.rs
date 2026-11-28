@@ -233,8 +233,10 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
                 a.geometry_rect = Some(from);
             }
         }
-        for c in tree.nodes[id].children.clone() {
+        let mut i = 0;
+        while let Some(&c) = tree.nodes[id].children.get(i) {
             walk(tree, c, spec, true, cx);
+            i += 1;
         }
         return;
     }
@@ -251,7 +253,11 @@ fn walk(tree: &mut Tree, id: NodeId, mut spec: Option<Animation>, fresh: bool, c
     animate_values(tree, id, spec.filter(|_| !(reduce && moves)), now);
     animate_rect(tree, id, spec.filter(|_| !reduce), now);
 
-    for c in tree.nodes[id].children.clone() {
+    // Par indice, sans copier la liste : le parcours ne change pas les enfants (les sorties sont
+    // détachées après).
+    let mut i = 0;
+    while let Some(&c) = tree.nodes[id].children.get(i) {
+        i += 1;
         if tree.nodes[c].leaving {
             let started = tree
                 .anims

@@ -4,6 +4,7 @@
 //! construit peut aussi être construit **à partir de données** (nom + paramètres), le chemin que
 //! prendront les fichiers `.vk`, l'interface C et les autres langages.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -100,9 +101,10 @@ pub enum EntryKind {
     Modifier,
 }
 
-/// Paramètres reçus.
+/// Paramètres reçus. Les noms du schéma sont `'static` : les passer par [`with_static`](Self::with_static)
+/// n'alloue pas.
 #[derive(Clone, Debug, Default)]
-pub struct Params(pub Vec<(String, Value)>);
+pub struct Params(pub Vec<(Cow<'static, str>, Value)>);
 
 impl Params {
     pub fn new() -> Self {
@@ -110,7 +112,13 @@ impl Params {
     }
 
     pub fn with(mut self, name: &str, value: Value) -> Self {
-        self.0.push((name.to_owned(), value));
+        self.0.push((Cow::Owned(name.to_owned()), value));
+        self
+    }
+
+    /// Comme [`with`](Self::with), pour un nom du schéma (sans allocation).
+    pub fn with_static(mut self, name: &'static str, value: Value) -> Self {
+        self.0.push((Cow::Borrowed(name), value));
         self
     }
 
@@ -284,6 +292,16 @@ impl Schema {
         let entry = self
             .get(name)
             .ok_or_else(|| SchemaError::Unknown(name.to_owned()))?;
+        Self::build_entry(entry, params, children)
+    }
+
+    /// Comme [`build`](Self::build), avec l'entrée déjà trouvée (un interpréteur la garde d'une fois sur
+    /// l'autre).
+    pub fn build_entry(
+        entry: &Entry,
+        params: Params,
+        children: Vec<Element>,
+    ) -> Result<Element, SchemaError> {
         for spec in entry.params {
             match params.get(spec.name) {
                 None if spec.required => {
@@ -309,7 +327,7 @@ impl Schema {
         {
             return Err(SchemaError::UnknownParam {
                 entry: entry.name,
-                param: n.clone(),
+                param: n.to_string(),
             });
         }
         let ok = match entry.children {
