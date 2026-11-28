@@ -118,6 +118,7 @@ impl Primitive for ButtonPrim {
             handled: true,
             repaint: before != after,
             action,
+            animate: false,
         }
     }
 }

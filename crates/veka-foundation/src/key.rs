@@ -164,3 +164,17 @@ mod tests {
         assert_eq!(m.without_shift(), Modifiers::CONTROL);
     }
 }
+
+/// La phase d'un défilement (étape 10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ScrollPhase {
+    /// Un cran de molette : Veka l'anime pour qu'il glisse en douceur.
+    Wheel,
+    /// Les doigts se posent sur le pavé tactile : l'élan en cours s'arrête.
+    Began,
+    /// Le geste continue : le contenu suit le doigt. Un pavé qui ne dit pas quand le geste commence et
+    /// finit (Windows) n'envoie que cette phase.
+    Changed,
+    /// Les doigts se lèvent : Veka lance son élan, puis le ressort des bords.
+    Ended,
+}

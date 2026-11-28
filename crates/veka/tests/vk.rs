@@ -472,3 +472,63 @@ fn formulaire_meme_dessin_que_rust() {
     assert!(vk.texts().contains(&"Formulaire effacé.".to_string()));
     assert!(!vk.texts().iter().any(|x| x.contains("Ana")), "{:?}", vk.texts());
 }
+
+const LISTE: &str = include_str!("../examples/vk/liste.vk");
+
+#[path = "../examples/liste.rs"]
+#[allow(dead_code)]
+mod liste_rs;
+
+/// L'exemple `liste` : le `.vk` dessine comme le Rust, au départ, après la molette, et après les boutons
+/// qui vont à une ligne (`proxy.scrollTo`).
+#[test]
+fn liste_meme_dessin_que_rust() {
+    use veka_foundation::Instant;
+    let p = program(LISTE);
+    let mut vk = Surface::new(p.view("Liste"));
+    let mut rs = Surface::new(component(liste_rs::vue));
+    let mut t = 1.0f64;
+    let at = |t: f64| Instant::from_nanos((t * 1e9) as u64);
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(520.0, 640.0), 2.0);
+        s.frame_at(at(t));
+    }
+    same(&vk, &rs);
+    let haut = vk.rects_of("Circle")[0].y();
+    let centre = |s: &Surface| s.rects_of("ScrollView")[0].center();
+    for _ in 0..3 {
+        t += 0.02;
+        for s in [&mut vk, &mut rs] {
+            s.set_now(at(t));
+            let c = centre(s);
+            s.handle(InputEvent::Scroll {
+                position: Point::new(c.x, c.y + 100.0),
+                delta: Vector::new(0.0, 60.0),
+                phase: ScrollPhase::Wheel,
+            });
+            s.frame_at(at(t));
+        }
+    }
+    for _ in 0..40 {
+        t += 1.0 / 60.0;
+        for s in [&mut vk, &mut rs] {
+            s.frame_at(at(t));
+        }
+    }
+    same(&vk, &rs);
+    let apres = vk.rects_of("Circle")[0].y();
+    assert!(
+        (haut - apres - 180.0).abs() < 1.0,
+        "trois crans de 60 : {haut} → {apres}"
+    );
+    // « Ligne 50 » : sans animation, la ligne 50 au milieu tout de suite.
+    for s in [&mut vk, &mut rs] {
+        let b = s.rects_of("Button")[1].center();
+        click(s, b);
+        s.frame_at(at(t));
+    }
+    same(&vk, &rs);
+    let sv = vk.rects_of("ScrollView")[0];
+    let c50 = vk.rects_of("Circle")[50].center();
+    assert!((c50.y - sv.center().y).abs() < 2.0, "{c50:?} {sv:?}");
+}

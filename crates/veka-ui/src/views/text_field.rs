@@ -175,6 +175,7 @@ fn result(handled: bool, action: Option<Action>) -> EventResult {
         handled,
         repaint: true,
         action,
+        animate: false,
     }
 }
 
@@ -336,6 +337,7 @@ impl Primitive for TextFieldPrim {
                     handled: submit.is_some(),
                     repaint: false,
                     action: submit,
+                    animate: false,
                 };
             }
             Key::Character(c) if command => {

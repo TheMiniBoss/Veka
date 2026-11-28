@@ -159,6 +159,13 @@ impl Params {
         }
     }
 
+    pub fn bool(&self, name: &str) -> Option<bool> {
+        match self.get(name)? {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
     pub fn enumeration(&self, name: &str) -> Option<&str> {
         match self.get(name)? {
             Value::Enum(s) | Value::String(s) => Some(s),
@@ -405,6 +412,11 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
         _ => false,
     }
 }
+
+/// Les valeurs de `.scrollIndicators`.
+const SCROLL_INDICATORS: &[&str] = &["automatic", "visible", "hidden", "never"];
+/// Les valeurs de `.scrollBounceBehavior`.
+const SCROLL_BOUNCES: &[&str] = &["always", "automatic", "basedOnSize", "never"];
 
 /// Les styles de `.textFieldStyle`.
 const FIELD_STYLES: &[&str] = &["roundedBorder", "plain", "automatic"];
@@ -729,6 +741,56 @@ fn builtin_entries() -> Vec<Entry> {
                 ]
             },
             build: |p, _| text_field(p, true),
+        },
+        Entry {
+            name: "ScrollView",
+            kind: Primitive,
+            children: Many,
+            doc: "vue qui défile : `.vertical` (par défaut), `.horizontal` ou `[.horizontal, .vertical]`",
+            params: const {
+                &[
+                    p("axes", ValueType::Any, false, "axes qui défilent"),
+                    p(
+                        "showsIndicators",
+                        ValueType::Bool,
+                        false,
+                        "barres de défilement (vrai par défaut)",
+                    ),
+                ]
+            },
+            build: |p, c| {
+                let axes = match p.get("axes") {
+                    Some(Value::String(s) | Value::Enum(s)) => views::ScrollAxes {
+                        horizontal: s.contains("horizontal"),
+                        vertical: s.contains("vertical") || !s.contains("horizontal"),
+                    },
+                    _ => views::ScrollAxes::VERTICAL,
+                };
+                // Plusieurs enfants : une pile dans le sens du défilement, comme SwiftUI.
+                let content = if c.len() == 1 {
+                    one(c)
+                } else {
+                    let axis = if axes.vertical {
+                        Axis::Vertical
+                    } else {
+                        Axis::Horizontal
+                    };
+                    Element::new(
+                        Stack {
+                            axis,
+                            spacing: DEFAULT_SPACING,
+                            alignment: Alignment::Center,
+                        },
+                        c,
+                    )
+                };
+                let sv = views::scroll_view(axes, content);
+                if p.bool("showsIndicators") == Some(false) {
+                    sv.scroll_indicators(views::ScrollIndicators::Hidden)
+                } else {
+                    sv
+                }
+            },
         },
         // --- Modifiers ---
         Entry {
@@ -1161,6 +1223,58 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, c| {
                 let b = p.binding("binding").expect("vérifié par le schéma");
                 one(c).wrap(focus_binding(b, p.get("equals").cloned()))
+            },
+        },
+        Entry {
+            name: "scrollIndicators",
+            kind: Modifier,
+            children: One,
+            doc: "barres des vues qui défilent : `.automatic`, `.visible` ou `.hidden`",
+            params: const {
+                &[p(
+                    "visibility",
+                    ValueType::Enum(SCROLL_INDICATORS),
+                    true,
+                    "visibilité",
+                )]
+            },
+            build: |p, c| {
+                let v = match p.enumeration("visibility") {
+                    Some("visible") => views::ScrollIndicators::Visible,
+                    Some("hidden" | "never") => views::ScrollIndicators::Hidden,
+                    _ => views::ScrollIndicators::Automatic,
+                };
+                one(c).scroll_indicators(v)
+            },
+        },
+        Entry {
+            name: "scrollDisabled",
+            kind: Modifier,
+            children: One,
+            doc: "les vues qui défilent ne bougent plus",
+            params: const { &[p("disabled", ValueType::Bool, false, "vrai par défaut")] },
+            build: |p, c| one(c).scroll_disabled(p.bool("disabled").unwrap_or(true)),
+        },
+        Entry {
+            name: "scrollBounceBehavior",
+            kind: Modifier,
+            children: One,
+            doc: "bords élastiques : `.always` (par défaut), `.basedOnSize` ou `.never`",
+            params: const {
+                &[p(
+                    "behavior",
+                    ValueType::Enum(SCROLL_BOUNCES),
+                    true,
+                    "comportement",
+                )]
+            },
+            build: |p, c| {
+                let v = match p.enumeration("behavior") {
+                    Some("basedOnSize") => views::ScrollBounce::BasedOnSize,
+                    Some("never") => views::ScrollBounce::Never,
+                    _ => views::ScrollBounce::Always,
+                };
+                one(c).scroll_bounce(v)
             },
         },
         Entry {

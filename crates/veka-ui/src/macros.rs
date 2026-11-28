@@ -60,3 +60,30 @@ macro_rules! HStack {
 macro_rules! ZStack {
     ($($t:tt)*) => { $crate::__veka_stack!(Depth; $($t)*) };
 }
+
+/// Une vue qui défile, comme `ScrollView` de SwiftUI : `ScrollView![contenu]` (vertical),
+/// `ScrollView![.horizontal; contenu]` ou `ScrollView![ScrollAxes::BOTH; contenu]`.
+#[macro_export]
+macro_rules! ScrollView {
+    (.horizontal; $child:expr $(,)?) => {
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::HORIZONTAL,
+            $crate::View::into_element($child),
+        )
+    };
+    (.vertical; $child:expr $(,)?) => {
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::VERTICAL,
+            $crate::View::into_element($child),
+        )
+    };
+    ($axes:expr; $child:expr $(,)?) => {
+        $crate::views::scroll_view($axes, $crate::View::into_element($child))
+    };
+    ($child:expr $(,)?) => {
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::VERTICAL,
+            $crate::View::into_element($child),
+        )
+    };
+}

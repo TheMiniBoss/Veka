@@ -109,6 +109,7 @@ fn button_pointer(control: WindowControl, cx: &mut EventCx<'_>, event: PointerEv
         handled: true,
         repaint: before != after,
         action,
+        animate: false,
     }
 }
 

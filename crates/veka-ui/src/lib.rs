@@ -44,7 +44,8 @@ pub use element::{Action, Element, Key, View, component, component_tagged};
 pub use env::{BackdropQuality, Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
 pub use primitive::{
-    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal, TextInput,
+    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal, ScrollEvent,
+    ScrollResult, TextInput, TickResult,
 };
 pub use state::{State, with_animation};
 pub use surface::{InputEvent, PointerButton, Surface};
@@ -76,6 +77,6 @@ pub mod prelude {
         Theme, Token, UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };
     pub use crate::{Animation, Curve, Edge, Keyframe, Timeline, TimelineState, Transition, with_animation};
-    pub use crate::{HStack, VStack, ZStack};
-    pub use veka_foundation::{Key as KeyEquivalent, Modifiers};
+    pub use crate::{HStack, ScrollView, VStack, ZStack};
+    pub use veka_foundation::{Key as KeyEquivalent, Modifiers, ScrollPhase, Vector};
 }

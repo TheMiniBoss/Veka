@@ -118,6 +118,12 @@ pub struct Environment {
     pub on_submit: Option<crate::Action>,
     /// `.text_field_style(.plain)` : champs de texte sans cadre.
     pub text_field_plain: bool,
+    /// `.scroll_indicators` : les barres des vues qui défilent.
+    pub scroll_indicators: crate::views::ScrollIndicators,
+    /// `.scroll_disabled` : les vues qui défilent ne bougent plus.
+    pub scroll_disabled: bool,
+    /// `.scroll_bounce` : les bords élastiques.
+    pub scroll_bounce: crate::views::ScrollBounce,
 }
 
 /// Qualité des effets qui lisent l'arrière-plan (flou, verre).
@@ -152,6 +158,9 @@ impl Default for Environment {
             in_glass_group: false,
             on_submit: None,
             text_field_plain: false,
+            scroll_indicators: crate::views::ScrollIndicators::Automatic,
+            scroll_disabled: false,
+            scroll_bounce: crate::views::ScrollBounce::Always,
         }
     }
 }

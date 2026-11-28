@@ -7,6 +7,7 @@ mod button;
 mod effects;
 mod keyboard;
 mod modifiers;
+mod scroll;
 mod shape;
 mod text;
 mod text_field;
@@ -22,6 +23,11 @@ pub use keyboard::{
     FocusBinding, Focusable, KeyPress, KeyPressPrim, KeyPressResult, KeyboardShortcut, paint_focus_ring,
 };
 pub use modifiers::{Background, EnvModifier, Length, PreferredColorScheme, TapGesture};
+pub use scroll::{
+    ScrollAxes, ScrollBounce, ScrollEnv, ScrollIndicators, ScrollState, ScrollViewPrim, ScrollViewProxy,
+    ScrollViewReader, scroll_view,
+};
+pub(crate) use scroll::{has_scroll_requests, reveal_offset, take_scroll_requests};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};
 pub use text_field::{FieldEnv, SecureField, TextField, TextFieldPrim, TextFieldState};
