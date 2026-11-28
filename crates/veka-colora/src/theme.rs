@@ -335,13 +335,35 @@ impl Palette<'_> {
     fn resolve_raw(&self, paint: &Paint, depth: u32) -> Paint {
         match paint {
             Paint::Solid(_) => paint.clone(),
-            Paint::Token(t, h) => self.token_raw(t, depth).opacity(h.alpha()),
+            Paint::Token(t, h) => match self.token_raw(t, depth).opacity(h.alpha()) {
+                Paint::Solid(c) if c.a < 1.0 && *t != Token::WindowBackground => {
+                    Paint::Solid(self.srgb_alpha(c, depth))
+                }
+                p => p,
+            },
             _ => paint.map_inks(&mut |i| match i {
                 Ink::Color(c) => Ink::Color(*c),
                 // Un jeton dans un dégradé : sa couleur (moyenne s'il vaut lui-même un dégradé).
                 Ink::Token(t, h) => Ink::Color(self.token_raw(t, depth).average().opacity(h.alpha())),
             }),
         }
+    }
+
+    /// Le renderer mélange en lumière linéaire, Apple et les outils de dessin en sRGB : un noir à 60 %
+    /// paraîtrait bien plus pâle. On corrige l'alpha d'un jeton transparent pour qu'il donne, sur le fond
+    /// de la fenêtre, la luminosité d'un mélange en sRGB.
+    fn srgb_alpha(&self, c: Color, depth: u32) -> Color {
+        let bg = self.token_raw(&Token::WindowBackground, depth + 1).average();
+        let lin = veka_foundation::srgb_to_linear;
+        let lum = |r: f32, g: f32, b: f32| 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        let (yc, yb) = (lum(c.r, c.g, c.b), lum(bg.r, bg.g, bg.b));
+        if (yc - yb).abs() < 0.02 {
+            return c;
+        }
+        let a = c.a;
+        let mix = |x: f32, y: f32| x * a + y * (1.0 - a);
+        let yt = lum(mix(c.r, bg.r), mix(c.g, bg.g), mix(c.b, bg.b));
+        c.with_alpha(((yt - yb) / (yc - yb)).clamp(0.0, 1.0))
     }
 
     fn token_raw(&self, token: &Token, depth: u32) -> Paint {
@@ -397,10 +419,36 @@ mod tests {
         let theme = Theme::new("t").color_all(Token::Tint, Color::Red);
         let p = palette(Some(&theme), ColorScheme::Light, &id);
         assert_eq!(p.color(&Token::ButtonAccent.into()), Color::Red);
-        assert_eq!(
-            p.color(&Token::Foreground.secondary().into()),
-            Color::Black.with_alpha(0.6)
-        );
+        // Noir à 60 % : l'alpha est corrigé pour donner, en lumière linéaire, le gris d'un mélange en
+        // sRGB sur le fond de la fenêtre (environ 0,4 en sRGB sur du blanc).
+        let c = p.color(&Token::Foreground.secondary().into());
+        assert_eq!((c.r, c.g, c.b), (0.0, 0.0, 0.0));
+        assert!(c.a > 0.8 && c.a < 0.9, "{c:?}");
+    }
+
+    #[test]
+    fn alpha_corrige_comme_un_melange_srgb() {
+        let id = ColorMatrix::IDENTITY;
+        for scheme in [ColorScheme::Light, ColorScheme::Dark] {
+            let p = palette(None, scheme, &id);
+            let bg = p.color(&Token::WindowBackground.into());
+            for h in [Hierarchy::Secondary, Hierarchy::Tertiary, Hierarchy::Quaternary] {
+                let c = p.color(&Paint::Token(Token::Foreground, h));
+                let base = p.color(&Token::Foreground.into());
+                // Mélange en linéaire avec l'alpha corrigé…
+                let l = |v: f32| veka_foundation::srgb_to_linear(v);
+                let lum = |r: f32, g: f32, b: f32| 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b);
+                let got = lum(base.r, base.g, base.b) * c.a + lum(bg.r, bg.g, bg.b) * (1.0 - c.a);
+                // … = mélange en sRGB avec l'alpha de départ.
+                let a = base.a * h.alpha();
+                let m = |x: f32, y: f32| x * a + y * (1.0 - a);
+                let want = lum(m(base.r, bg.r), m(base.g, bg.g), m(base.b, bg.b));
+                assert!(
+                    (got - want).abs() < 1e-3,
+                    "{scheme:?} {h:?} : {got} au lieu de {want}"
+                );
+            }
+        }
     }
 
     #[test]

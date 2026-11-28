@@ -48,7 +48,10 @@ fn hierarchie() {
         Rectangle().fill(Token::Foreground.secondary()),
         ColorScheme::Light,
     );
-    assert_eq!(p[1], Paint::Solid(Color::Black.with_alpha(0.6)));
+    // Noir à 60 % sur blanc, mélangé en sRGB (gris 0.4) : en linéaire, il faut une opacité plus forte.
+    let c = p[1].solid().expect("uni");
+    assert_eq!((c.r, c.g, c.b), (0.0, 0.0, 0.0));
+    assert!((c.a - 0.866).abs() < 0.01, "{c:?}");
 }
 
 #[test]

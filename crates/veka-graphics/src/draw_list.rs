@@ -342,6 +342,85 @@ impl DrawList {
         }
     }
 
+    /// Les zones où quelque chose est dessiné, en points : au plus `max` rectangles qui couvrent tout le
+    /// dessin (en le débordant un peu). Une fenêtre transparente laisse passer les clics ailleurs.
+    pub fn painted_bounds(&self, max: usize) -> Vec<Rect> {
+        let max = max.max(1);
+        let mut out: Vec<Rect> = Vec::new();
+        let mut transforms = vec![veka_foundation::Transform2D::IDENTITY];
+        let mut clips: Vec<Option<Rect>> = vec![None];
+        let bounds = |t: &veka_foundation::Transform2D, r: &Rect, m: f32| {
+            let (x0, y0, x1, y1) = (r.x() - m, r.y() - m, r.max_x() + m, r.max_y() + m);
+            let mut b = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+            for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+                let p = t.apply(Point::new(x, y));
+                b = [b[0].min(p.x), b[1].min(p.y), b[2].max(p.x), b[3].max(p.y)];
+            }
+            Rect::new(b[0], b[1], b[2] - b[0], b[3] - b[1])
+        };
+        for c in &self.commands {
+            let t = *transforms.last().expect("pile");
+            let clip = *clips.last().expect("pile");
+            let r = match c {
+                // Une couleur entièrement transparente ne dessine rien (fond d'une fenêtre transparente).
+                DrawCommand::FillShape {
+                    paint: Paint::Solid(c),
+                    ..
+                } if c.a <= 0.0 => None,
+                DrawCommand::FillShape { rect, .. } => Some(bounds(&t, rect, 1.0)),
+                DrawCommand::StrokeShape { rect, width, .. } => Some(bounds(&t, rect, 1.0 + width * 0.5)),
+                DrawCommand::Glyphs(run) => {
+                    let gs = &self.glyphs[run.glyphs.start as usize..run.glyphs.end as usize];
+                    gs.iter()
+                        .map(|g| Rect::new(g.x, g.y - run.size, run.size, run.size * 1.4))
+                        .reduce(|a, b| a.union(&b))
+                        .map(|r| bounds(&t, &r, 1.0))
+                }
+                DrawCommand::Backdrop { rect, effect, .. } => Some(bounds(&t, rect, 1.0 + effect.reach())),
+                DrawCommand::PushClip { rect, .. } => {
+                    let r = bounds(&t, rect, 0.0);
+                    clips.push(Some(match clip {
+                        Some(c) => c.intersection(&r).unwrap_or(Rect::ZERO),
+                        None => r,
+                    }));
+                    None
+                }
+                DrawCommand::PopClip => {
+                    if clips.len() > 1 {
+                        clips.pop();
+                    }
+                    None
+                }
+                DrawCommand::PushTransform(m) => {
+                    transforms.push(m.then(&t));
+                    None
+                }
+                DrawCommand::PopTransform => {
+                    if transforms.len() > 1 {
+                        transforms.pop();
+                    }
+                    None
+                }
+                DrawCommand::PushLayer { .. }
+                | DrawCommand::PopLayer
+                | DrawCommand::PushGroup { .. }
+                | DrawCommand::PopGroup => None,
+            };
+            let Some(r) = r else { continue };
+            let Some(r) = (match clip {
+                Some(c) => c.intersection(&r),
+                None => Some(r),
+            }) else {
+                continue;
+            };
+            if r.width() <= 0.0 || r.height() <= 0.0 {
+                continue;
+            }
+            add_rect(&mut out, r, max);
+        }
+        out
+    }
+
     /// Découpe la liste aux commandes `Backdrop` (§7.3). Des `Backdrop` consécutifs (sans dessin entre
     /// eux) partagent le même segment, donc la même capture.
     pub fn segments(&self) -> Vec<Segment> {
@@ -371,6 +450,37 @@ impl DrawList {
             });
         }
         out
+    }
+}
+
+/// Ajoute `r` aux zones : fondu dans une zone qu'il touche, et au-delà de `max` zones, les deux dont
+/// l'union grandit le moins sont fondues.
+fn add_rect(out: &mut Vec<Rect>, r: Rect, max: usize) {
+    let near = |a: &Rect, b: &Rect| {
+        a.x() <= b.max_x() + 4.0
+            && b.x() <= a.max_x() + 4.0
+            && a.y() <= b.max_y() + 4.0
+            && b.y() <= a.max_y() + 4.0
+    };
+    let mut r = r;
+    // Une zone agrandie peut en toucher d'autres : on recommence jusqu'à ce qu'elle soit seule.
+    while let Some(i) = out.iter().position(|o| near(o, &r)) {
+        r = r.union(&out.swap_remove(i));
+    }
+    out.push(r);
+    while out.len() > max {
+        let area = |r: &Rect| r.width() * r.height();
+        let mut best = (0, 1, f32::MAX);
+        for i in 0..out.len() {
+            for j in i + 1..out.len() {
+                let cost = area(&out[i].union(&out[j])) - area(&out[i]) - area(&out[j]);
+                if cost < best.2 {
+                    best = (i, j, cost);
+                }
+            }
+        }
+        let b = out.swap_remove(best.1);
+        out[best.0] = out[best.0].union(&b);
     }
 }
 
@@ -541,6 +651,35 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn painted_bounds_cover_the_drawing() {
+        let mut l = DrawList::new();
+        l.fill(Shape::Rectangle, Rect::new(10.0, 10.0, 100.0, 50.0), Color::Red);
+        l.fill(Shape::Circle, Rect::new(20.0, 20.0, 10.0, 10.0), Color::Blue); // dans le premier
+        l.fill(Shape::Rectangle, Rect::new(300.0, 10.0, 20.0, 20.0), Color::Red); // à part
+        l.push(DrawCommand::PushTransform(
+            veka_foundation::Transform2D::translation(0.0, 200.0),
+        ));
+        l.fill(Shape::Rectangle, Rect::new(10.0, 0.0, 10.0, 10.0), Color::Red);
+        l.push(DrawCommand::PopTransform);
+        l.push(DrawCommand::PushClip {
+            shape: Shape::Rectangle,
+            rect: Rect::new(500.0, 0.0, 10.0, 10.0),
+        });
+        l.fill(Shape::Rectangle, Rect::new(0.0, 0.0, 1000.0, 1000.0), Color::Red); // coupé
+        l.push(DrawCommand::PopClip);
+        let b = l.painted_bounds(8);
+        assert_eq!(b.len(), 4, "{b:?}");
+        assert!(b.contains(&Rect::new(9.0, 9.0, 102.0, 52.0)), "{b:?}");
+        assert!(b.contains(&Rect::new(9.0, 199.0, 12.0, 12.0)), "{b:?}");
+        assert!(b.contains(&Rect::new(500.0, 0.0, 10.0, 10.0)), "{b:?}");
+        // Au plus `max` zones, qui couvrent toujours tout.
+        let b = l.painted_bounds(2);
+        assert_eq!(b.len(), 2);
+        assert!(b.iter().any(|r| r.contains(Point::new(505.0, 5.0))));
+        assert!(b.iter().any(|r| r.contains(Point::new(15.0, 205.0))));
     }
 
     #[test]

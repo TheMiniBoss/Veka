@@ -552,3 +552,32 @@ fn insertion_suit_le_parent_qui_bouge() {
     at(&mut s, 11.0);
     assert!(transforms(&s).is_empty());
 }
+
+/// L'eau de `liquid_distortion` avance avec le temps, à vitesse constante (elle restait figée : la
+/// courbe de son horloge était posée sur la mauvaise clé).
+#[test]
+fn liquid_distortion_avance_avec_le_temps() {
+    use veka_graphics::{BackdropEffect, DrawCommand};
+    let v = || {
+        Text("Eau")
+            .frame(110, 110)
+            .liquid_distortion(10.0, 90.0, 1.0, Shape::Circle)
+    };
+    let mut s = Surface::new(component(v));
+    s.resize(Size::new(200.0, 200.0), 1.0);
+    for t in [0.0, 0.5, 1.0, 2.0] {
+        let list = s.frame_at(veka_foundation::Instant::from_nanos((t * 1e9) as u64));
+        let time = list
+            .commands
+            .iter()
+            .find_map(|c| match c {
+                DrawCommand::Backdrop {
+                    effect: BackdropEffect::Blur(b),
+                    ..
+                } => Some(b.time),
+                _ => None,
+            })
+            .expect("l'eau");
+        assert!((time - t as f32).abs() < 1e-3, "t = {t} : {time}");
+    }
+}

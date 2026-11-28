@@ -2,6 +2,15 @@
 
 Le plus récent en premier.
 
+## Petits restes (PR R)
+- Fenêtre transparente : les clics passent à travers la marge où Veka ne dessine rien, vers la fenêtre de
+  dessous (`DrawList::painted_bounds`, `PlatformWindow::set_hit_area`).
+- `.preferred_color_scheme(Some(ColorScheme::Dark))` (`.preferredColorScheme(.dark)`) : l'app impose son mode,
+  la barre de titre suit. `colora` s'en sert pour son bouton clair / sombre.
+- Hiérarchie : les jetons translucides (`secondary`…) ont le contraste d'un mélange en sRGB, comme chez Apple.
+- Verre liquide : le bord sombre est décalé vers l'intérieur et se voit ; `liquid_distortion` avance de nouveau
+  en continu (la courbe linéaire est portée par la première clé de la timeline).
+
 ## Étape 8 — modes de fusion
 
 ### Interface C (PR Q)

@@ -12,8 +12,8 @@ pub fn fond() -> impl View {
             .track(
                 "angle",
                 [
-                    Keyframe::new(0.0, 0.0),
-                    Keyframe::new(20.0, 360.0).curve(Curve::Linear),
+                    Keyframe::new(0.0, 0.0).curve(Curve::Linear),
+                    Keyframe::new(20.0, 360.0),
                 ],
             )
             .length(20.0)

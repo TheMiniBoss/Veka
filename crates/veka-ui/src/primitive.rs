@@ -89,6 +89,11 @@ pub trait Primitive: Any {
         None
     }
 
+    /// Le mode clair ou sombre demandé pour toute la fenêtre (`.preferred_color_scheme`).
+    fn preferred_color_scheme(&self) -> Option<veka_foundation::ColorScheme> {
+        None
+    }
+
     /// État propre au nœud (survol, cache de texte…), créé une fois à l'insertion du nœud.
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())

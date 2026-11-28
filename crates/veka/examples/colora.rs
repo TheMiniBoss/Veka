@@ -117,24 +117,18 @@ pub fn vue() -> impl View {
     ]
     .padding(24);
 
-    let contenu = match mode.get() {
-        1 => contenu.color_scheme(ColorScheme::Light),
-        2 => contenu.color_scheme(ColorScheme::Dark),
-        _ => contenu,
-    };
     let contenu = if gris.get() {
         contenu.grayscale(1.0)
     } else {
         contenu
     };
-    // Le fond de toute la fenêtre suit le mode choisi.
-    let fond = Rectangle().fill(Token::WindowBackground);
-    let fond = match mode.get() {
-        1 => fond.color_scheme(ColorScheme::Light),
-        2 => fond.color_scheme(ColorScheme::Dark),
-        _ => fond,
+    // Toute la fenêtre suit le mode choisi, barre de titre du système comprise.
+    let mode = match mode.get() {
+        1 => Some(ColorScheme::Light),
+        2 => Some(ColorScheme::Dark),
+        _ => None,
     };
-    ZStack![fond, contenu]
+    ZStack![Rectangle().fill(Token::WindowBackground), contenu].preferred_color_scheme(mode)
 }
 
 fn main() {

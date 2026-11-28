@@ -15,7 +15,7 @@ pub use anima::{
 };
 pub use button::{ButtonPrim, ButtonState};
 pub use effects::{BackdropBlur, CompositingGroup, Glass, GlassGroup, GlassPrim, LiquidDistortion};
-pub use modifiers::{Background, EnvModifier, Length, TapGesture};
+pub use modifiers::{Background, EnvModifier, Length, PreferredColorScheme, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};
 

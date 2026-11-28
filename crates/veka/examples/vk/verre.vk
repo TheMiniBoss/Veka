@@ -2,7 +2,7 @@
 // d'un fond coloré qui bouge. `cargo run --example vk -- verre` (même dessin que `verre.rs`, testé).
 
 timeline Rotation(loop: true, length: 20) {
-    track angle { 0: 0 ; 20: 360 .linear }
+    track angle { 0: 0 .linear ; 20: 360 }
 }
 
 view Verre {
