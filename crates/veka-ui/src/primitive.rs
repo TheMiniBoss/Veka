@@ -94,6 +94,16 @@ pub trait Primitive: Any {
         false
     }
 
+    /// Du texte tapé ou composé (IME), envoyé seulement à la vue qui a le focus.
+    fn text_input(&self, _cx: &mut EventCx<'_>, _input: &TextInput) -> EventResult {
+        EventResult::default()
+    }
+
+    /// La vue reçoit du texte quand elle a le focus (l'hôte active alors l'IME).
+    fn accepts_text(&self) -> bool {
+        false
+    }
+
     /// Une touche appuyée (ou répétée). Appelé sur la vue qui a le focus puis sur ses parents, jusqu'à ce
     /// qu'un primitive renvoie `handled`. Sans focus, sur toutes les vues, des plus profondes aux plus hautes.
     fn key(&self, _cx: &mut EventCx<'_>, _event: &KeyEvent) -> EventResult {
@@ -245,6 +255,20 @@ pub enum PointerEvent {
     Leave,
 }
 
+/// Du texte reçu par la vue qui a le focus (étape 9).
+#[derive(Clone, Debug, PartialEq)]
+pub enum TextInput {
+    /// Un caractère tapé (après les touches mortes).
+    Char(char),
+    /// Le texte en cours de composition (IME) et la place du curseur dedans (octets) ; vide : fin.
+    Compose {
+        text: String,
+        cursor: Option<(usize, usize)>,
+    },
+    /// La composition est validée avec ce texte.
+    Commit(String),
+}
+
 /// Une touche reçue par un primitive (étape 9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KeyEvent {
@@ -258,11 +282,31 @@ pub struct KeyEvent {
 pub struct EventCx<'a> {
     pub(crate) state: &'a mut dyn Any,
     pub(crate) rect: Rect,
+    pub(crate) text: &'a mut TextSystem,
+    pub(crate) focused: bool,
+    pub(crate) env: &'a Environment,
 }
 
 impl EventCx<'_> {
     pub fn state<S: 'static>(&mut self) -> &mut S {
         self.state.downcast_mut::<S>().expect("type d'état du primitive")
+    }
+
+    /// L'état du nœud et le système de texte, ensemble (un champ de texte qui se met à jour).
+    pub fn state_and_text<S: 'static>(&mut self) -> (&mut S, &mut TextSystem) {
+        (
+            self.state.downcast_mut::<S>().expect("type d'état du primitive"),
+            self.text,
+        )
+    }
+
+    /// Ce nœud a le focus du clavier.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    pub fn env(&self) -> &Environment {
+        self.env
     }
 
     pub fn rect(&self) -> Rect {

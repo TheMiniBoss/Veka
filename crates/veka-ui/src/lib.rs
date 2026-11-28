@@ -25,6 +25,7 @@
 //! [`Surface`], que l'hôte (app native, moteur de jeu…) alimente.
 
 mod anim;
+mod clipboard;
 mod element;
 mod env;
 mod layout;
@@ -38,10 +39,13 @@ mod tree;
 pub mod views;
 pub mod window;
 
+pub use clipboard::{Clipboard, clipboard_text, set_clipboard, set_clipboard_text};
 pub use element::{Action, Element, Key, View, component, component_tagged};
 pub use env::{BackdropQuality, Environment, Font, ThemeRef};
 pub use layout::{Alignment, Axis};
-pub use primitive::{EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal};
+pub use primitive::{
+    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal, TextInput,
+};
 pub use state::{State, with_animation};
 pub use surface::{InputEvent, PointerButton, Surface};
 pub use timeline::TimelineState;

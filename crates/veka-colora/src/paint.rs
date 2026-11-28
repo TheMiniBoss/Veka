@@ -126,6 +126,9 @@ tokens!(
     MenuBackground,
     PickerAccent,
     PickerBackground,
+    TextFieldAccent,
+    TextFieldBackground,
+    TextFieldText,
 );
 
 impl Token {

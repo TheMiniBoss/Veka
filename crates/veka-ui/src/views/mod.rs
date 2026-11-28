@@ -9,6 +9,7 @@ mod keyboard;
 mod modifiers;
 mod shape;
 mod text;
+mod text_field;
 
 pub use anima::{
     AnimationEndPrim, AnimationPrim, MatchedGeometryPrim, OffsetPrim, OpacityPrim, RotationPrim,
@@ -23,6 +24,7 @@ pub use keyboard::{
 pub use modifiers::{Background, EnvModifier, Length, PreferredColorScheme, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};
+pub use text_field::{FieldEnv, SecureField, TextField, TextFieldPrim, TextFieldState};
 
 use veka_graphics::{CornerRadii, Shape};
 

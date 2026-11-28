@@ -47,6 +47,13 @@ impl Action {
     }
 }
 
+impl PartialEq for Action {
+    /// La même action (le même rappel), pas une action qui fait la même chose.
+    fn eq(&self, other: &Action) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 impl fmt::Debug for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Action")
