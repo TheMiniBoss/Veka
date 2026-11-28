@@ -95,6 +95,34 @@ typedef enum VekaBackdropQuality {
   VEKA_BACKDROP_QUALITY_HIGH,
 } VekaBackdropQuality;
 
+// Comment une vue se mélange avec ce qui est dessiné derrière elle (mêmes noms qu'en SwiftUI).
+typedef enum VekaBlendMode {
+  VEKA_BLEND_MODE_NORMAL,
+  VEKA_BLEND_MODE_MULTIPLY,
+  VEKA_BLEND_MODE_SCREEN,
+  VEKA_BLEND_MODE_OVERLAY,
+  VEKA_BLEND_MODE_DARKEN,
+  VEKA_BLEND_MODE_LIGHTEN,
+  VEKA_BLEND_MODE_COLOR_DODGE,
+  VEKA_BLEND_MODE_COLOR_BURN,
+  VEKA_BLEND_MODE_SOFT_LIGHT,
+  VEKA_BLEND_MODE_HARD_LIGHT,
+  VEKA_BLEND_MODE_DIFFERENCE,
+  VEKA_BLEND_MODE_EXCLUSION,
+  VEKA_BLEND_MODE_HUE,
+  VEKA_BLEND_MODE_SATURATION,
+  VEKA_BLEND_MODE_COLOR,
+  VEKA_BLEND_MODE_LUMINOSITY,
+  // Le groupe ne se dessine que là où le fond est déjà dessiné.
+  VEKA_BLEND_MODE_SOURCE_ATOP,
+  // Le groupe passe derrière ce qui est déjà dessiné.
+  VEKA_BLEND_MODE_DESTINATION_OVER,
+  // Le groupe efface le fond (perce un trou à sa forme).
+  VEKA_BLEND_MODE_DESTINATION_OUT,
+  VEKA_BLEND_MODE_PLUS_DARKER,
+  VEKA_BLEND_MODE_PLUS_LIGHTER,
+} VekaBlendMode;
+
 // Type d'une [`VekaValue`].
 typedef enum VekaValueKind {
   VEKA_VALUE_KIND_BOOL,
@@ -769,6 +797,14 @@ struct VekaElement *veka_liquid_distortion(struct VekaElement *element,
 
 // Règle la qualité des effets d'arrière-plan de toutes les fenêtres (par défaut : `HIGH`).
 int32_t veka_app_set_backdrop_quality(struct VekaApp *app, enum VekaBackdropQuality quality);
+
+// Mélange `element` avec ce qui est dessiné derrière lui, d'un bloc (le sous-arbre est d'abord
+// dessiné à part). Reprend `element`.
+struct VekaElement *veka_blend_mode(struct VekaElement *element, enum VekaBlendMode mode);
+
+// Dessine `element` à part avant de le composer : une opacité appliquée ensuite le rend transparent
+// d'un bloc. Reprend `element`.
+struct VekaElement *veka_compositing_group(struct VekaElement *element);
 
 // Construit n'importe quel composant du schéma par son nom (`"VStack"`, `"Text"`…).
 // Les enfants sont consommés.

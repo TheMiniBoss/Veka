@@ -584,3 +584,35 @@ fn verre_liquide_en_c() {
         assert!(veka_glass(std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut()).is_null());
     }
 }
+
+#[test]
+fn modes_de_fusion_en_c() {
+    use veka_ui::prelude::*;
+    let dessin = |e: Element| {
+        let mut s = Surface::new(e);
+        s.resize(Size::new(200.0, 100.0), 1.0);
+        s.frame().to_string()
+    };
+    // L'énumération C suit l'ordre des modes.
+    assert_eq!(
+        VekaBlendMode::PlusLighter as usize,
+        BlendMode::PlusLighter as usize
+    );
+    assert_eq!(
+        VekaBlendMode::DestinationOut as usize,
+        BlendMode::DestinationOut as usize
+    );
+    unsafe {
+        let c = veka_blend_mode(veka_text(c"A".as_ptr()), VekaBlendMode::Multiply);
+        assert!(!c.is_null());
+        let d = dessin(Box::from_raw(c).element);
+        assert_eq!(d, dessin(Text("A").blend_mode(BlendMode::Multiply)));
+        assert!(d.contains("group multiply"), "{d}");
+
+        let c = veka_opacity(veka_compositing_group(veka_text(c"B".as_ptr())), 0.5);
+        assert_eq!(
+            dessin(Box::from_raw(c).element),
+            dessin(Text("B").compositing_group().opacity(0.5))
+        );
+    }
+}
