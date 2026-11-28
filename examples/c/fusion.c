@@ -32,16 +32,19 @@ static void tourner(VekaContext *cx, void *user) {
     veka_with_animation(cx, veka_animation_smooth(), ajouter, user);
 }
 
-static VekaElement *cercle(VekaColor c, float x, float y) {
-    return veka_offset(veka_frame(veka_fill(veka_circle(), c), 56, 56), x, y);
+/* Les couleurs viennent des jetons du thème (variante claire ou sombre, comme en Rust). */
+static VekaElement *cercle(const char *jeton, float x, float y) {
+    return veka_offset(veka_frame(veka_fill_paint(veka_circle(), veka_token(jeton, VEKA_HIERARCHY_PRIMARY)), 56, 56),
+                       x, y);
 }
 
 static VekaElement *une_case(int mode, float angle) {
+    /* Un dégradé prend des couleurs fixes en C (celles des jetons Yellow et Teal en clair). */
     VekaColor couleurs[] = {veka_hex(0xFFCC00), veka_hex(0x30B0C7)};
     VekaElement *fond = veka_fill_paint(
         veka_rounded_rect(12),
         veka_linear_gradient(couleurs, 2, VEKA_UNIT_TOP_LEADING, VEKA_UNIT_BOTTOM_TRAILING));
-    VekaElement *cercles[] = {cercle(veka_hex(0xFF2D55), -14, -8), cercle(veka_hex(0x5856D6), 14, 8)};
+    VekaElement *cercles[] = {cercle("Pink", -14, -8), cercle("Indigo", 14, 8)};
     VekaElement *motif = veka_blend_mode(veka_rotation_effect(veka_zstack(cercles, 2), angle), (VekaBlendMode)mode);
     VekaElement *couches[] = {fond, motif};
     /* Le mélange reste dans la case (les découpes ne percent pas la fenêtre). */
@@ -52,8 +55,8 @@ static VekaElement *une_case(int mode, float angle) {
 
 static VekaElement *opacite(bool groupe) {
     VekaElement *cercles[] = {
-        veka_offset(veka_frame(veka_fill(veka_circle(), veka_hex(0x007AFF)), 60, 60), -18, 0),
-        veka_offset(veka_frame(veka_fill(veka_circle(), veka_hex(0x007AFF)), 60, 60), 18, 0),
+        veka_offset(veka_frame(veka_fill_paint(veka_circle(), veka_token("Blue", VEKA_HIERARCHY_PRIMARY)), 60, 60), -18, 0),
+        veka_offset(veka_frame(veka_fill_paint(veka_circle(), veka_token("Blue", VEKA_HIERARCHY_PRIMARY)), 60, 60), 18, 0),
     };
     VekaElement *paire = veka_frame(veka_zstack(cercles, 2), 120, 64);
     if (groupe) {
@@ -82,7 +85,11 @@ static VekaElement *body(VekaContext *cx, void *user) {
     }
     VekaElement *paires[] = {opacite(false), opacite(true)};
     lignes[4] = veka_hstack(40, paires, 2);
-    return veka_padding(veka_vstack(16, lignes, 5), 24);
+    VekaElement *couches[] = {
+        veka_fill_paint(veka_rectangle(), veka_token("WindowBackground", VEKA_HIERARCHY_PRIMARY)),
+        veka_padding(veka_vstack(16, lignes, 5), 24),
+    };
+    return veka_zstack(couches, 2);
 }
 
 int main(void) {
