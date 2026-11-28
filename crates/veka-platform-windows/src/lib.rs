@@ -12,7 +12,11 @@
 //! Sur les autres systèmes, la crate est vide.
 
 #[cfg(windows)]
+mod text;
+#[cfg(windows)]
 mod win;
 
+#[cfg(windows)]
+pub use text::{clipboard_text, set_clipboard_text};
 #[cfg(windows)]
 pub use win::{Win32Window, WindowsPlatform};

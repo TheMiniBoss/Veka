@@ -616,3 +616,173 @@ fn modes_de_fusion_en_c() {
         );
     }
 }
+
+/// Le formulaire de `examples/c/formulaire.c`, depuis Rust : frappe dans les champs (Tab pour passer
+/// de l'un à l'autre), Entrée valide, Échap efface, et les touches et le focus en C.
+mod formulaire {
+    use super::*;
+    use veka_ui::prelude::{KeyEquivalent, Modifiers};
+
+    struct Formulaire {
+        nom: *mut VekaState,
+        email: *mut VekaState,
+        mdp: *mut VekaState,
+        message: *mut VekaState,
+        focus: *mut VekaState,
+        touches: *mut VekaState,
+    }
+
+    fn texte(cx: *mut VekaContext, s: *mut VekaState) -> String {
+        unsafe { CStr::from_ptr(veka_state_get_string(cx, s)) }
+            .to_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    unsafe extern "C" fn valider(cx: *mut VekaContext, user: *mut c_void) {
+        let f = unsafe { &*(user as *const Formulaire) };
+        let (nom, email) = (texte(cx, f.nom), texte(cx, f.email));
+        let message = if nom.is_empty() {
+            "Il manque le nom.".to_owned()
+        } else {
+            format!("Bienvenue, {nom} ({email}) !")
+        };
+        let message = std::ffi::CString::new(message).unwrap();
+        unsafe { veka_state_set_string(cx, f.message, message.as_ptr()) };
+    }
+
+    unsafe extern "C" fn effacer(cx: *mut VekaContext, user: *mut c_void) {
+        let f = unsafe { &*(user as *const Formulaire) };
+        unsafe {
+            for s in [f.nom, f.email, f.mdp] {
+                veka_state_set_string(cx, s, c"".as_ptr());
+            }
+            veka_state_set_string(cx, f.message, c"Formulaire effacé.".as_ptr());
+        }
+    }
+
+    unsafe extern "C" fn compter(cx: *mut VekaContext, user: *mut c_void) {
+        let f = unsafe { &*(user as *const Formulaire) };
+        veka_state_set_int(cx, f.touches, veka_state_get_int(cx, f.touches) + 1);
+    }
+
+    unsafe extern "C" fn setup(cx: *mut VekaContext, user: *mut c_void) {
+        let f = unsafe { &mut *(user as *mut Formulaire) };
+        unsafe {
+            f.nom = veka_state_new_string(cx, c"".as_ptr());
+            f.email = veka_state_new_string(cx, c"".as_ptr());
+            f.mdp = veka_state_new_string(cx, c"".as_ptr());
+            f.message = veka_state_new_string(cx, c"Remplissez le formulaire.".as_ptr());
+        }
+        f.focus = veka_state_new_int(cx, 0);
+        f.touches = veka_state_new_int(cx, 0);
+    }
+
+    unsafe extern "C" fn body(cx: *mut VekaContext, user: *mut c_void) -> *mut VekaElement {
+        let f = unsafe { &*(user as *const Formulaire) };
+        let focus = std::ffi::CString::new(format!(
+            "Focus : {} · F2 : {}",
+            veka_state_get_int(cx, f.focus),
+            veka_state_get_int(cx, f.touches)
+        ))
+        .unwrap();
+        unsafe {
+            let boutons = [
+                veka_keyboard_shortcut(
+                    veka_button(c"Effacer".as_ptr(), Some(effacer), user),
+                    c"escape".as_ptr(),
+                    0,
+                ),
+                veka_button(c"Valider".as_ptr(), Some(valider), user),
+            ];
+            let message = veka_text(veka_state_get_string(cx, f.message));
+            let lignes = [
+                veka_focused(veka_text_field(c"Nom".as_ptr(), f.nom), f.focus, 1),
+                veka_focused(veka_text_field(c"E-mail".as_ptr(), f.email), f.focus, 2),
+                veka_focused(veka_secure_field(std::ptr::null(), f.mdp), f.focus, 3),
+                message,
+                veka_text(focus.as_ptr()),
+                veka_hstack(12.0, boutons.as_ptr(), boutons.len()),
+            ];
+            let vue = veka_vstack(12.0, lignes.as_ptr(), lignes.len());
+            let vue = veka_on_key_press(vue, c"f2".as_ptr(), Some(compter), user);
+            veka_padding(veka_on_submit(vue, Some(valider), user), 24.0)
+        }
+    }
+
+    fn touche(s: &mut Surface, key: KeyEquivalent) {
+        s.handle(InputEvent::Key {
+            key,
+            modifiers: Modifiers::NONE,
+            pressed: true,
+            repeat: false,
+        });
+        s.frame();
+    }
+
+    fn taper(s: &mut Surface, texte: &str) {
+        for ch in texte.chars() {
+            s.handle(InputEvent::Char(ch));
+        }
+        s.frame();
+    }
+
+    #[test]
+    fn formulaire_en_c() {
+        let mut f = Formulaire {
+            nom: std::ptr::null_mut(),
+            email: std::ptr::null_mut(),
+            mdp: std::ptr::null_mut(),
+            message: std::ptr::null_mut(),
+            focus: std::ptr::null_mut(),
+            touches: std::ptr::null_mut(),
+        };
+        let user = &mut f as *mut Formulaire as *mut c_void;
+        let mut s = Surface::new(component(app::window_view(Some(setup), Some(body), user)));
+        s.resize(Size::new(420.0, 400.0), 1.0);
+        s.frame();
+        let has = |s: &Surface, t: &str| s.texts().iter().any(|x| x == t);
+        assert!(has(&s, "Focus : 0 · F2 : 0"), "{:?}", s.texts());
+
+        touche(&mut s, KeyEquivalent::Tab);
+        assert!(has(&s, "Focus : 1 · F2 : 0"), "{:?}", s.texts());
+        taper(&mut s, "Ana");
+        touche(&mut s, KeyEquivalent::Tab);
+        taper(&mut s, "ana@exemple.fr");
+        touche(&mut s, KeyEquivalent::Tab);
+        taper(&mut s, "secret");
+        assert!(has(&s, "Focus : 3 · F2 : 0"), "{:?}", s.texts());
+        touche(&mut s, KeyEquivalent::F(2));
+        touche(&mut s, KeyEquivalent::Enter);
+        assert!(has(&s, "Bienvenue, Ana (ana@exemple.fr) !"), "{:?}", s.texts());
+        assert!(has(&s, "Focus : 3 · F2 : 1"), "{:?}", s.texts());
+
+        // Le focus donné par le code : l'état entier.
+        veka_state_set_int(context(), f.focus, 1);
+        s.frame();
+        taper(&mut s, " M.");
+        touche(&mut s, KeyEquivalent::Enter);
+        assert!(has(&s, "Bienvenue, Ana M. (ana@exemple.fr) !"), "{:?}", s.texts());
+
+        touche(&mut s, KeyEquivalent::Escape);
+        assert!(has(&s, "Formulaire effacé."), "{:?}", s.texts());
+        assert_eq!(texte(context(), f.nom), "");
+
+        // Une touche inconnue est une erreur, sans panique.
+        let e = unsafe {
+            veka_on_key_press(
+                veka_text(c"x".as_ptr()),
+                c"pas une touche".as_ptr(),
+                Some(compter),
+                user,
+            )
+        };
+        assert!(e.is_null());
+        assert!(
+            unsafe { CStr::from_ptr(veka_last_error()) }
+                .to_str()
+                .unwrap()
+                .contains("touche inconnue")
+        );
+    }
+}

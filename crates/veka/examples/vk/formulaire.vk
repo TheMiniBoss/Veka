@@ -1,0 +1,51 @@
+// Champs de texte (étape 9), en .vk : `cargo run --example vk -- formulaire`
+// (même dessin que `formulaire.rs`, testé).
+
+view Formulaire {
+    @State var nom = ""
+    @State var email = ""
+    @State var mdp = ""
+    @State var message = "Remplissez le formulaire, puis Entrée."
+
+    VStack(alignment: .leading, spacing: 12) {
+        Text("Inscription")
+            .font(.title)
+        Text("Nom")
+        TextField("Ana Martin", text: $nom)
+            .frame(width: 280)
+        Text("E-mail")
+        TextField("ana@exemple.fr", text: $email)
+            .frame(width: 280)
+        Text("Mot de passe")
+        SecureField("Au moins 8 caractères", text: $mdp)
+            .frame(width: 280)
+        Text(message)
+            .font(.headline)
+        HStack(spacing: 12) {
+            Button("Effacer") {
+                nom = ""
+                email = ""
+                mdp = ""
+                message = "Formulaire effacé."
+            }
+            .keyboardShortcut(.escape, modifiers: [])
+            Button("Valider") {
+                if nom == "" {
+                    message = "Il manque le nom."
+                } else {
+                    message = "Bienvenue, \(nom) (\(email)) !"
+                }
+            }
+        }
+        Text("Tab : champ suivant · Entrée : valider · Échap : effacer")
+            .font(.caption)
+    }
+    .onSubmit {
+        if nom == "" {
+            message = "Il manque le nom."
+        } else {
+            message = "Bienvenue, \(nom) (\(email)) !"
+        }
+    }
+    .padding(24)
+}

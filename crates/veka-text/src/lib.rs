@@ -11,6 +11,9 @@
 
 use std::sync::Arc;
 
+mod edit;
+pub use edit::{EditBuffer, EditOp, EditView};
+
 use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::{FontContext, FontFamily, FontWeight, LayoutContext, PositionedLayoutItem, StyleProperty};
 use veka_foundation::{Color, Point, Size};
@@ -173,41 +176,58 @@ impl TextSystem {
         builder.push_default(StyleProperty::Brush(style.color));
         let mut layout: parley::Layout<Color> = builder.build(text);
         layout.break_all_lines(max_width);
-
-        let mut out = TextLayout {
-            size: Size::new(layout.width(), layout.height()),
-            first_baseline: layout.first_baseline().unwrap_or(0.0),
-            line_count: layout.len(),
-            runs: Vec::new(),
-        };
-        for line in layout.lines() {
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(run) = item else {
-                    continue;
-                };
-                let font = run.run().font();
-                let (data, key) = font.data.clone().into_raw_parts();
-                out.runs.push(TextRun {
-                    font: FontRef {
-                        key,
-                        data,
-                        index: font.index,
-                    },
-                    size: run.run().font_size(),
-                    color: run.style().brush,
-                    glyphs: run
-                        .positioned_glyphs()
-                        .map(|g| Glyph {
-                            id: g.id,
-                            x: g.x,
-                            y: g.y,
-                        })
-                        .collect(),
-                });
-            }
-        }
-        out
+        convert(&layout)
     }
+
+    /// Les contextes de Parley (pour l'éditeur).
+    pub(crate) fn contexts(&mut self) -> (&mut FontContext, &mut LayoutContext<Color>) {
+        (&mut self.fonts, &mut self.layout)
+    }
+
+    /// La famille d'un style (celle par défaut si le style n'en donne pas).
+    pub(crate) fn family_of(&self, style: &TextStyle) -> Arc<str> {
+        style
+            .family
+            .clone()
+            .unwrap_or_else(|| self.default_family.clone())
+    }
+}
+
+/// Les glyphes d'une mise en page de Parley.
+pub(crate) fn convert(layout: &parley::Layout<Color>) -> TextLayout {
+    let mut out = TextLayout {
+        size: Size::new(layout.width(), layout.height()),
+        first_baseline: layout.first_baseline().unwrap_or(0.0),
+        line_count: layout.len(),
+        runs: Vec::new(),
+    };
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(run) = item else {
+                continue;
+            };
+            let font = run.run().font();
+            let (data, key) = font.data.clone().into_raw_parts();
+            out.runs.push(TextRun {
+                font: FontRef {
+                    key,
+                    data,
+                    index: font.index,
+                },
+                size: run.run().font_size(),
+                color: run.style().brush,
+                glyphs: run
+                    .positioned_glyphs()
+                    .map(|g| Glyph {
+                        id: g.id,
+                        x: g.x,
+                        y: g.y,
+                    })
+                    .collect(),
+            });
+        }
+    }
+    out
 }
 
 #[cfg(feature = "default-fonts")]

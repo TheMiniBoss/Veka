@@ -414,3 +414,61 @@ fn clavier_meme_dessin_que_rust() {
     same(&vk, &rs);
     assert!(vk.texts().contains(&"Compteur : 0".to_string()));
 }
+
+const FORMULAIRE: &str = include_str!("../examples/vk/formulaire.vk");
+
+#[path = "../examples/formulaire.rs"]
+#[allow(dead_code)]
+mod formulaire_rs;
+
+fn taper(s: &mut Surface, texte: &str) {
+    for ch in texte.chars() {
+        s.handle(InputEvent::Char(ch));
+    }
+    s.frame();
+}
+
+/// L'exemple `formulaire` : le `.vk` dessine comme le Rust, au départ, après la frappe dans les champs (Tab
+/// pour passer de l'un à l'autre), à la validation par Entrée et après Échap.
+#[test]
+fn formulaire_meme_dessin_que_rust() {
+    let p = program(FORMULAIRE);
+    let mut vk = Surface::new(p.view("Formulaire"));
+    let mut rs = Surface::new(component(formulaire_rs::vue));
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(420.0, 520.0), 2.0);
+        s.frame();
+    }
+    same(&vk, &rs);
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Enter, Modifiers::NONE);
+    }
+    same(&vk, &rs);
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Tab, Modifiers::NONE);
+        taper(s, "Ana");
+        touche(s, KeyEquivalent::Tab, Modifiers::NONE);
+        taper(s, "ana@exemple.fr");
+        touche(s, KeyEquivalent::Tab, Modifiers::NONE);
+        taper(s, "secret");
+    }
+    same(&vk, &rs);
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Enter, Modifiers::NONE);
+    }
+    same(&vk, &rs);
+    for s in [&vk, &rs] {
+        let t = s.texts();
+        assert!(
+            t.contains(&"Bienvenue, Ana (ana@exemple.fr) !".to_string()),
+            "{t:?}"
+        );
+        assert!(!t.iter().any(|x| x.contains("secret")), "{t:?}");
+    }
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Escape, Modifiers::NONE);
+    }
+    same(&vk, &rs);
+    assert!(vk.texts().contains(&"Formulaire effacé.".to_string()));
+    assert!(!vk.texts().iter().any(|x| x.contains("Ana")), "{:?}", vk.texts());
+}

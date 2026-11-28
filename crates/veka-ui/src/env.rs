@@ -114,6 +114,10 @@ pub struct Environment {
     pub backdrop_quality: BackdropQuality,
     /// Dans un `glass_group` : les verres donnent leur forme au groupe.
     pub in_glass_group: bool,
+    /// `.on_submit` : l'action des champs de texte à l'appui sur Entrée.
+    pub on_submit: Option<crate::Action>,
+    /// `.text_field_style(.plain)` : champs de texte sans cadre.
+    pub text_field_plain: bool,
 }
 
 /// Qualité des effets qui lisent l'arrière-plan (flou, verre).
@@ -146,6 +150,8 @@ impl Default for Environment {
             reduce_transparency: false,
             backdrop_quality: BackdropQuality::High,
             in_glass_group: false,
+            on_submit: None,
+            text_field_plain: false,
         }
     }
 }

@@ -4,6 +4,21 @@ Le plus récent en premier.
 
 ## Étape 9 — clavier, focus et saisie de texte
 
+### Champs de texte (PR U)
+- `TextField("Nom", nom)` et `SecureField` (points à la place des caractères, sans copier), reliés à un
+  `State<String>`, avec l'éditeur de parley : curseur, sélection à la souris et au clavier (Maj+flèches,
+  Ctrl ou ⌥ de mot en mot, Origine, Fin), copier, couper, coller, tout sélectionner, annuler et rétablir.
+- `.on_submit(…)` à l'appui sur Entrée, `.text_field_style_plain(true)` pour un champ sans cadre.
+- IME : IMM32 sur Windows, `NSTextInputClient` sur macOS (aussi pour les touches mortes). La composition est
+  soulignée dans le champ et la fenêtre des candidats se place dessous.
+- Presse-papiers du système (`CF_UNICODETEXT`, `NSPasteboard`).
+- Piles alignées : `VStack![alignment: Alignment::Leading, spacing: 12; …]`.
+- `.vk` : `TextField("Nom", text: $nom)`, `SecureField`, `.onSubmit { … }`, `.textFieldStyle(.plain)`.
+- C : `veka_text_field`, `veka_secure_field`, `veka_state_new_string` (et `get` / `set`), `veka_on_submit`,
+  `veka_text_field_plain`, `veka_focusable`, `veka_focused`, `veka_on_key_press`, `veka_keyboard_shortcut`
+  et les bits `VEKA_MODIFIER_*`.
+- Exemple `formulaire` en Rust, en `.vk` (même dessin, testé) et en C.
+
 ### Clavier et focus (PR T)
 - Touches et caractères tapés sur Windows (`WM_KEYDOWN`, `WM_CHAR`) et macOS (`keyDown:`), avec les
   modificateurs ; `Modifiers::COMMAND` vaut ⌘ sur le Mac et Ctrl ailleurs.

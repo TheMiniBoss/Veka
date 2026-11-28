@@ -1,6 +1,6 @@
 # Étape 9 : clavier, focus et saisie de texte
 
-Statut : **validé** (les 6 choix recommandés) ; PR T faite.
+Statut : **validé** (les 6 choix recommandés) ; PR T et PR U faites.
 
 ## 1. Objectif
 
@@ -124,6 +124,10 @@ TextField("Nom", text: $nom)
   - `TextField` et `SecureField` avec le `PlainEditor` de parley ;
   - IME sur Windows (IMM32) et macOS (`NSTextInputClient`), et presse-papiers ;
   - liaisons C, exemple `formulaire` en Rust, `.vk` et C.
+  - Fait. Écarts :
+    - le curseur ne clignote pas encore, et le double-clic ne sélectionne pas encore un mot ;
+    - en C, le focus se relie à un état entier (`veka_focused(élément, état, valeur)`, 0 sans focus) ;
+    - les piles prennent aussi `alignment:` en Rust (`VStack![alignment: Alignment::Leading; …]`).
 
 ## 6. Choix à valider
 

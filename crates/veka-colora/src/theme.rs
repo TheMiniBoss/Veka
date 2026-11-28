@@ -137,6 +137,9 @@ const CONTROLS: &[(&str, &str)] = &[
     ("MenuBackground", "WindowBackground"),
     ("PickerAccent", "ThemeAccent"),
     ("PickerBackground", "Fill"),
+    ("TextFieldAccent", "ThemeAccent"),
+    ("TextFieldBackground", "Background"),
+    ("TextFieldText", "ThemeText"),
 ];
 
 /// Les 26 jetons de couleur de Veka (sans les jetons de contrôle).

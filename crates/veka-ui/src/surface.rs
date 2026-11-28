@@ -12,7 +12,7 @@ use veka_text::TextSystem;
 use crate::element::{Element, View};
 use crate::env::Environment;
 use crate::primitive::{
-    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal,
+    EventCx, EventResult, KeyEvent, LayoutCx, PaintCx, PointerEvent, Primitive, Proposal, TextInput,
 };
 use crate::state;
 use crate::tree::{self, NodeId, Tree};
@@ -554,6 +554,7 @@ impl Surface {
                 },
                 &mut actions,
             ),
+            InputEvent::Char(ch) => self.send_text(&TextInput::Char(ch), &mut actions),
             _ => {}
         }
         // Les actions tournent quand plus rien n'est emprunté : elles peuvent modifier l'état.
@@ -630,12 +631,17 @@ impl Surface {
     }
 
     fn send(&mut self, id: NodeId, event: PointerEvent, actions: &mut Vec<crate::Action>) -> bool {
+        let focused = self.tree.focused == Some(id);
         let node = &mut self.tree.nodes[id];
         let prim = node.prim.clone();
+        let env = node.env.clone();
         let r: EventResult = prim.pointer(
             &mut EventCx {
                 state: node.state.as_mut(),
                 rect: node.rect,
+                text: &mut self.text,
+                focused,
+                env: &env,
             },
             event,
         );
@@ -717,6 +723,53 @@ impl Surface {
     }
 
     /// Après un nouveau layout, le nœud survolé peut avoir disparu.
+    /// Du texte composé par l'IME (ou validé) pour la vue qui a le focus. Renvoie `true` si une nouvelle
+    /// image est nécessaire.
+    pub fn text_input(&mut self, input: TextInput) -> bool {
+        if self.needs_layout || state::has_dirty(self.id) {
+            self.frame();
+        }
+        let mut actions = Vec::new();
+        self.send_text(&input, &mut actions);
+        for a in actions {
+            a.call();
+        }
+        self.needs_frame()
+    }
+
+    /// La zone du texte en cours d'édition (pour placer la fenêtre de l'IME), si la vue qui a le focus
+    /// reçoit du texte. `None` : l'hôte peut couper l'IME.
+    pub fn text_input_area(&self) -> Option<Rect> {
+        let f = self.tree.focused?;
+        let node = &self.tree.nodes[f];
+        if !node.prim.accepts_text() {
+            return None;
+        }
+        let st = node.state.downcast_ref::<crate::views::TextFieldState>();
+        Some(st.map_or(node.rect, crate::views::TextFieldPrim::ime_area))
+    }
+
+    fn send_text(&mut self, input: &TextInput, actions: &mut Vec<crate::Action>) {
+        let Some(id) = self.tree.focused else { return };
+        let node = &mut self.tree.nodes[id];
+        let prim = node.prim.clone();
+        let env = node.env.clone();
+        let r = prim.text_input(
+            &mut EventCx {
+                state: node.state.as_mut(),
+                rect: node.rect,
+                text: &mut self.text,
+                focused: true,
+                env: &env,
+            },
+            input,
+        );
+        if r.repaint {
+            self.needs_paint = true;
+        }
+        actions.extend(r.action);
+    }
+
     /// La vue qui a le focus du clavier, s'il y en a une (sert aux tests et aux hôtes).
     pub fn focused_rect(&self) -> Option<Rect> {
         self.tree.focused.map(|f| self.tree.nodes[f].rect)
@@ -838,12 +891,17 @@ impl Surface {
             }
         };
         for id in chain {
+            let focused = self.tree.focused == Some(id);
             let node = &mut self.tree.nodes[id];
             let prim = node.prim.clone();
+            let env = node.env.clone();
             let r = prim.key(
                 &mut EventCx {
                     state: node.state.as_mut(),
                     rect: node.rect,
+                    text: &mut self.text,
+                    focused,
+                    env: &env,
                 },
                 &event,
             );

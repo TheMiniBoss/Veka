@@ -17,7 +17,7 @@ fn color(c: VekaColor) -> Value {
 }
 
 /// Un modifier sur `element` (consommé).
-unsafe fn modify(element: *mut VekaElement, name: &str, params: Params) -> *mut VekaElement {
+pub(crate) unsafe fn modify(element: *mut VekaElement, name: &str, params: Params) -> *mut VekaElement {
     guard(std::ptr::null_mut(), || {
         // SAFETY : contrat de l'API (élément donné par Veka, non consommé).
         let child = unsafe { take(element) }?;

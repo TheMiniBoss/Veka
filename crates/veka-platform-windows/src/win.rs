@@ -15,7 +15,7 @@ use raw_window_handle::{
     WindowHandle,
 };
 use veka_platform::{
-    Appearance, Chrome, Color, ColorScheme, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
+    Appearance, Chrome, Color, ColorScheme, Ime, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
     PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
     SystemBackdrop, WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
@@ -40,6 +40,7 @@ use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForSystem, GetDpiForWindow,
     GetSystemMetricsForDpi, SetProcessDpiAwarenessContext,
 };
+use windows::Win32::UI::Input::Ime::ISC_SHOWUICOMPOSITIONWINDOW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, MAPVK_VK_TO_CHAR, MapVirtualKeyW, ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT,
     TRACKMOUSEEVENT, TrackMouseEvent, VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
@@ -57,11 +58,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
     TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED,
     WM_CHAR, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN,
-    WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP,
-    WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
+    WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
+    WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
+    WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE,
+    WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW,
+    WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -107,6 +109,8 @@ struct WinData {
     hit_area: RefCell<Option<Vec<[i32; 4]>>>,
     /// Première moitié d'un caractère hors du plan de base (`WM_CHAR` arrive en UTF-16).
     high_surrogate: Cell<u16>,
+    /// La zone du texte édité (points), pour la fenêtre de l'IME. `None` : IME coupé.
+    ime_area: Cell<Option<Rect>>,
 }
 
 /// Une fenêtre Win32 ouverte par Veka.
@@ -213,6 +217,12 @@ impl PlatformWindow for Win32Window {
         *self.data.hit_area.borrow_mut() = px;
     }
 
+    fn set_ime_area(&self, area: Option<Rect>) {
+        self.data.ime_area.set(area);
+        // SAFETY : HWND valide (voir `window_handle`).
+        unsafe { crate::text::set_ime_area(self.hwnd(), area, self.data.scale.get()) };
+    }
+
     fn info(&self) -> WindowInfo {
         self.data.info.get()
     }
@@ -291,6 +301,7 @@ impl PlatformContext for Ctx {
             transparent: desc.chrome.is_transparent(),
             hit_area: RefCell::new(None),
             high_surrogate: Cell::new(0),
+            ime_area: Cell::new(None),
             custom,
             resizable: desc.resizable,
             resize_margin: desc.resize_margin,
@@ -327,6 +338,8 @@ impl PlatformContext for Ctx {
                 let _ = SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
             apply_scheme(hwnd, APPEARANCE.with(|a| a.get()).scheme);
+            // Pas d'IME tant qu'aucun champ n'a le focus.
+            crate::text::set_ime_area(hwnd, None, 1.0);
             if custom {
                 decorate(hwnd, desc.chrome);
             }
@@ -629,6 +642,11 @@ fn refresh_appearance() {
         });
         push(PlatformEvent::AppearanceChanged { appearance: now });
     }
+}
+
+/// Une fenêtre de ce fil (pour posséder le presse-papiers), s'il y en a une.
+pub(crate) fn any_hwnd() -> Option<HWND> {
+    BY_HWND.with(|m| m.borrow().keys().next().map(|&h| HWND(h as *mut c_void)))
 }
 
 fn push(event: PlatformEvent) {
@@ -987,6 +1005,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     push(PlatformEvent::Char { window, ch });
                 }
             }
+            // L'IME écrit dans le champ (souligné) : pas de fenêtre de composition du système.
+            WM_IME_SETCONTEXT => {
+                let lparam = LPARAM(lparam.0 & !(ISC_SHOWUICOMPOSITIONWINDOW as isize));
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            WM_IME_STARTCOMPOSITION => {
+                if let Some(area) = data.ime_area.get() {
+                    crate::text::place_ime(hwnd, area, scale);
+                }
+            }
+            WM_IME_COMPOSITION => {
+                for ime in crate::text::composition(hwnd, lparam.0 as u32) {
+                    push(PlatformEvent::Ime { window, ime });
+                }
+            }
+            WM_IME_ENDCOMPOSITION => push(PlatformEvent::Ime {
+                window,
+                ime: Ime::Preedit {
+                    text: String::new(),
+                    cursor: None,
+                },
+            }),
             WM_CLOSE => push(PlatformEvent::CloseRequested { window }),
             WM_DESTROY => {
                 BY_HWND.with(|m| m.borrow_mut().remove(&(hwnd.0 as isize)));

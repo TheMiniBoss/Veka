@@ -9,6 +9,7 @@ mod keyboard;
 mod modifiers;
 mod shape;
 mod text;
+mod text_field;
 
 pub use anima::{
     AnimationEndPrim, AnimationPrim, MatchedGeometryPrim, OffsetPrim, OpacityPrim, RotationPrim,
@@ -23,6 +24,7 @@ pub use keyboard::{
 pub use modifiers::{Background, EnvModifier, Length, PreferredColorScheme, TapGesture};
 pub use shape::ShapePrim;
 pub use text::{TextPrim, TextState};
+pub use text_field::{FieldEnv, SecureField, TextField, TextFieldPrim, TextFieldState};
 
 use veka_graphics::{CornerRadii, Shape};
 
@@ -101,6 +103,24 @@ pub fn stack(axis: Axis, spacing: Option<f32>, children: Vec<Element>) -> Elemen
             axis,
             spacing: spacing.unwrap_or(DEFAULT_SPACING),
             alignment: Alignment::Center,
+        },
+        children,
+    )
+}
+
+/// Une pile dont les enfants sont alignés en travers (`VStack![alignment: Alignment::Leading; …]`), comme
+/// `VStack(alignment: .leading)` de SwiftUI.
+pub fn stack_aligned(
+    axis: Axis,
+    alignment: Alignment,
+    spacing: Option<f32>,
+    children: Vec<Element>,
+) -> Element {
+    Element::new(
+        Stack {
+            axis,
+            spacing: spacing.unwrap_or(DEFAULT_SPACING),
+            alignment,
         },
         children,
     )

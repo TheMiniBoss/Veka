@@ -13,7 +13,8 @@
 - [x] Fenêtre transparente : laisser passer les clics là où Veka ne dessine rien (région de fenêtre sur Windows,
   `ignoresMouseEvents` suivi au pointeur sur macOS, à essayer sur le Mac).
 - [x] Clavier et focus (étape 9, PR T).
-- [ ] Saisie de texte : `TextField`, `SecureField`, IME, presse-papiers (étape 9, PR U).
+- [x] Saisie de texte : `TextField`, `SecureField`, IME, presse-papiers (étape 9, PR U).
+- [ ] Champs : curseur qui clignote, double-clic pour un mot, IME TSF sur Windows.
 - [ ] Touche physique (`code`) dans les événements clavier, si un jeu en a besoin.
 - [ ] Un seul GPU partagé entre les fenêtres.
 
