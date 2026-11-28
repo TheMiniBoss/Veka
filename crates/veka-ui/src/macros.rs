@@ -11,6 +11,22 @@
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __veka_stack {
+    ($axis:ident; alignment: $a:expr, spacing: $s:expr; $($child:expr),* $(,)?) => {
+        $crate::views::stack_aligned(
+            $crate::Axis::$axis,
+            $a,
+            ::core::option::Option::Some(($s) as f32),
+            ::std::vec![$($crate::View::into_element($child)),*],
+        )
+    };
+    ($axis:ident; alignment: $a:expr; $($child:expr),* $(,)?) => {
+        $crate::views::stack_aligned(
+            $crate::Axis::$axis,
+            $a,
+            ::core::option::Option::None,
+            ::std::vec![$($crate::View::into_element($child)),*],
+        )
+    };
     ($axis:ident; spacing: $s:expr; $($child:expr),* $(,)?) => {
         $crate::views::stack(
             $crate::Axis::$axis,

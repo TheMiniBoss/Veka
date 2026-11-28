@@ -15,9 +15,10 @@ fn main() {
         "verre" => ("Verre", Size::new(900.0, 560.0)),
         "fusion" => ("Fusion", Size::new(980.0, 600.0)),
         "clavier" => ("Clavier", Size::new(560.0, 360.0)),
+        "formulaire" => ("Formulaire", Size::new(420.0, 520.0)),
         _ => {
             eprintln!(
-                "Veka : exemple inconnu `{nom}` (compteur, colora, anima, feux, verre, fusion, clavier)"
+                "Veka : exemple inconnu `{nom}` (compteur, colora, anima, feux, verre, fusion, clavier, formulaire)"
             );
             std::process::exit(2);
         }

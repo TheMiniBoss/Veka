@@ -406,6 +406,32 @@ fn type_matches(ty: ValueType, v: &Value) -> bool {
     }
 }
 
+/// Les styles de `.textFieldStyle`.
+const FIELD_STYLES: &[&str] = &["roundedBorder", "plain", "automatic"];
+
+/// Un `TextField` ou un `SecureField` relié à un état du schéma.
+fn text_field(p: &Params, secure: bool) -> Element {
+    let b = p.binding("text").expect("vérifié par le schéma");
+    let get = b.get.clone();
+    let set = b.set.clone();
+    Element::new(
+        views::TextFieldPrim {
+            placeholder: p.string("placeholder").unwrap_or_default().to_owned(),
+            get: Rc::new(move || match get() {
+                Value::String(s) => s.to_string(),
+                _ => String::new(),
+            }),
+            set: Rc::new(move |text: String| {
+                if !matches!(&(b.get)(), Value::String(s) if **s == *text) {
+                    set(Value::String(Rc::from(text)));
+                }
+            }),
+            secure,
+        },
+        Vec::new(),
+    )
+}
+
 /// Le primitive de `.focused` à partir d'un état du schéma.
 fn focus_binding(b: Binding, equals: Option<Value>) -> views::FocusBinding {
     let get = b.get.clone();
@@ -667,6 +693,32 @@ fn builtin_entries() -> Vec<Entry> {
                 };
                 Element::new(views::ButtonPrim { action }, vec![label])
             },
+        },
+        Entry {
+            name: "TextField",
+            kind: Primitive,
+            children: None,
+            doc: "champ de texte d'une ligne relié à un état (`TextField(\"Nom\", text: $nom)`)",
+            params: const {
+                &[
+                    p("placeholder", ValueType::String, false, "texte affiché quand le champ est vide"),
+                    p("text", ValueType::Binding, true, "état relié (`$nom`)"),
+                ]
+            },
+            build: |p, _| text_field(p, false),
+        },
+        Entry {
+            name: "SecureField",
+            kind: Primitive,
+            children: None,
+            doc: "champ de mot de passe : des points à la place des caractères, sans copier",
+            params: const {
+                &[
+                    p("placeholder", ValueType::String, false, "texte affiché quand le champ est vide"),
+                    p("text", ValueType::Binding, true, "état relié (`$motDePasse`)"),
+                ]
+            },
+            build: |p, _| text_field(p, true),
         },
         // --- Modifiers ---
         Entry {
@@ -1099,6 +1151,28 @@ fn builtin_entries() -> Vec<Entry> {
             build: |p, c| {
                 let b = p.binding("binding").expect("vérifié par le schéma");
                 one(c).wrap(focus_binding(b, p.get("equals").cloned()))
+            },
+        },
+        Entry {
+            name: "onSubmit",
+            kind: Modifier,
+            children: One,
+            doc: "action à l'appui sur Entrée dans un champ de texte du sous-arbre",
+            params: const { &[p("action", ValueType::Action, true, "action")] },
+            build: |p, c| {
+                let a = p.action("action").expect("vérifié par le schéma");
+                one(c).wrap(views::FieldEnv::OnSubmit(a))
+            },
+        },
+        Entry {
+            name: "textFieldStyle",
+            kind: Modifier,
+            children: One,
+            doc: "style des champs de texte du sous-arbre : `.roundedBorder` (par défaut) ou `.plain`",
+            params: const { &[p("style", ValueType::Enum(FIELD_STYLES), true, "style")] },
+            build: |p, c| {
+                let plain = p.enumeration("style") == Some("plain");
+                one(c).wrap(views::FieldEnv::Plain(plain))
             },
         },
         Entry {
