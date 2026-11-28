@@ -49,13 +49,14 @@ impl Primitive for Focusable {
     }
 }
 
-/// L'anneau du focus, comme sur macOS : la couleur d'accent, à moitié transparente, autour de la vue.
+/// L'anneau du focus, comme sur macOS : la couleur d'accent autour de la vue, séparé d'elle par un
+/// petit espace (il se voit aussi autour d'une vue de la couleur d'accent).
 pub fn paint_focus_ring(cx: &mut PaintCx<'_>, rect: Rect) {
     let env = cx.env().clone();
-    let accent = env.color(&env.accent).with_alpha(0.5);
-    let r = rect.inset(veka_foundation::Insets::all(-2.0));
+    let accent = env.color(&env.accent).with_alpha(0.75);
+    let r = rect.inset(veka_foundation::Insets::all(-4.0));
     cx.list()
-        .stroke(Shape::RoundedRectangle(CornerRadii::all(6.0)), r, accent, 3.0);
+        .stroke(Shape::RoundedRectangle(CornerRadii::all(8.0)), r, accent, 3.0);
 }
 
 /// Le primitive de `.focused(…)` : relie le focus du sous-arbre à un état.

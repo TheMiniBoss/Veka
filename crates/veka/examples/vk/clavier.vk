@@ -6,7 +6,7 @@ view Clavier {
     @State var focus = ""
 
     VStack(spacing: 16) {
-        Text("Tab : case suivante · Entrée : +10 · ⌘R / Ctrl+R : +1 · Échap : zéro")
+        Text("Tab : case suivante · Entrée : +10 · Ctrl+R (Cmd+R sur Mac) : +1 · Échap : zéro")
             .font(.caption)
         HStack(spacing: 12) {
             ZStack {

@@ -1,5 +1,5 @@
-//! Clavier et focus (étape 9) : Tab passe d'une case à l'autre, Entrée sur une case ajoute 10, ⌘R ou
-//! Ctrl+R compte, Échap remet à zéro. `cargo run --example clavier` (même dessin que `vk/clavier.vk`,
+//! Clavier et focus (étape 9) : Tab passe d'une case à l'autre, Entrée sur une case ajoute 10, Ctrl+R
+//! (Cmd+R sur Mac) compte, Échap remet à zéro. `cargo run --example clavier` (même dessin que `vk/clavier.vk`,
 //! testé).
 
 use veka::prelude::*;
@@ -22,7 +22,7 @@ pub fn vue() -> impl View {
     let focus = State::new(None::<String>);
     let actuel = focus.get().unwrap_or_else(|| "aucun".into());
     VStack![spacing: 16;
-        Text("Tab : case suivante · Entrée : +10 · ⌘R / Ctrl+R : +1 · Échap : zéro").font(Font::Caption),
+        Text("Tab : case suivante · Entrée : +10 · Ctrl+R (Cmd+R sur Mac) : +1 · Échap : zéro").font(Font::Caption),
         HStack![spacing: 12;
             tuile("Rouge", Token::Red, focus, n),
             tuile("Vert", Token::Green, focus, n),
