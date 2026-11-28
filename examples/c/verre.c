@@ -94,7 +94,7 @@ static VekaElement *barre(VekaContext *cx, Verre *v) {
     for (int i = 0; i < 3; i++) {
         onglets[i] = veka_glass(veka_padding(veka_text(noms[i]), 12), &g, NULL);
     }
-    VekaElement *groupe = veka_glass_group(veka_hstack(serre ? 2 : 18, onglets, 3), 14, &g, NULL);
+    VekaElement *groupe = veka_glass_group(veka_hstack(serre ? 2.0f : 18.0f, onglets, 3), 14, &g, NULL);
     VekaElement *lignes[] = {groupe, veka_button(serre ? "Écarter" : "Rapprocher", serrer, v)};
     return veka_vstack(12, lignes, 2);
 }
