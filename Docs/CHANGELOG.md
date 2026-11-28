@@ -4,6 +4,11 @@ Le plus récent en premier.
 
 ## Étape 8 — modes de fusion
 
+### Interface C (PR Q)
+- `VekaBlendMode` (21 modes, `VEKA_BLEND_MODE_MULTIPLY`…), `veka_blend_mode` et `veka_compositing_group`.
+  Le C++ les prend tels quels dans `veka.h`.
+- Exemple C `fusion` (même grille que l'exemple Rust), construit et lancé par la CI sur Windows.
+
 ### Calques et modes (PR P)
 - `.blend_mode(BlendMode::Multiply)` (`.blendMode(.multiply)` en `.vk`) : la vue est dessinée dans un calque à
   part, puis mélangée d'un bloc avec ce qui est derrière. Les 21 modes de SwiftUI (formules W3C), mélangés en

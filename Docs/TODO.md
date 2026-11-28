@@ -67,7 +67,7 @@
 
 ## Étape 8 (modes de fusion)
 - [x] PR P : calques, 21 modes, `blend_mode` et `compositing_group` en Rust et en `.vk`, exemple `fusion`.
-- [ ] PR Q : liaisons C, C++ et C#, exemple C.
+- [x] PR Q : interface C (utilisable telle quelle en C++), exemple C. Le C# viendra avec ses liaisons (voir « Plus tard »).
 - [ ] Calques à la taille du groupe (aujourd'hui : de la fenêtre, vidés en entier à chaque groupe).
 
 ## Plus tard

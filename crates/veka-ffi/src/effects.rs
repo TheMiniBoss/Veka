@@ -306,3 +306,60 @@ pub unsafe extern "C" fn veka_app_set_backdrop_quality(
         Ok(0)
     })
 }
+
+/// Comment une vue se mélange avec ce qui est dessiné derrière elle (mêmes noms qu'en SwiftUI).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VekaBlendMode {
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    SoftLight,
+    HardLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+    /// Le groupe ne se dessine que là où le fond est déjà dessiné.
+    SourceAtop,
+    /// Le groupe passe derrière ce qui est déjà dessiné.
+    DestinationOver,
+    /// Le groupe efface le fond (perce un trou à sa forme).
+    DestinationOut,
+    PlusDarker,
+    PlusLighter,
+}
+
+/// Mélange `element` avec ce qui est dessiné derrière lui, d'un bloc (le sous-arbre est d'abord
+/// dessiné à part). Reprend `element`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_blend_mode(element: *mut VekaElement, mode: VekaBlendMode) -> *mut VekaElement {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY : contrat de l'API.
+        let child = unsafe { take(element) }?;
+        let name = veka_ui::BlendMode::NAMES[mode as usize];
+        build_boxed(
+            "blendMode",
+            Params::new().with_static("mode", Value::Enum(name.into())),
+            vec![child],
+        )
+    })
+}
+
+/// Dessine `element` à part avant de le composer : une opacité appliquée ensuite le rend transparent
+/// d'un bloc. Reprend `element`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn veka_compositing_group(element: *mut VekaElement) -> *mut VekaElement {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY : contrat de l'API.
+        let child = unsafe { take(element) }?;
+        build_boxed("compositingGroup", Params::new(), vec![child])
+    })
+}

@@ -116,6 +116,11 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: build/c/Debug/verre.exe
+      - name: Fusion en C (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: build/c/Debug/fusion.exe
 
   core:
     name: Cœur sans OS + WebAssembly

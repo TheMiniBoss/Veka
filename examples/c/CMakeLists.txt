@@ -42,8 +42,8 @@ endif()
 add_dependencies(veka veka_cargo)
 
 # Les exemples : compteur (étape 1), fenetre_perso (étape 2), colora (étape 3), anima (étape 4) et
-# boutique (étape 5, le langage .vk) et verre (étape 6).
-foreach(exemple compteur fenetre_perso colora anima boutique verre)
+# boutique (étape 5, le langage .vk), verre (étape 6) et fusion (étape 8).
+foreach(exemple compteur fenetre_perso colora anima boutique verre fusion)
     add_executable(${exemple} ${exemple}.c)
     target_link_libraries(${exemple} PRIVATE veka)
     if(MSVC)

@@ -1,6 +1,6 @@
 # Veka : étape 8, modes de fusion
 
-Statut : **validé** (les 6 choix recommandés) ; PR P faite. Fait suite à `VEKA_ETAPE7.md`. Reprend le choix 9 de `VEKA_ETAPE6.md` :
+Statut : **validé** (les 6 choix recommandés) ; PR P et PR Q faites. Fait suite à `VEKA_ETAPE7.md`. Reprend le choix 9 de `VEKA_ETAPE6.md` :
 « les modes de fusion juste après, ils réutilisent la capture ».
 
 ## 1. Objectif
@@ -105,6 +105,8 @@ en dessous d'une milliseconde de GPU. Pas de seuil : on mesure sur l'exemple et 
     (case percée par `destinationOut`, formule de chaque mode) plutôt qu'une image de référence entière.
 - **PR Q, les liaisons** : C, C++ et C# (`veka_blend_mode`, `veka_compositing_group`, l'énumération), exemple C,
   en-tête vérifié par la CI.
+  - Fait. Écart : il n'y a pas encore de liaisons C# dans le dépôt ; le C# reprendra `VekaBlendMode` et les deux
+    fonctions de `veka.h` quand ses liaisons arriveront. Le C++ utilise `veka.h` directement.
 
 ## 6. Choix à valider
 
