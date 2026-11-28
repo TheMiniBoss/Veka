@@ -16,7 +16,7 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
-    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, SystemBackdrop,
+    PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size, SystemBackdrop,
     WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
@@ -27,7 +27,10 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DWMWCP_ROUNDSMALL, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient, ValidateRect};
+use windows::Win32::Graphics::Gdi::{
+    ClientToScreen, CombineRgn, CreateRectRgn, DeleteObject, InvalidateRect, RGN_OR, ScreenToClient,
+    SetWindowRgn, ValidateRect,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
@@ -42,9 +45,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetMessageW, GetWindowLongW, HTBOTTOM,
-    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTTOP,
-    HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
+    DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetMessageW, GetWindowLongW, GetWindowRect,
+    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTMAXBUTTON, HTNOWHERE, HTRIGHT,
+    HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_ARROW, IsZoomed, LoadCursorW, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
     PostMessageW, PostQuitMessage, PostThreadMessageW, RegisterClassExW, SIZE_MAXIMIZED, SIZE_MINIMIZED,
     SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SPI_GETCLIENTAREAANIMATION, SW_MAXIMIZE, SW_MINIMIZE,
     SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
@@ -92,6 +95,12 @@ struct WinData {
     info: Cell<WindowInfo>,
     /// Le pointeur est sur un bouton annoncé au système (zone non cliente).
     nc_tracking: Cell<bool>,
+    /// Mode imposé par l'application à la barre de titre (`None` : celui du système).
+    scheme: Cell<Option<ColorScheme>>,
+    /// Fenêtre transparente (`Chrome::Custom { transparent: true }`).
+    transparent: bool,
+    /// Zones qui prennent les clics (pixels du client), dernière région envoyée au système.
+    hit_area: RefCell<Option<Vec<[i32; 4]>>>,
 }
 
 /// Une fenêtre Win32 ouverte par Veka.
@@ -164,6 +173,38 @@ impl PlatformWindow for Win32Window {
 
     fn set_regions(&self, regions: &[WindowRegion]) {
         *self.data.regions.borrow_mut() = regions.to_vec();
+    }
+
+    fn set_color_scheme(&self, scheme: Option<ColorScheme>) {
+        self.data.scheme.set(scheme);
+        let system = APPEARANCE.with(|a| a.get()).scheme;
+        // SAFETY : HWND valide (voir `window_handle`).
+        unsafe { apply_scheme(self.hwnd(), scheme.unwrap_or(system)) };
+    }
+
+    fn set_hit_area(&self, area: Option<&[Rect]>) {
+        if !self.data.transparent {
+            return;
+        }
+        let s = self.data.scale.get();
+        let px: Option<Vec<[i32; 4]>> = area.map(|a| {
+            a.iter()
+                .map(|r| {
+                    [
+                        (r.x() * s).floor() as i32 - 1,
+                        (r.y() * s).floor() as i32 - 1,
+                        (r.max_x() * s).ceil() as i32 + 1,
+                        (r.max_y() * s).ceil() as i32 + 1,
+                    ]
+                })
+                .collect()
+        });
+        if *self.data.hit_area.borrow() == px {
+            return;
+        }
+        // SAFETY : HWND valide ; la région créée appartient au système après `SetWindowRgn`.
+        unsafe { set_window_region(self.hwnd(), px.as_deref()) };
+        *self.data.hit_area.borrow_mut() = px;
     }
 
     fn info(&self) -> WindowInfo {
@@ -240,6 +281,9 @@ impl PlatformContext for Ctx {
             tracking: Cell::new(false),
             buttons: Cell::new(0),
             regions: RefCell::new(Vec::new()),
+            scheme: Cell::new(None),
+            transparent: desc.chrome.is_transparent(),
+            hit_area: RefCell::new(None),
             custom,
             resizable: desc.resizable,
             resize_margin: desc.resize_margin,
@@ -515,6 +559,39 @@ fn read_appearance() -> Appearance {
     }
 }
 
+/// Fenêtre transparente : la région de la fenêtre devient l'union des zones dessinées (pixels du
+/// client). Hors de la région, le système envoie les clics aux fenêtres de dessous, quelle que soit
+/// leur application ; rien n'y est dessiné de toute façon. `None` : toute la fenêtre.
+///
+/// # Safety
+///
+/// `hwnd` doit être une fenêtre valide.
+unsafe fn set_window_region(hwnd: HWND, area: Option<&[[i32; 4]]>) {
+    // SAFETY : garanti par l'appelant ; les régions intermédiaires sont libérées, la dernière est
+    // donnée au système.
+    unsafe {
+        let Some(area) = area else {
+            let _ = SetWindowRgn(hwnd, None, true);
+            return;
+        };
+        // Le client peut être décalé dans la fenêtre (coordonnées de la région : la fenêtre).
+        let mut win = RECT::default();
+        let _ = GetWindowRect(hwnd, &mut win);
+        let mut origin = POINT::default();
+        let _ = ClientToScreen(hwnd, &mut origin);
+        let (dx, dy) = (origin.x - win.left, origin.y - win.top);
+        let rgn = CreateRectRgn(0, 0, 0, 0);
+        for r in area {
+            let part = CreateRectRgn(r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy);
+            CombineRgn(Some(rgn), Some(rgn), Some(part), RGN_OR);
+            let _ = DeleteObject(part.into());
+        }
+        if SetWindowRgn(hwnd, Some(rgn), true) == 0 {
+            let _ = DeleteObject(rgn.into());
+        }
+    }
+}
+
 /// Barre de titre du système sombre ou claire, comme les applications.
 ///
 /// # Safety
@@ -540,7 +617,7 @@ fn refresh_appearance() {
         BY_HWND.with(|m| {
             for data in m.borrow().values() {
                 // SAFETY : les HWND de la table sont vivants (retirés à WM_DESTROY).
-                unsafe { apply_scheme(data.hwnd.get(), now.scheme) };
+                unsafe { apply_scheme(data.hwnd.get(), data.scheme.get().unwrap_or(now.scheme)) };
             }
         });
         push(PlatformEvent::AppearanceChanged { appearance: now });

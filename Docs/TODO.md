@@ -10,8 +10,8 @@
 ## Juste après l’étape 1
 - [x] Fenêtres `Chrome::Hidden` et `Chrome::Custom`, avec Snap Layouts sur Windows 11 (étape 2, essayé sur le PC).
 - [ ] Étape 2 sur le Mac : `Hidden`, `Custom`, transparence, plein écran.
-- [ ] Fenêtre transparente : laisser passer les clics là où Veka ne dessine rien (aujourd’hui la marge transparente
-  capte la souris).
+- [x] Fenêtre transparente : laisser passer les clics là où Veka ne dessine rien (région de fenêtre sur Windows,
+  `ignoresMouseEvents` suivi au pointeur sur macOS, à essayer sur le Mac).
 - [ ] Clavier et focus, saisie de texte (IME).
 - [ ] Un seul GPU partagé entre les fenêtres.
 
@@ -19,7 +19,8 @@
 - [x] PR G : `VekaPaint`, dégradés et thèmes en C ; peintures dans le schéma ; clair / sombre et accent de macOS.
 - [ ] Colora sur le Mac : mode clair / sombre en direct, accent, exemples Rust et C.
 - [ ] Constantes `VEKA_UNIT_*` de `veka.h` : littéraux composés du C99, à revoir pour les liaisons C++.
-- [ ] Hiérarchie (`secondary` 60 %…) : le mélange alpha se fait en lumière linéaire, donc un noir à 60 % sur fond clair paraît bien plus pâle que chez Apple (mélange en sRGB) ; à corriger (mélange en sRGB pour le texte, ou alphas compensés).
+- [x] Hiérarchie (`secondary` 60 %…) : alphas compensés, le texte a le contraste d'un mélange en sRGB comme chez Apple.
+- [x] `.preferred_color_scheme` : l'app impose clair ou sombre, la barre de titre suit (Windows et macOS).
 - [ ] Texte en dégradé (aujourd'hui : couleur moyenne du dégradé).
 - [x] Modes de fusion (étape 8).
 - [ ] Images comme remplissage (avec la vue `Image`).

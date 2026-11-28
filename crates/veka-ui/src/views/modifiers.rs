@@ -339,6 +339,13 @@ impl Element {
         self.wrap(EnvModifier::ColorScheme(scheme))
     }
 
+    /// Le mode clair ou sombre de **toute la fenêtre**, barre de titre du système comprise (comme
+    /// `preferredColorScheme` en SwiftUI). `None` : celui du système. La première vue qui le demande
+    /// (en partant de la racine) l'emporte.
+    pub fn preferred_color_scheme(self, scheme: Option<ColorScheme>) -> Element {
+        self.wrap(PreferredColorScheme { scheme })
+    }
+
     /// Ajoute `amount` (-1 à 1) à chaque composante.
     pub fn brightness(self, amount: f32) -> Element {
         self.wrap(EnvModifier::ColorAdjust(ColorAdjust::Brightness(amount)))
@@ -369,5 +376,21 @@ impl Element {
         self.wrap(TapGesture {
             action: Action::new(action),
         })
+    }
+}
+
+/// Mode clair ou sombre demandé pour toute la fenêtre (`.preferred_color_scheme`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreferredColorScheme {
+    pub scheme: Option<ColorScheme>,
+}
+
+impl crate::primitive::Primitive for PreferredColorScheme {
+    fn name(&self) -> &'static str {
+        "preferredColorScheme"
+    }
+
+    fn preferred_color_scheme(&self) -> Option<ColorScheme> {
+        self.scheme
     }
 }

@@ -738,6 +738,28 @@ fn builtin_entries() -> Vec<Entry> {
                 }
             },
         },
+        Entry {
+            name: "preferredColorScheme",
+            kind: Modifier,
+            children: One,
+            doc: "mode clair ou sombre de toute la fenêtre, barre de titre comprise",
+            params: const {
+                &[p(
+                    "scheme",
+                    ValueType::Enum(SCHEMES),
+                    true,
+                    "mode (system : celui du système)",
+                )]
+            },
+            build: |p, c| {
+                let scheme = match p.enumeration("scheme") {
+                    Some("dark") => Some(ColorScheme::Dark),
+                    Some("light") => Some(ColorScheme::Light),
+                    _ => Option::None,
+                };
+                one(c).preferred_color_scheme(scheme)
+            },
+        },
         adjust("brightness", "ajoute la valeur (-1 à 1) à chaque composante"),
         adjust("contrast", "contraste (1 = inchangé)"),
         adjust("saturation", "saturation (0 = gris, 1 = inchangé)"),

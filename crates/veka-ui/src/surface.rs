@@ -94,6 +94,10 @@ pub struct Surface {
     clock: bool,
     /// Le pointeur, s'il est dans la fenêtre (lumière des verres `interactive`).
     pointer: Option<Point>,
+    /// Le mode du système, et celui que les vues demandent pour la fenêtre (`.preferred_color_scheme`).
+    system_scheme: ColorScheme,
+    preferred_scheme: Option<ColorScheme>,
+    preferred_changed: bool,
 }
 
 impl std::fmt::Debug for Surface {
@@ -134,6 +138,9 @@ impl Surface {
             animating_watchers: Vec::new(),
             clock: false,
             pointer: None,
+            system_scheme: ColorScheme::default(),
+            preferred_scheme: None,
+            preferred_changed: false,
         }
     }
 
@@ -174,6 +181,8 @@ impl Surface {
 
     /// Le mode clair ou sombre du système et sa couleur d'accent, donnés par l'hôte.
     pub fn set_system_appearance(&mut self, scheme: ColorScheme, accent: Option<Color>) {
+        self.system_scheme = scheme;
+        let scheme = self.preferred_scheme.unwrap_or(scheme);
         if self.env.color_scheme != scheme || self.env.system_accent != accent {
             self.env = Rc::new(Environment {
                 color_scheme: scheme,
@@ -232,6 +241,17 @@ impl Surface {
     }
 
     /// Les actions sur la fenêtre demandées par les vues (boutons de fenêtre…), à exécuter par l'hôte.
+    /// Le mode demandé pour la fenêtre par `.preferred_color_scheme`, s'il a changé depuis le dernier
+    /// appel (`Some(None)` : de nouveau celui du système). L'hôte l'applique à la barre de titre.
+    pub fn take_preferred_color_scheme_if_changed(&mut self) -> Option<Option<ColorScheme>> {
+        std::mem::take(&mut self.preferred_changed).then_some(self.preferred_scheme)
+    }
+
+    /// Le mode demandé pour la fenêtre par `.preferred_color_scheme` (`None` : celui du système).
+    pub fn preferred_color_scheme(&self) -> Option<ColorScheme> {
+        self.preferred_scheme
+    }
+
     pub fn take_window_actions(&mut self) -> Vec<WindowAction> {
         crate::window::take_actions()
     }
@@ -301,7 +321,11 @@ impl Surface {
             // Une vue a pu changer un état pendant son évaluation.
             dirty = state::take_dirty(self.id);
         }
-        if self.needs_layout {
+        // Deux tours au plus : un `.preferred_color_scheme` qui change refait l'environnement.
+        for _ in 0..2 {
+            if !self.needs_layout {
+                break;
+            }
             self.tree.resolve_env(self.root, &self.env);
             let rect = Rect::from_origin_size(Point::ZERO, self.size);
             tree::measure(
@@ -316,6 +340,7 @@ impl Surface {
             self.needs_paint = true;
             self.revalidate_pointer();
             self.update_regions();
+            self.update_preferred_scheme();
         }
         if self.needs_paint {
             self.list.clear();
@@ -563,6 +588,30 @@ impl Surface {
         }
         actions.extend(r.action);
         r.handled
+    }
+
+    fn update_preferred_scheme(&mut self) {
+        fn find(tree: &Tree, id: NodeId) -> Option<ColorScheme> {
+            let node = &tree.nodes[id];
+            if let Some(s) = node.prim.preferred_color_scheme() {
+                return Some(s);
+            }
+            tree.live_children_iter(id).find_map(|c| find(tree, c))
+        }
+        let found = find(&self.tree, self.root);
+        if found == self.preferred_scheme {
+            return;
+        }
+        self.preferred_scheme = found;
+        self.preferred_changed = true;
+        let scheme = found.unwrap_or(self.system_scheme);
+        if self.env.color_scheme != scheme {
+            self.env = Rc::new(Environment {
+                color_scheme: scheme,
+                ..(*self.env).clone()
+            });
+            self.needs_layout = true;
+        }
     }
 
     fn update_regions(&mut self) {

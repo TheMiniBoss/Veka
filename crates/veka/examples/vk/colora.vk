@@ -14,7 +14,6 @@ view Colora {
     ZStack {
         Rectangle()
             .fill(.WindowBackground)
-            .colorScheme(mode == 1 ? .light : mode == 2 ? .dark : .system)
         VStack(spacing: 20) {
             Text("Colora")
                 .font(.largeTitle)
@@ -56,9 +55,10 @@ view Colora {
             }
         }
         .padding(24)
-        .colorScheme(mode == 1 ? .light : mode == 2 ? .dark : .system)
         .grayscale(gris ? 1 : 0)
     }
+    // Toute la fenêtre suit le mode choisi, barre de titre du système comprise.
+    .preferredColorScheme(mode == 1 ? .light : mode == 2 ? .dark : .system)
 }
 
 view Degrades {

@@ -277,6 +277,16 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn redraw_requester(&self) -> Box<dyn Fn() + 'static>;
     /// Les zones de la fenêtre pour le système (déplacement, boutons). Voir [`WindowRegion`].
     fn set_regions(&self, regions: &[WindowRegion]);
+    /// Le mode clair ou sombre de la fenêtre elle-même (barre de titre du système) ; `None` : celui du
+    /// système.
+    fn set_color_scheme(&self, scheme: Option<ColorScheme>) {
+        let _ = scheme;
+    }
+    /// Fenêtre transparente : les zones où Veka dessine, en points. Ailleurs, les clics passent aux
+    /// fenêtres de dessous. `None` : toute la fenêtre prend les clics.
+    fn set_hit_area(&self, area: Option<&[Rect]>) {
+        let _ = area;
+    }
     /// L'état actuel (agrandie, plein écran, active).
     fn info(&self) -> WindowInfo;
     /// Agit sur la fenêtre. Une action que la plateforme ne sait pas encore faire est ignorée.

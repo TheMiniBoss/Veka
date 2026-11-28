@@ -335,6 +335,8 @@ struct HostWindow {
     renderer: WindowRenderer,
     /// `VEKA_STATS=1` : le temps des images, affiché chaque seconde.
     stats: Option<Stats>,
+    /// Fenêtre transparente : les clics passent là où rien n'est dessiné.
+    click_through: bool,
 }
 
 /// Le temps passé par image, cumulé sur une seconde.
@@ -490,6 +492,7 @@ impl Host {
         root: Element,
     ) -> Result<(), AppError> {
         let transparent = desc.is_transparent();
+        let click_through = desc.chrome.is_transparent();
         let id = ctx.create_window(desc).map_err(AppError::Platform)?;
         let window = ctx.window(id);
         let mut surface = Surface::new(root);
@@ -528,6 +531,7 @@ impl Host {
                 surface,
                 renderer,
                 stats: Stats::from_env(),
+                click_through,
             },
         );
         Ok(())
@@ -610,6 +614,9 @@ impl Host {
                 // tourne, `needs_frame` reste vrai et on redessine à chaque synchronisation verticale.
                 let t0 = std::time::Instant::now();
                 let list = w.surface.frame_at(ctx.now());
+                if w.click_through {
+                    ctx.window(window).set_hit_area(Some(&list.painted_bounds(16)));
+                }
                 let t1 = std::time::Instant::now();
                 let result = w.renderer.render(list);
                 if let Some(stats) = &mut w.stats {
@@ -617,6 +624,9 @@ impl Host {
                 }
                 if let Some(regions) = w.surface.take_regions_if_changed() {
                     ctx.window(window).set_regions(&regions);
+                }
+                if let Some(scheme) = w.surface.take_preferred_color_scheme_if_changed() {
+                    ctx.window(window).set_color_scheme(scheme);
                 }
                 match result {
                     Ok(()) => {

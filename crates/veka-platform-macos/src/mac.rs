@@ -16,11 +16,12 @@ use objc2::{
     AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel,
 };
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply,
-    NSBackingStoreType, NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu,
-    NSMenuItem, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask,
-    NSWindowTitleVisibility, NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
+    NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
+    NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply, NSBackingStoreType,
+    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSResponder,
+    NSRunningApplication, NSSystemColorsDidChangeNotification, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
+    NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
     NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize,
@@ -32,8 +33,8 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
-    PlatformError, PlatformEvent, PlatformWindow, Point, RegionKind, Result, Size, WindowAction, WindowDesc,
-    WindowId, WindowInfo, WindowRegion,
+    PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size, WindowAction,
+    WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
@@ -55,8 +56,12 @@ struct WinData {
     regions: RefCell<Vec<WindowRegion>>,
     /// La vue dessine sa propre barre (`Chrome::Hidden` ou `Chrome::Custom`).
     custom: bool,
+    /// `Chrome::Custom { transparent: true }`.
+    transparent: bool,
     /// Dernier état envoyé à l'application.
     info: Cell<WindowInfo>,
+    /// Fenêtre transparente : les zones dessinées (points), hors desquelles les clics passent.
+    hit_area: RefCell<Option<Vec<Rect>>>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -71,6 +76,8 @@ struct ViewIvars {
     link: RefCell<Option<Retained<AnyObject>>>,
     /// Une image est demandée pour la prochaine synchronisation verticale.
     wants_frame: Cell<bool>,
+    /// Fenêtre transparente : minuterie qui regarde si le pointeur est sur une zone dessinée.
+    poll: RefCell<Option<Retained<AnyObject>>>,
 }
 
 define_class!(
@@ -108,6 +115,28 @@ define_class!(
             // Rien de redemandé pendant le rendu : on arrête le lien (0 % de CPU au repos).
             if !self.ivars().wants_frame.get() {
                 self.set_link_paused(true);
+            }
+        }
+
+        /// Fenêtre transparente : hors des zones dessinées, la fenêtre ignore la souris et les clics
+        /// passent aux fenêtres de dessous (pas pendant un glisser).
+        #[unsafe(method(vekaPollPointer:))]
+        fn poll_pointer(&self, _timer: &AnyObject) {
+            let Some(window) = self.window() else {
+                return;
+            };
+            if NSEvent::pressedMouseButtons() != 0 {
+                return;
+            }
+            let in_window = window.convertPointFromScreen(NSEvent::mouseLocation());
+            let p = self.convertPoint_fromView(in_window, None);
+            let p = Point::new(p.x as f32, p.y as f32);
+            let ignore = match self.ivars().data.hit_area.borrow().as_ref() {
+                Some(area) => !area.iter().any(|r| r.contains(p)),
+                None => false,
+            };
+            if window.ignoresMouseEvents() != ignore {
+                window.setIgnoresMouseEvents(ignore);
             }
         }
 
@@ -211,6 +240,7 @@ impl VekaView {
             data,
             link: RefCell::new(None),
             wants_frame: Cell::new(false),
+            poll: RefCell::new(None),
         });
         // SAFETY : `initWithFrame:` est l'initialiseur désigné de NSView.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -284,8 +314,28 @@ impl VekaView {
         }
     }
 
+    /// Lance la minuterie de `vekaPollPointer:` (20 fois par seconde), une seule fois.
+    fn start_pointer_poll(&self) {
+        if self.ivars().poll.borrow().is_some() {
+            return;
+        }
+        let class = AnyClass::get(c"NSTimer").expect("NSTimer");
+        // SAFETY : `scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:` ajoute la
+        // minuterie à la boucle courante (la principale) ; la vue répond au sélecteur. La minuterie
+        // retient la vue : elle est invalidée à la fermeture.
+        let timer: Option<Retained<AnyObject>> = unsafe {
+            msg_send![class, scheduledTimerWithTimeInterval: 0.05f64, target: self,
+                selector: sel!(vekaPollPointer:), userInfo: std::ptr::null::<AnyObject>(), repeats: true]
+        };
+        *self.ivars().poll.borrow_mut() = timer;
+    }
+
     /// Retire le lien de la boucle (il retient la vue).
     fn invalidate_link(&self) {
+        if let Some(timer) = self.ivars().poll.borrow_mut().take() {
+            // SAFETY : `invalidate` de NSTimer.
+            let _: () = unsafe { msg_send![&*timer, invalidate] };
+        }
         if let Some(link) = self.ivars().link.borrow_mut().take() {
             // SAFETY : `invalidate` de CADisplayLink.
             let _: () = unsafe { msg_send![&*link, invalidate] };
@@ -709,6 +759,30 @@ impl PlatformWindow for MacWindow {
         *self.data.regions.borrow_mut() = regions.to_vec();
     }
 
+    fn set_hit_area(&self, area: Option<&[Rect]>) {
+        if !self.data.transparent {
+            return;
+        }
+        *self.data.hit_area.borrow_mut() = area.map(<[Rect]>::to_vec);
+        if area.is_some() {
+            self.view.start_pointer_poll();
+        }
+    }
+
+    fn set_color_scheme(&self, scheme: Option<ColorScheme>) {
+        // `nil` : la fenêtre reprend l'apparence de l'application (celle du système).
+        // SAFETY : constantes d'AppKit, lues sur le fil principal.
+        let name = unsafe {
+            match scheme {
+                Some(ColorScheme::Dark) => Some(NSAppearanceNameDarkAqua),
+                Some(ColorScheme::Light) => Some(NSAppearanceNameAqua),
+                None => None,
+            }
+        };
+        let appearance = name.and_then(NSAppearance::appearanceNamed);
+        self.window.setAppearance(appearance.as_deref());
+    }
+
     fn info(&self) -> WindowInfo {
         window_info(&self.window)
     }
@@ -807,6 +881,8 @@ impl PlatformContext for Ctx {
             regions: RefCell::new(Vec::new()),
             custom,
             info: Cell::new(window_info(&window)),
+            hit_area: RefCell::new(None),
+            transparent: desc.chrome.is_transparent(),
         });
         let view = VekaView::new(mtm, data.clone(), rect);
         crate::vibrancy::set_content(&window, &view, desc.backdrop);

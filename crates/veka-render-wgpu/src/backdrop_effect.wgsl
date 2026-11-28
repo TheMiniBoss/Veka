@@ -314,11 +314,14 @@ fn glass_fs(i: GlassOut) -> @location(0) vec4f {
         let t = clamp((i.local.y - i.rect.y) / max(i.rect.w, 1e-4), 0.0, 1.0);
         let inner = i.p3.y * 0.14 * (1.0 - t);
 
-        // Anneau sombre juste à l'intérieur du bord (27).
-        // Un trait fin et net tout au bord, puis une ombre plus large qui s'estompe vers l'intérieur.
+        // Anneau sombre juste à l'intérieur du bord (27) : un trait net un peu en retrait du reflet (qui
+        // occupe le tout premier pixel et le cacherait), puis une ombre large qui s'estompe vers l'intérieur.
         let inside = max(-dist, 0.0);
-        let band = 0.6 * exp(-inside / max(bezel * 0.12, 1.0)) + 0.4 * exp(-inside / max(bezel * 0.45, 1.0));
-        let ring = clamp(i.p3.x * 0.9 * band, 0.0, 0.6);
+        let off = max(bezel * 0.07, 2.5 * ps);
+        let wid = max(bezel * 0.06, 1.5 * ps);
+        let core = exp(-((inside - off) * (inside - off)) / (wid * wid));
+        let band = 0.75 * core + 0.4 * exp(-inside / max(bezel * 0.45, 1.0));
+        let ring = clamp(i.p3.x * 1.1 * band, 0.0, 0.6);
         col = (col + vec3f(inner)) * (1.0 - ring);
 
         // Reflet : un trait vif tout au bord, tourné vers la lumière (le pointeur, sinon en haut à gauche).

@@ -551,8 +551,9 @@ impl Element {
                     .track(
                         "t",
                         [
-                            veka_anima::Keyframe::new(0.0, 0.0),
-                            veka_anima::Keyframe::new(1.0e6, 1.0e6).curve(veka_anima::Curve::Linear),
+                            // La courbe d'une clé adoucit le segment qui en part : linéaire dès 0.
+                            veka_anima::Keyframe::new(0.0, 0.0).curve(veka_anima::Curve::Linear),
+                            veka_anima::Keyframe::new(1.0e6, 1.0e6),
                         ],
                     )
                     .length(1.0e6),
