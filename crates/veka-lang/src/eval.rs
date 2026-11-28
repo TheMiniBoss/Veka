@@ -774,6 +774,22 @@ impl Cx {
                         && matches!(&callee.kind, ExprKind::Ident(n) if n == "ForEach")
                     {
                         self.for_each(e.span, args, trailing.as_ref(), out)?;
+                    } else if let ExprKind::Call {
+                        callee, trailing, ..
+                    } = &e.kind
+                        && matches!(&callee.kind, ExprKind::Ident(n) if n == "ScrollViewReader")
+                    {
+                        // `ScrollViewReader { proxy in … }` : le contenu, avec `proxy.scrollTo(…)`.
+                        let body = trailing.as_ref().ok_or_else(|| {
+                            err(e.span, "`ScrollViewReader { proxy in … }` : la fermeture manque")
+                        })?;
+                        let mark = self.locals.len();
+                        if let Some(p) = body.params.first() {
+                            self.locals.push((p.clone(), Val::Str(Rc::from(SCROLL_PROXY))));
+                        }
+                        let r = self.body_into(&body.body, out);
+                        self.locals.truncate(mark);
+                        r?;
                     } else if let Some(name) = slot_name(e) {
                         out.extend(self.slot(name, e.span)?);
                     } else {
@@ -1363,6 +1379,9 @@ impl Cx {
                 if let Val::Timeline(tl) = old {
                     return timeline_method(tl, name, &args).map_err(|m| err(span, m));
                 }
+                if matches!(&old, Val::Str(s) if &**s == SCROLL_PROXY) {
+                    return scroll_to(name, &args).map_err(|m| err(span, m));
+                }
                 let new = mutate(old, name, &args).map_err(|m| err(span, m))?;
                 self.set(state, new, span)
             }
@@ -1372,6 +1391,32 @@ impl Cx {
             )),
         }
     }
+}
+
+/// La valeur de `proxy` dans `ScrollViewReader { proxy in … }`.
+const SCROLL_PROXY: &str = "\u{0}ScrollViewProxy";
+
+/// `proxy.scrollTo(id, anchor: .top)`.
+fn scroll_to(method: &str, args: &[(Option<String>, Val)]) -> Result<(), String> {
+    if method != "scrollTo" {
+        return Err(format!("`proxy.{method}` inconnu : `proxy.scrollTo(id, anchor: .top)`"));
+    }
+    let id = args
+        .iter()
+        .find(|(l, _)| l.is_none())
+        .map(|(_, v)| v.clone())
+        .ok_or("`scrollTo` : l'identifiant (`.id(…)`) de la vue attendu")?;
+    let key = match id {
+        Val::Int(i) => veka_ui::Key::Int(i),
+        Val::Str(s) => veka_ui::Key::Str(s),
+        v => veka_ui::Key::Str(Rc::from(v.to_string())),
+    };
+    let anchor = match args.iter().find(|(l, _)| l.as_deref() == Some("anchor")) {
+        Some((_, v)) => Some(crate::value::to_unit_point(v)?),
+        None => None,
+    };
+    veka_ui::views::ScrollViewProxy.scroll_to(key, anchor);
+    Ok(())
 }
 
 /// Les méthodes qui changent un état : `toggle`, `append`, `insert`, `remove`…
@@ -2035,7 +2080,7 @@ fn check_view_expr(e: &Expr, module: &Module, schema: &Schema, out: &mut Vec<Dia
             args,
             trailing,
         } => match &callee.kind {
-            ExprKind::Ident(n) if n == "ForEach" || n == "withAnimation" => {
+            ExprKind::Ident(n) if n == "ForEach" || n == "withAnimation" || n == "ScrollViewReader" => {
                 if let Some(c) = trailing {
                     for s in &c.body {
                         check_stmt(s, module, schema, out);

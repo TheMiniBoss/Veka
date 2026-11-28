@@ -1,0 +1,58 @@
+// Défilement (étape 10), en .vk : `cargo run --example vk -- liste`
+// (même dessin que `liste.rs`, testé).
+
+view Liste {
+    ScrollViewReader { proxy in
+        VStack(spacing: 12) {
+            Text("Liste")
+                .font(.title)
+            HStack(spacing: 12) {
+                Button("Haut") {
+                    withAnimation(.smooth) {
+                        proxy.scrollTo(0, anchor: .top)
+                    }
+                }
+                Button("Ligne 50") {
+                    proxy.scrollTo(50, anchor: .center)
+                }
+                Button("Bas") {
+                    withAnimation(.smooth) {
+                        proxy.scrollTo(99, anchor: .bottom)
+                    }
+                }
+            }
+            ScrollView {
+                VStack(spacing: 8) {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 12) {
+                            ForEach(0..<12) { c in
+                                ZStack {
+                                    RoundedRectangle(12)
+                                        .fill(.Indigo)
+                                    Text("Carte \(c)")
+                                        .foregroundColor(.white)
+                                }
+                                .frame(120, 80)
+                            }
+                        }
+                        .padding(horizontal: 16, vertical: 0)
+                    }
+                    ForEach(0..<100) { i in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(.Green)
+                                .frame(24, 24)
+                            Text("Ligne \(i)")
+                            Spacer()
+                        }
+                        .padding(horizontal: 16, vertical: 6)
+                        .id(i)
+                    }
+                }
+            }
+            Text("Molette ou pavé tactile · Page préc. / suiv. · Origine / Fin")
+                .font(.caption)
+        }
+        .padding(24)
+    }
+}
