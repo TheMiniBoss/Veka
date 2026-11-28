@@ -701,7 +701,12 @@ fn builtin_entries() -> Vec<Entry> {
             doc: "champ de texte d'une ligne relié à un état (`TextField(\"Nom\", text: $nom)`)",
             params: const {
                 &[
-                    p("placeholder", ValueType::String, false, "texte affiché quand le champ est vide"),
+                    p(
+                        "placeholder",
+                        ValueType::String,
+                        false,
+                        "texte affiché quand le champ est vide",
+                    ),
                     p("text", ValueType::Binding, true, "état relié (`$nom`)"),
                 ]
             },
@@ -714,7 +719,12 @@ fn builtin_entries() -> Vec<Entry> {
             doc: "champ de mot de passe : des points à la place des caractères, sans copier",
             params: const {
                 &[
-                    p("placeholder", ValueType::String, false, "texte affiché quand le champ est vide"),
+                    p(
+                        "placeholder",
+                        ValueType::String,
+                        false,
+                        "texte affiché quand le champ est vide",
+                    ),
                     p("text", ValueType::Binding, true, "état relié (`$motDePasse`)"),
                 ]
             },

@@ -101,7 +101,11 @@ fn selection_copier_coller_annuler() {
     // Annuler revient avant le collage, refaire le remet.
     key(&mut s, KeyEquivalent::Character('z'), Modifiers::COMMAND);
     assert_eq!(etat.get().unwrap().get(), "un deux");
-    key(&mut s, KeyEquivalent::Character('z'), Modifiers::COMMAND | Modifiers::SHIFT);
+    key(
+        &mut s,
+        KeyEquivalent::Character('z'),
+        Modifiers::COMMAND | Modifiers::SHIFT,
+    );
     assert_eq!(etat.get().unwrap().get(), "un deuxun deux");
     // La frappe s'annule d'un bloc.
     key(&mut s, KeyEquivalent::Character('z'), Modifiers::COMMAND);

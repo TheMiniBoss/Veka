@@ -459,7 +459,10 @@ fn formulaire_meme_dessin_que_rust() {
     same(&vk, &rs);
     for s in [&vk, &rs] {
         let t = s.texts();
-        assert!(t.contains(&"Bienvenue, Ana (ana@exemple.fr) !".to_string()), "{t:?}");
+        assert!(
+            t.contains(&"Bienvenue, Ana (ana@exemple.fr) !".to_string()),
+            "{t:?}"
+        );
         assert!(!t.iter().any(|x| x.contains("secret")), "{t:?}");
     }
     for s in [&mut vk, &mut rs] {

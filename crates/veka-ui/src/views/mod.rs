@@ -110,7 +110,12 @@ pub fn stack(axis: Axis, spacing: Option<f32>, children: Vec<Element>) -> Elemen
 
 /// Une pile dont les enfants sont alignés en travers (`VStack![alignment: Alignment::Leading; …]`), comme
 /// `VStack(alignment: .leading)` de SwiftUI.
-pub fn stack_aligned(axis: Axis, alignment: Alignment, spacing: Option<f32>, children: Vec<Element>) -> Element {
+pub fn stack_aligned(
+    axis: Axis,
+    alignment: Alignment,
+    spacing: Option<f32>,
+    children: Vec<Element>,
+) -> Element {
     Element::new(
         Stack {
             axis,

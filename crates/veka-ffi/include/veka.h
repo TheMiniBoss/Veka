@@ -12,6 +12,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Maj.
+#define VEKA_MODIFIER_SHIFT 1
+
+// Ctrl, sur toutes les plateformes.
+#define VEKA_MODIFIER_CONTROL 2
+
+// Alt (⌥ sur le Mac).
+#define VEKA_MODIFIER_OPTION 4
+
+// ⌘ sur le Mac, Ctrl ailleurs : un seul raccourci pour les deux.
+#define VEKA_MODIFIER_COMMAND 16
+
 // La forme d'une animation.
 typedef enum VekaCurve {
   VEKA_CURVE_LINEAR,
@@ -894,6 +906,49 @@ struct VekaElement *veka_window_button(enum VekaWindowControl control);
 
 // Une barre de titre prête à l'emploi (titre et boutons placés comme sur le système).
 struct VekaElement *veka_title_bar(const char *title);
+
+// Crée un état texte (la première fois) ou retrouve le même (les fois suivantes).
+struct VekaState *veka_state_new_string(struct VekaContext *_cx, const char *initial);
+
+// Le texte de l'état, en UTF-8. Valable jusqu'au prochain appel de `veka_state_get_string`.
+const char *veka_state_get_string(struct VekaContext *_cx, struct VekaState *s);
+
+// Change le texte : la vue sera reconstruite avant la prochaine image.
+void veka_state_set_string(struct VekaContext *_cx, struct VekaState *s, const char *value);
+
+// Un champ de texte d'une ligne, relié à un état texte. `placeholder` peut être NULL.
+struct VekaElement *veka_text_field(const char *placeholder, struct VekaState *text);
+
+// Un champ de mot de passe : des points à la place des caractères, sans copier.
+struct VekaElement *veka_secure_field(const char *placeholder, struct VekaState *text);
+
+// Action à l'appui sur Entrée dans un champ du sous-arbre.
+struct VekaElement *veka_on_submit(struct VekaElement *element, VekaActionFn callback, void *user);
+
+// Champs du sous-arbre sans cadre (`true`), ou avec le cadre arrondi (`false`, par défaut).
+struct VekaElement *veka_text_field_plain(struct VekaElement *element, bool plain);
+
+// La vue prend le focus du clavier (clic, Tab).
+struct VekaElement *veka_focusable(struct VekaElement *element);
+
+// Relie le focus à un état entier : l'état vaut `value` quand ce sous-arbre a le focus, et 0 quand
+// plus rien ne l'a. Changer l'état depuis le code donne le focus (comme `@FocusState`).
+struct VekaElement *veka_focused(struct VekaElement *element,
+                                 struct VekaState *focus,
+                                 int64_t value);
+
+// Action à l'appui d'une touche (`"return"`, `"escape"`, `"r"`…), quand ce sous-arbre a le focus ou
+// que rien ne l'a. La touche est prise : elle ne remonte pas plus haut.
+struct VekaElement *veka_on_key_press(struct VekaElement *element,
+                                      const char *key,
+                                      VekaActionFn callback,
+                                      void *user);
+
+// Déclenche le bouton du sous-arbre depuis n'importe où dans la fenêtre : `"escape"` et 0 pour
+// annuler, `"s"` et `VEKA_MODIFIER_COMMAND` pour ⌘S / Ctrl+S…
+struct VekaElement *veka_keyboard_shortcut(struct VekaElement *element,
+                                           const char *key,
+                                           uint32_t modifiers);
 
 // Crée un état entier (la première fois) ou retrouve le même (les fois suivantes).
 struct VekaState *veka_state_new_int(struct VekaContext *_cx, int64_t initial);

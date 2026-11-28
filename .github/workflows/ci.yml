@@ -74,6 +74,7 @@ jobs:
         run: |
           cargo run --example fusion
           cargo run --example clavier
+          cargo run --example formulaire
       - name: Exemples .vk (Windows)
         if: matrix.os == 'windows-latest'
         env:
@@ -85,6 +86,7 @@ jobs:
           cargo run --example vk -- verre
           cargo run --example vk -- fusion
           cargo run --example vk -- clavier
+          cargo run --example vk -- formulaire
       - name: Exemple C (CMake)
         run: |
           cmake -S examples/c -B build/c
@@ -124,6 +126,11 @@ jobs:
         env:
           VEKA_EXIT_AFTER_FIRST_FRAME: "1"
         run: build/c/Debug/fusion.exe
+      - name: Formulaire en C (une image puis fermeture)
+        if: matrix.os == 'windows-latest'
+        env:
+          VEKA_EXIT_AFTER_FIRST_FRAME: "1"
+        run: build/c/Debug/formulaire.exe
 
   core:
     name: Cœur sans OS + WebAssembly

@@ -18,15 +18,15 @@ use objc2::{
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
     NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply, NSBackingStoreType,
-    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSResponder,
-    NSPasteboard, NSPasteboardTypeString, NSRunningApplication, NSSystemColorsDidChangeNotification,
-    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView,
-    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
+    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSPasteboard,
+    NSPasteboardTypeString, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification,
+    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton,
+    NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
     NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
-    NSNotification, NSNotificationCenter, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize,
-    NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSRange, NSRangePointer, NSString,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSNotificationCenter,
+    NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRange, NSRangePointer, NSRect, NSSize, NSString,
     NSUInteger, NSUserDefaults,
 };
 use raw_window_handle::{
@@ -446,7 +446,9 @@ fn byte_offset(text: &[u16], units: usize) -> usize {
 pub fn clipboard_text() -> Option<String> {
     // SAFETY : `NSPasteboardTypeString` est une constante d'AppKit.
     let kind = unsafe { NSPasteboardTypeString };
-    NSPasteboard::generalPasteboard().stringForType(kind).map(|s| s.to_string())
+    NSPasteboard::generalPasteboard()
+        .stringForType(kind)
+        .map(|s| s.to_string())
 }
 
 /// Met du texte dans le presse-papiers du système.
