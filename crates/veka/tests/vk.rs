@@ -361,8 +361,9 @@ fn fusion_meme_dessin_que_rust() {
     }
     same(&vk, &rs);
     let d = rs.draw_list().to_string();
-    // 21 cases (chacune un groupe pour la case et un pour son mode) et un groupe pour l'opacité.
-    assert_eq!(d.matches("group ").count(), 21 * 2 + 1, "{d}");
+    // 21 cases (chacune un groupe pour la case et un pour son mode), un groupe pour l'opacité, et le calque
+    // du contenu au-dessus du fond de la fenêtre.
+    assert_eq!(d.matches("group ").count(), 21 * 2 + 1 + 1, "{d}");
     assert!(d.contains("group multiply"), "{d}");
     assert!(d.contains("group plusLighter"), "{d}");
 }

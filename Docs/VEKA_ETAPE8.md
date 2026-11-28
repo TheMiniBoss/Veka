@@ -8,6 +8,12 @@ Statut : **validé** (les 6 choix recommandés) ; PR P et PR Q faites. Fait suit
 Une vue peut se **mélanger** avec ce qui est dessiné derrière elle, comme dans SwiftUI, Figma ou Photoshop :
 produit (Multiply), écran (Screen), incrustation (Overlay), différence…
 
+**Portée (corrigée après l'essai de l'utilisateur, PR S)** : comme SwiftUI, la vue se mélange avec tout ce
+que l'interface a dessiné derrière elle (frères, fonds posés avec `.background`…), mais pas avec le fond de la
+fenêtre, qui ne fait pas partie du contenu. Exemple de référence : un cercle rouge-jaune en `multiply` sur un
+rectangle bleu-cyan devient vert sombre sur le rectangle et garde ses couleurs ailleurs, sur un fond de
+fenêtre sombre.
+
 ```rust
 // Rust
 Circle().fill(Color::RED).blend_mode(BlendMode::Multiply)

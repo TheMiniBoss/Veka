@@ -6,7 +6,7 @@ use std::rc::Rc;
 use veka_foundation::{
     Color, ColorScheme, Point, Rect, RegionKind, Size, WindowAction, WindowInfo, WindowRegion,
 };
-use veka_graphics::{DrawList, Shape};
+use veka_graphics::{DrawCommand, DrawList, Shape};
 use veka_text::TextSystem;
 
 use crate::element::{Element, View};
@@ -66,7 +66,26 @@ impl Primitive for Root {
     fn paint(&self, cx: &mut PaintCx<'_>, rect: Rect) {
         let bg = cx.env().resolve(&cx.env().background);
         cx.list().fill(Shape::Rectangle, rect, bg);
+        // Comme SwiftUI : le contenu est dessiné au-dessus du fond de la fenêtre, qui n'en fait pas
+        // partie. Un mode de fusion se mélange avec tout ce que l'interface a dessiné derrière la vue,
+        // mais pas avec le fond de la fenêtre : s'il y en a un, le contenu passe dans un calque
+        // transparent, posé ensuite normalement sur le fond.
+        let start = cx.list().commands.len();
         cx.paint_children();
+        let list = cx.list();
+        let blends = list.commands[start..].iter().any(|c| {
+            matches!(c, DrawCommand::PushGroup { blend, .. } if *blend != veka_graphics::BlendMode::Normal)
+        });
+        if blends {
+            list.commands.insert(
+                start,
+                DrawCommand::PushGroup {
+                    blend: veka_graphics::BlendMode::Normal,
+                    opacity: 1.0,
+                },
+            );
+            list.push(DrawCommand::PopGroup);
+        }
     }
 }
 

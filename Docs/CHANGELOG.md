@@ -2,6 +2,12 @@
 
 Le plus récent en premier.
 
+## Correction des modes de fusion (PR S)
+- Comme SwiftUI, un `.blend_mode` se mélange avec tout ce que l'interface a dessiné derrière la vue, mais plus
+  avec le fond de la fenêtre, qui ne fait pas partie du contenu. Avant, un cercle en `multiply` devenait
+  presque noir sur un fond de fenêtre sombre. Le contenu passe dans un calque transparent seulement s'il
+  contient un mode de fusion.
+
 ## Petits restes (PR R)
 - Fenêtre transparente : les clics passent à travers la marge où Veka ne dessine rien, vers la fenêtre de
   dessous (`DrawList::painted_bounds`, `PlatformWindow::set_hit_area`).
