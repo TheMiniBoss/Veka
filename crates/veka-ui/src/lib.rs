@@ -55,7 +55,7 @@ pub use veka_colora::{
 pub use veka_foundation::{
     Color, Insets, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo, WindowRegion,
 };
-pub use veka_graphics::{CornerRadii, DrawList, Shape};
+pub use veka_graphics::{BlendMode, CornerRadii, DrawList, Shape};
 pub use veka_text::Weight;
 
 /// Tout ce qu'il faut pour écrire des vues : `use veka_ui::prelude::*;`.
@@ -66,8 +66,8 @@ pub mod prelude {
         perform_window_action,
     };
     pub use crate::{
-        Alignment, AngularGradient, Axis, BackdropQuality, Color, ColorScheme, ColorSpace, CornerRadii,
-        Element, EllipticalGradient, Environment, Font, Gradient, Hierarchy, Ink, Insets, Key,
+        Alignment, AngularGradient, Axis, BackdropQuality, BlendMode, Color, ColorScheme, ColorSpace,
+        CornerRadii, Element, EllipticalGradient, Environment, Font, Gradient, Hierarchy, Ink, Insets, Key,
         LinearGradient, MeshGradient, Paint, Point, RadialGradient, Rect, Shape, Size, State, Stop, Surface,
         Theme, Token, UnitPoint, View, Weight, WindowAction, WindowControl, WindowInfo, component,
     };

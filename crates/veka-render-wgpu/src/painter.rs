@@ -2,11 +2,12 @@
 
 use bytemuck::{Pod, Zeroable};
 use veka_foundation::{Rect, Transform2D};
-use veka_graphics::{BackdropEffect, DrawCommand, DrawList, Paint, Shape};
+use veka_graphics::{BackdropEffect, BlendMode, DrawCommand, DrawList, Paint, Shape};
 use veka_render::FrameInfo;
 
 use crate::atlas::{Atlas, Full, GlyphKey};
 use crate::backdrop::{self, Backdrop, Capture, EffectInstance, GlassInstance, GlassShapeGpu};
+use crate::group::{self, GroupInstance, Groups};
 use crate::ramps::{self, Ramps, RampsFull};
 
 #[repr(C)]
@@ -47,6 +48,10 @@ enum Kind {
     Glyphs,
     Effects,
     Glass,
+    /// Vide un calque avant d'y dessiner un groupe.
+    Clear,
+    /// Compose un calque sur ce qui est derrière.
+    Group,
 }
 
 /// Une suite d'instances du même pipeline, avec le même découpage.
@@ -57,6 +62,8 @@ struct Batch {
     scissor: [u32; 4],
     /// Capture de l'arrière-plan à faire avant ce lot.
     capture: Option<usize>,
+    /// Où dessiner : 0 la texture intermédiaire, k le calque de profondeur k.
+    target: usize,
 }
 
 /// Ce que la dernière image a demandé au GPU (tests, mesures).
@@ -68,6 +75,8 @@ pub struct FrameStats {
     pub effects: u32,
     /// Passes de rendu (dessin, pyramide, copie vers la cible).
     pub passes: u32,
+    /// Calques composés (`blend_mode`, `compositing_group`).
+    pub groups: u32,
 }
 
 /// Pipelines et ressources GPU, pour un format de cible donné.
@@ -99,6 +108,12 @@ pub struct Painter {
     glass_capture: Vec<usize>,
     glass_shapes: Vec<GlassShapeGpu>,
     captures: Vec<Capture>,
+    groups: Groups,
+    group_instances: Vec<GroupInstance>,
+    /// Profondeur du calque de chaque instance de `group_instances`.
+    group_layer: Vec<usize>,
+    /// Plus grande profondeur de calque de l'image.
+    group_depth: usize,
     stats: FrameStats,
 }
 
@@ -279,6 +294,7 @@ impl Painter {
             })
         };
         let backdrop = Backdrop::new(device, format, &globals_layout);
+        let groups = Groups::new(device, format, &globals_layout);
         let ramps = Ramps::new(device);
         let sampler_linear = sampler(wgpu::FilterMode::Linear);
         let ramps_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -323,6 +339,10 @@ impl Painter {
             glass_capture: Vec::new(),
             glass_shapes: Vec::new(),
             captures: Vec::new(),
+            groups,
+            group_instances: Vec::new(),
+            group_layer: Vec::new(),
+            group_depth: 0,
             stats: FrameStats::default(),
         }
     }
@@ -414,51 +434,95 @@ impl Painter {
             "veka verres",
         );
         self.backdrop.upload_shapes(device, queue, &self.glass_shapes);
+        if self.group_depth > 0
+            && let Some(level0) = self.backdrop.level0_view()
+        {
+            self.groups.ensure(device, w, h, self.group_depth, level0);
+        }
+        let group_buf = upload(
+            device,
+            queue,
+            &mut self.groups.instance_buf,
+            bytemuck::cast_slice(&self.group_instances),
+            "veka calques",
+        );
         let (inter_tex, inter_view, inter_bg) = self.intermediate.as_ref().expect("texture intermédiaire");
         let mut stats = FrameStats {
             captures: self.captures.len() as u32,
             effects: (self.effects.len() + self.glasses.len()) as u32,
             passes: 0,
+            groups: self.group_instances.len() as u32,
+        };
+        let groups = &self.groups;
+        let texture = |target: usize| -> Option<(&wgpu::Texture, &wgpu::TextureView)> {
+            if target == 0 {
+                Some((inter_tex, inter_view))
+            } else {
+                groups.layer(target).map(|(t, v)| (t, v))
+            }
         };
 
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("veka") });
-        // Le dessin est coupé avant chaque lot qui commence par une capture de l'arrière-plan.
+        // Le dessin est coupé avant chaque capture de l'arrière-plan, à chaque changement de texture
+        // (calque) et quand un calque est vidé.
+        let n = self.batches.len();
         let mut start = 0;
-        let mut first = true;
-        while first || start < self.batches.len() {
-            let end = (start + 1..self.batches.len())
-                .find(|&i| self.batches[i].capture.is_some())
-                .unwrap_or(self.batches.len());
-            if let Some(c) = self.batches.get(start).and_then(|b| b.capture) {
-                if first {
-                    // Rien n'est encore dessiné : la capture lit une image vide.
-                    let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("veka effacement"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: inter_view,
-                            depth_slice: None,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        ..Default::default()
-                    });
-                    stats.passes += 1;
-                    first = false;
-                }
-                self.backdrop.capture(&mut enc, inter_tex, &self.captures, c);
-                stats.passes += 1 + 3 * self.captures[c].levels;
+        let mut main_cleared = false;
+        loop {
+            if start >= n && main_cleared {
+                break;
             }
+            let target = self.batches.get(start).map_or(0, |b| b.target);
+            let Some((_, view)) = texture(target) else {
+                start += 1;
+                continue;
+            };
+            let mut clear = false;
+            if let Some(b) = self.batches.get(start) {
+                clear = b.kind == Kind::Clear;
+                if let Some(c) = b.capture {
+                    if !main_cleared {
+                        // Rien n'est encore dessiné : la capture lit une image vide.
+                        let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("veka effacement"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: inter_view,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            ..Default::default()
+                        });
+                        stats.passes += 1;
+                        main_cleared = true;
+                    }
+                    if let Some((source, _)) = texture(self.captures[c].source) {
+                        self.backdrop.capture(&mut enc, source, &self.captures, c);
+                        stats.passes += 1 + 3 * self.captures[c].levels;
+                    }
+                }
+            }
+            if target == 0 && !main_cleared {
+                clear = true;
+                main_cleared = true;
+            }
+            let end = (start + 1..n)
+                .find(|&i| {
+                    let b = &self.batches[i];
+                    b.capture.is_some() || b.target != target || b.kind == Kind::Clear
+                })
+                .unwrap_or(n);
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("veka dessin"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: inter_view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: if first {
+                        load: if clear {
                             wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
                         } else {
                             wgpu::LoadOp::Load
@@ -469,11 +533,10 @@ impl Painter {
                 ..Default::default()
             });
             stats.passes += 1;
-            first = false;
             pass.set_bind_group(0, &self.globals_bg, &[]);
             let glyph_bg = &self.glyph_bg.as_ref().expect("atlas").1;
-            for b in &self.batches[start.min(self.batches.len())..end] {
-                if b.range.is_empty() || b.scissor[2] == 0 || b.scissor[3] == 0 {
+            for b in &self.batches[start.min(n)..end] {
+                if b.kind == Kind::Clear || b.range.is_empty() || b.scissor[2] == 0 || b.scissor[3] == 0 {
                     continue;
                 }
                 pass.set_scissor_rect(b.scissor[0], b.scissor[1], b.scissor[2], b.scissor[3]);
@@ -508,6 +571,16 @@ impl Painter {
                         pass.set_bind_group(2, shapes, &[]);
                         pass.set_vertex_buffer(0, glass_buf.as_ref().expect("verres").slice(..));
                     }
+                    Kind::Group => {
+                        let layer = self.group_layer[b.range.start as usize];
+                        let Some(bg) = groups.bind_group(layer) else {
+                            continue;
+                        };
+                        pass.set_pipeline(&groups.pipeline);
+                        pass.set_bind_group(1, bg, &[]);
+                        pass.set_vertex_buffer(0, group_buf.as_ref().expect("calques").slice(..));
+                    }
+                    Kind::Clear => unreachable!("sauté plus haut"),
                 }
                 pass.draw(0..6, b.range.clone());
             }
@@ -597,6 +670,9 @@ impl Painter {
         self.glass_capture.clear();
         self.glass_shapes.clear();
         self.captures.clear();
+        self.group_instances.clear();
+        self.group_layer.clear();
+        self.group_depth = 0;
         let (fw, fh) = (frame.width.max(1) as f32, frame.height.max(1) as f32);
         // Ce qui a été dessiné depuis la dernière capture (pixels), pour savoir si un effet peut la
         // partager.
@@ -608,8 +684,12 @@ impl Painter {
         let mut clips: Vec<[u32; 4]> = vec![full];
         let mut opacity = vec![1.0f32];
         let atlas_size = self.atlas.size as f32;
+        // Groupes ouverts ; `None` : groupe dessiné directement (normal, opaque, ou trop profond).
+        let mut groups: Vec<Option<OpenGroup>> = Vec::new();
+        // Texture où l'on dessine : 0 l'intermédiaire, k le calque de profondeur k.
+        let mut target = 0usize;
 
-        for cmd in &list.commands {
+        for (i, cmd) in list.commands.iter().enumerate() {
             let t = *transforms.last().expect("pile");
             let scissor = *clips.last().expect("pile");
             let alpha = *opacity.last().expect("pile");
@@ -622,10 +702,13 @@ impl Painter {
                         self.shapes.len() as u32,
                         scissor,
                         None,
+                        target,
                     );
                     self.shapes.push(inst);
+                    let area = transform_bounds(&t, rect, 1.0, s);
+                    grow(&mut groups, area, scissor);
                     if current.is_some() {
-                        mark(&mut dirty, transform_bounds(&t, rect, 1.0, s));
+                        mark(&mut dirty, area);
                     }
                 }
                 DrawCommand::StrokeShape {
@@ -642,10 +725,13 @@ impl Painter {
                         self.shapes.len() as u32,
                         scissor,
                         None,
+                        target,
                     );
                     self.shapes.push(inst);
+                    let area = transform_bounds(&t, rect, 1.0 + width * 0.5, s);
+                    grow(&mut groups, area, scissor);
                     if current.is_some() {
-                        mark(&mut dirty, transform_bounds(&t, rect, 1.0 + width * 0.5, s));
+                        mark(&mut dirty, area);
                     }
                 }
                 DrawCommand::Glyphs(run) => {
@@ -681,9 +767,12 @@ impl Painter {
                             self.glyphs.len() as u32,
                             scissor,
                             None,
+                            target,
                         );
+                        let area = [x, y, x + e.width as f32, y + e.height as f32];
+                        grow(&mut groups, area, scissor);
                         if current.is_some() {
-                            mark(&mut dirty, [x, y, x + e.width as f32, y + e.height as f32]);
+                            mark(&mut dirty, area);
                         }
                         self.glyphs.push(GlyphInstance {
                             rect: [x, y, e.width as f32, e.height as f32],
@@ -719,6 +808,81 @@ impl Painter {
                     if opacity.len() > 1 {
                         opacity.pop();
                     }
+                }
+                DrawCommand::PushGroup { blend, opacity: o } => {
+                    let a = alpha * o.clamp(0.0, 1.0);
+                    let depth = groups.iter().flatten().count() + 1;
+                    if (*blend == BlendMode::Normal && a >= 1.0 && !isolates(&list.commands[i + 1..]))
+                        || depth > group::MAX_DEPTH
+                    {
+                        // Rien à mélanger : dessiné directement.
+                        groups.push(None);
+                        opacity.push(a);
+                        continue;
+                    }
+                    self.group_depth = self.group_depth.max(depth);
+                    // Le calque est vidé, puis le sous-arbre y est dessiné à pleine opacité.
+                    self.batches.push(Batch {
+                        kind: Kind::Clear,
+                        range: 0..0,
+                        scissor: full,
+                        capture: None,
+                        target: depth,
+                    });
+                    groups.push(Some(OpenGroup {
+                        blend: *blend,
+                        alpha: a,
+                        bounds: None,
+                        target: depth,
+                        parent: target,
+                    }));
+                    target = depth;
+                    opacity.push(1.0);
+                    // Une capture lue dans le calque ne peut pas resservir dehors, ni l'inverse.
+                    current = None;
+                    dirty.clear();
+                }
+                DrawCommand::PopGroup => {
+                    if opacity.len() > 1 {
+                        opacity.pop();
+                    }
+                    let Some(Some(g)) = groups.pop() else {
+                        continue;
+                    };
+                    target = g.parent;
+                    current = None;
+                    dirty.clear();
+                    let Some(b) = g.bounds else {
+                        continue;
+                    };
+                    let region = [
+                        b[0].max(0.0).floor(),
+                        b[1].max(0.0).floor(),
+                        b[2].min(fw).ceil(),
+                        b[3].min(fh).ceil(),
+                    ];
+                    if region[2] <= region[0] || region[3] <= region[1] || g.alpha <= 0.0 {
+                        continue;
+                    }
+                    self.captures.push(Capture {
+                        region,
+                        levels: 0,
+                        source: target,
+                    });
+                    let c = self.captures.len() - 1;
+                    self.group_instances.push(GroupInstance {
+                        rect: region,
+                        params: [g.blend as u32 as f32, g.alpha, 0.0, 0.0],
+                    });
+                    self.group_layer.push(g.target);
+                    self.batches.push(Batch {
+                        kind: Kind::Group,
+                        range: self.group_instances.len() as u32 - 1..self.group_instances.len() as u32,
+                        scissor: full,
+                        capture: Some(c),
+                        target,
+                    });
+                    grow(&mut groups, region, full);
                 }
                 DrawCommand::Backdrop { shape, rect, effect } => {
                     let (radius, low, extra_margin) = match effect {
@@ -772,7 +936,11 @@ impl Painter {
                             (c, None)
                         }
                         None => {
-                            self.captures.push(Capture { region, levels });
+                            self.captures.push(Capture {
+                                region,
+                                levels,
+                                source: target,
+                            });
                             dirty.clear();
                             let c = self.captures.len() - 1;
                             current = Some(c);
@@ -781,6 +949,7 @@ impl Painter {
                     };
                     // La composition change ces pixels : un effet suivant dessus devra recapturer.
                     mark(&mut dirty, visible);
+                    grow(&mut groups, visible, scissor);
                     let lin = |c: veka_foundation::Color| {
                         veka_foundation::Color { a: 1.0, ..c }.to_linear_premultiplied()
                     };
@@ -881,9 +1050,10 @@ impl Painter {
                             range: index..index + 1,
                             scissor,
                             capture,
+                            target,
                         });
                     } else {
-                        push(&mut self.batches, kind, index, scissor, None);
+                        push(&mut self.batches, kind, index, scissor, None, target);
                     }
                 }
             }
@@ -917,10 +1087,18 @@ impl From<RampsFull> for Overflow {
     }
 }
 
-fn push(batches: &mut Vec<Batch>, kind: Kind, index: u32, scissor: [u32; 4], capture: Option<usize>) {
+fn push(
+    batches: &mut Vec<Batch>,
+    kind: Kind,
+    index: u32,
+    scissor: [u32; 4],
+    capture: Option<usize>,
+    target: usize,
+) {
     if capture.is_none()
         && let Some(b) = batches.last_mut()
         && b.kind == kind
+        && b.target == target
         && b.scissor == scissor
         && b.range.end == index
     {
@@ -932,7 +1110,62 @@ fn push(batches: &mut Vec<Batch>, kind: Kind, index: u32, scissor: [u32; 4], cap
         range: index..index + 1,
         scissor,
         capture,
+        target,
     });
+}
+
+/// Un groupe normal et opaque n'a besoin d'un calque que s'il isole quelque chose : un mode de fusion
+/// ou un effet d'arrière-plan avant sa fin (ils ne doivent lire que le contenu du groupe).
+fn isolates(rest: &[DrawCommand]) -> bool {
+    let mut depth = 0usize;
+    for c in rest {
+        match c {
+            DrawCommand::PushGroup { blend, .. } => {
+                if *blend != BlendMode::Normal {
+                    return true;
+                }
+                depth += 1;
+            }
+            DrawCommand::PopGroup => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            DrawCommand::Backdrop { .. } => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Un groupe en cours de préparation.
+struct OpenGroup {
+    blend: BlendMode,
+    /// Opacité du groupe (celle des calques autour comprise).
+    alpha: f32,
+    /// Ce que le groupe a dessiné, en pixels.
+    bounds: Option<[f32; 4]>,
+    /// Texture du groupe et de son parent.
+    target: usize,
+    parent: usize,
+}
+
+/// Ajoute `r` (pixels, coupé à `scissor`) à la zone du groupe ouvert le plus proche.
+fn grow(groups: &mut [Option<OpenGroup>], r: [f32; 4], scissor: [u32; 4]) {
+    let Some(g) = groups.iter_mut().rev().find_map(Option::as_mut) else {
+        return;
+    };
+    let c = [
+        r[0].max(scissor[0] as f32),
+        r[1].max(scissor[1] as f32),
+        r[2].min((scissor[0] + scissor[2]) as f32),
+        r[3].min((scissor[1] + scissor[3]) as f32),
+    ];
+    if c[2] <= c[0] || c[3] <= c[1] {
+        return;
+    }
+    g.bounds = Some(g.bounds.map_or(c, |b| union(&b, &c)));
 }
 
 /// Ajoute une zone dessinée ; au-delà de 64, elles sont fusionnées (test plus grossier mais borné).

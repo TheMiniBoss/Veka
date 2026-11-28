@@ -5,10 +5,12 @@
 //! La liste de dessin est ce que le cœur de Veka produit à chaque image. Elle ne contient que des
 //! données : n'importe quel renderer (wgpu, Unreal, Unity…) peut la dessiner.
 
+mod blend;
 mod draw_list;
 mod paint;
 mod shape;
 
+pub use blend::{BlendMode, composite};
 pub use draw_list::{
     BackdropEffect, BlurEffect, DrawCommand, DrawList, FontId, FontRef, GlassEffect, GlassShape, Glyph,
     GlyphRun, MAX_GLASS_SHAPES, Segment,

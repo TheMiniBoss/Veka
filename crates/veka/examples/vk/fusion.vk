@@ -1,0 +1,98 @@
+// Modes de fusion en .vk : un même motif dans chaque case, mélangé avec le dégradé de la case par un
+// mode différent ; en bas, une opacité sans et avec `compositingGroup`.
+// `cargo run --example vk -- fusion` (même dessin que `fusion.rs`, testé).
+
+view Fusion {
+    @Param var modes = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "colorDodge", "colorBurn", "softLight", "hardLight", "difference", "exclusion", "hue", "saturation", "color", "luminosity", "sourceAtop", "destinationOver", "destinationOut", "plusDarker", "plusLighter"]
+    @State var tour: Float = 0
+
+    ZStack {
+        Rectangle()
+            .fill(.WindowBackground)
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                Text("Modes de fusion")
+                    .font(.title2)
+                Button("Tourner") {
+                    withAnimation(.smooth) {
+                        tour += 90
+                    }
+                }
+            }
+            ForEach(0..<3) { r in
+                HStack(spacing: 10) {
+                    ForEach(0..<7) { c in
+                        Case(mode: modes[r * 7 + c], angle: tour)
+                    }
+                }
+            }
+            HStack(spacing: 40) {
+                Opacite(groupe: false)
+                Opacite(groupe: true)
+            }
+        }
+        .padding(24)
+    }
+}
+
+view Case {
+    @Param var mode = "normal"
+    @Param var angle: Float = 0
+
+    VStack(spacing: 6) {
+        ZStack {
+            RoundedRectangle(12)
+                .fill(LinearGradient([.Yellow, .Teal], from: .topLeading, to: .bottomTrailing))
+            ZStack {
+                Circle()
+                    .fill(.Pink)
+                    .frame(56, 56)
+                    .offset(-14, -8)
+                Circle()
+                    .fill(.Indigo)
+                    .frame(56, 56)
+                    .offset(14, 8)
+            }
+            .rotationEffect(angle)
+            .blendMode(mode)
+        }
+        .frame(120, 96)
+        // Le mélange reste dans la case (les découpes ne percent pas la fenêtre).
+        .compositingGroup()
+        Text(mode)
+            .font(.caption)
+    }
+}
+
+view Opacite {
+    @Param var groupe = false
+
+    VStack(spacing: 6) {
+        if groupe {
+            Cercles()
+                .compositingGroup()
+                .opacity(0.5)
+            Text("compositingGroup().opacity(0.5)")
+                .font(.caption)
+        } else {
+            Cercles()
+                .opacity(0.5)
+            Text("opacity(0.5)")
+                .font(.caption)
+        }
+    }
+}
+
+view Cercles {
+    ZStack {
+        Circle()
+            .fill(.Blue)
+            .frame(60, 60)
+            .offset(-18, 0)
+        Circle()
+            .fill(.Blue)
+            .frame(60, 60)
+            .offset(18, 0)
+    }
+    .frame(120, 64)
+}

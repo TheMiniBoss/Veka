@@ -10,6 +10,7 @@
 
 mod atlas;
 mod backdrop;
+mod group;
 mod painter;
 mod ramps;
 mod window;

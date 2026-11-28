@@ -76,6 +76,8 @@ pub(crate) struct GlassShapeGpu {
 pub(crate) struct Capture {
     pub region: [f32; 4],
     pub levels: u32,
+    /// Texture lue : 0 la texture intermédiaire, k le calque de profondeur k.
+    pub source: usize,
 }
 
 impl Capture {
@@ -560,6 +562,11 @@ impl Backdrop {
 
     pub fn shapes_bind_group(&self) -> Option<&wgpu::BindGroup> {
         self.shapes.as_ref().map(|(_, bg)| bg)
+    }
+
+    /// Le niveau net de la pyramide (la copie de la zone capturée).
+    pub fn level0_view(&self) -> Option<&wgpu::TextureView> {
+        self.pyramid.as_ref().map(|p| &p.levels[0].1)
     }
 
     pub fn effect_bind_group(&self) -> Option<&wgpu::BindGroup> {

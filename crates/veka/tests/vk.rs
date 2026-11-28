@@ -343,3 +343,26 @@ view Caches {
     s.frame();
     assert_eq!(s.texts()[0], "4 21 8");
 }
+
+const FUSION: &str = include_str!("../examples/vk/fusion.vk");
+
+#[path = "../examples/fusion.rs"]
+#[allow(dead_code)]
+mod fusion_rs;
+
+#[test]
+fn fusion_meme_dessin_que_rust() {
+    let p = program(FUSION);
+    let mut vk = Surface::new(p.view("Fusion"));
+    let mut rs = Surface::new(component(fusion_rs::vue));
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(980.0, 600.0), 2.0);
+        at(s, 0.0);
+    }
+    same(&vk, &rs);
+    let d = rs.draw_list().to_string();
+    // 21 cases (chacune un groupe pour la case et un pour son mode) et un groupe pour l'opacité.
+    assert_eq!(d.matches("group ").count(), 21 * 2 + 1, "{d}");
+    assert!(d.contains("group multiply"), "{d}");
+    assert!(d.contains("group plusLighter"), "{d}");
+}

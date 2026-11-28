@@ -2,6 +2,21 @@
 
 Le plus récent en premier.
 
+## Étape 8 — modes de fusion
+
+### Calques et modes (PR P)
+- `.blend_mode(BlendMode::Multiply)` (`.blendMode(.multiply)` en `.vk`) : la vue est dessinée dans un calque à
+  part, puis mélangée d'un bloc avec ce qui est derrière. Les 21 modes de SwiftUI (formules W3C), mélangés en
+  sRGB comme SwiftUI et Figma ; normal et découpes (`sourceAtop`, `destinationOver`, `destinationOut`) restent
+  en lumière linéaire.
+- `.compositing_group()` (`.compositingGroup()`) : le même calque, sans mélange. Une opacité appliquée ensuite
+  rend le groupe transparent d'un bloc, et les modes ou les verres à l'intérieur ne lisent que le groupe.
+- Liste de dessin : `PushGroup { blend, opacity }` / `PopGroup`. Formules de référence côté processeur :
+  `veka_graphics::composite`, comparées au GPU par les tests.
+- Renderer : calques à la taille de la fenêtre (un par niveau d'imbrication, 8 au plus), zone composée limitée
+  à ce que le groupe a dessiné. Un groupe normal, opaque et sans rien à isoler ne coûte rien.
+- Exemple `fusion` en Rust et en `.vk` (même dessin, testé) : les 21 modes et l'opacité d'un groupe.
+
 ## Essais sur le Mac mini
 
 - macOS : les animations (Anima, timelines, `@Clock`, feux d'artifice) s'arrêtaient après la première image,
