@@ -6,6 +6,9 @@
 //! - les bords sont élastiques : au doigt, le contenu dépasse de plus en plus difficilement, et à la fin
 //!   d'un élan (ou d'une molette rapide), il rebondit, puis revient avec un ressort.
 
+// Les deux axes se traitent par indice (0 : horizontal, 1 : vertical), en parallèle sur plusieurs tableaux.
+#![allow(clippy::needless_range_loop)]
+
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -114,7 +117,9 @@ pub struct ScrollViewPrim {
 
 impl std::fmt::Debug for ScrollViewPrim {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ScrollViewPrim").field("axes", &self.axes).finish()
+        f.debug_struct("ScrollViewPrim")
+            .field("axes", &self.axes)
+            .finish()
     }
 }
 
@@ -360,10 +365,7 @@ impl ScrollState {
         for (i, a) in self.axes.iter_mut().enumerate() {
             let t = a.clamp(Self::component(target, i));
             if animated {
-                a.motion = Motion::Glide {
-                    target: t,
-                    tau: 0.09,
-                };
+                a.motion = Motion::Glide { target: t, tau: 0.09 };
             } else {
                 a.pos = t;
                 a.vel = 0.0;
@@ -516,8 +518,16 @@ impl Primitive for ScrollViewPrim {
         let children = cx.children();
         let Some(&child) = children.first() else { return };
         let inner = Proposal::new(
-            if self.axes.horizontal { None } else { Some(rect.width()) },
-            if self.axes.vertical { None } else { Some(rect.height()) },
+            if self.axes.horizontal {
+                None
+            } else {
+                Some(rect.width())
+            },
+            if self.axes.vertical {
+                None
+            } else {
+                Some(rect.height())
+            },
         );
         let size = cx.measure(child, inner);
         let axes = self.axes;
@@ -532,7 +542,11 @@ impl Primitive for ScrollViewPrim {
                 };
                 a.content = content;
                 a.view = view;
-                a.max = if axes.has(i) { (content - view).max(0.0) } else { 0.0 };
+                a.max = if axes.has(i) {
+                    (content - view).max(0.0)
+                } else {
+                    0.0
+                };
                 // Le contenu a rapetissé : on reste dans les bords (sauf pendant un mouvement).
                 if !a.moving() && a.over() != 0.0 {
                     a.pos = a.clamp(a.pos);
@@ -710,12 +724,19 @@ impl Primitive for ScrollViewPrim {
         {
             let env = cx.env().clone();
             let st = cx.state::<ScrollState>();
-            env_bounce = [bounce_on(&env, &st.axes[0], false), bounce_on(&env, &st.axes[1], true)];
+            env_bounce = [
+                bounce_on(&env, &st.axes[0], false),
+                bounce_on(&env, &st.axes[1], true),
+            ];
         }
         let axes = self.axes;
         let st = cx.state::<ScrollState>();
         // Un geste commence ici seulement si cette vue peut défiler dans sa direction principale.
-        let main = if event.delta.y.abs() >= event.delta.x.abs() { 1 } else { 0 };
+        let main = if event.delta.y.abs() >= event.delta.x.abs() {
+            1
+        } else {
+            0
+        };
         let starts = matches!(event.phase, ScrollPhase::Began)
             || (event.delta != Vector::new(0.0, 0.0) && st.gesture.is_none());
         if starts

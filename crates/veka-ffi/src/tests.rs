@@ -786,3 +786,105 @@ mod formulaire {
         );
     }
 }
+
+/// Le défilement de `examples/c/liste.c`, depuis Rust : la molette, puis `veka_scroll_to`.
+mod liste {
+    use super::*;
+    use veka_ui::prelude::{ScrollPhase, Vector};
+
+    unsafe extern "C" fn milieu(_cx: *mut VekaContext, _user: *mut c_void) {
+        veka_scroll_to(50, veka_unit_point(0.5, 0.5));
+    }
+
+    unsafe extern "C" fn body(_cx: *mut VekaContext, user: *mut c_void) -> *mut VekaElement {
+        unsafe {
+            let mut lignes: Vec<*mut VekaElement> = (0..100)
+                .map(|i| {
+                    let t = std::ffi::CString::new(format!("Ligne {i}")).unwrap();
+                    veka_id(veka_frame(veka_text(t.as_ptr()), 200.0, 40.0), i)
+                })
+                .collect();
+            let contenu = veka_vstack(0.0, lignes.as_mut_ptr(), lignes.len());
+            let items = [
+                veka_button(c"Ligne 50".as_ptr(), Some(milieu), user),
+                veka_frame(
+                    veka_scroll_bounce(
+                        veka_scroll_indicators(
+                            veka_scroll_view(VEKA_SCROLL_VERTICAL, contenu),
+                            VekaScrollIndicators::Visible,
+                        ),
+                        VekaScrollBounce::Never,
+                    ),
+                    300.0,
+                    200.0,
+                ),
+            ];
+            veka_vstack(0.0, items.as_ptr(), items.len())
+        }
+    }
+
+    #[test]
+    fn liste_en_c() {
+        let mut s = Surface::new(component(app::window_view(
+            None,
+            Some(body),
+            std::ptr::null_mut(),
+        )));
+        s.resize(Size::new(300.0, 300.0), 1.0);
+        let at = |t: f64| veka_foundation::Instant::from_nanos((t * 1e9) as u64);
+        s.frame_at(at(1.0));
+        let sv = s.rects_of("ScrollView")[0];
+        let premiere = |s: &Surface| {
+            s.rects_of("frame")
+                .into_iter()
+                .find(|r| r.width() == 200.0)
+                .unwrap()
+        };
+        let avant = premiere(&s).y();
+        s.set_now(at(1.0));
+        s.handle(InputEvent::Scroll {
+            position: sv.center(),
+            delta: Vector::new(0.0, 80.0),
+            phase: ScrollPhase::Wheel,
+        });
+        let mut t = 1.0;
+        for _ in 0..30 {
+            t += 1.0 / 60.0;
+            s.frame_at(at(t));
+        }
+        assert!((avant - premiere(&s).y() - 80.0).abs() < 0.5);
+        // Sans élastique : vers le haut, on s'arrête net à 0.
+        s.handle(InputEvent::Scroll {
+            position: sv.center(),
+            delta: Vector::new(0.0, -500.0),
+            phase: ScrollPhase::Wheel,
+        });
+        for _ in 0..60 {
+            t += 1.0 / 60.0;
+            s.frame_at(at(t));
+        }
+        assert_eq!(premiere(&s).y(), avant);
+        // Le bouton : la ligne 50 au milieu.
+        let b = s.rects_of("Button")[0].center();
+        for e in [
+            InputEvent::PointerDown {
+                position: b,
+                button: PointerButton::Primary,
+            },
+            InputEvent::PointerUp {
+                position: b,
+                button: PointerButton::Primary,
+            },
+        ] {
+            s.handle(e);
+        }
+        s.frame_at(at(t));
+        let l50 = s
+            .rects_of("frame")
+            .into_iter()
+            .filter(|r| r.width() == 200.0)
+            .nth(50)
+            .unwrap();
+        assert!((l50.center().y - sv.center().y).abs() < 1.0, "{l50:?} {sv:?}");
+    }
+}

@@ -2,6 +2,28 @@
 
 Le plus récent en premier.
 
+## Étape 10 — défilement et texte sur plusieurs lignes
+
+### Défilement (PR V)
+- Molette et pavé tactile sur Windows (`WM_MOUSEWHEEL`, `WM_MOUSEHWHEEL`, Maj + molette) et macOS
+  (`scrollWheel:`), avec la phase du geste.
+- `ScrollView![contenu]`, `ScrollView![.horizontal; …]`, `ScrollAxes::BOTH` : le contenu garde sa taille idéale
+  sur l'axe qui défile, il est coupé, et ne prend pas les clics hors de la vue.
+- La même sensation partout : le pavé suit le doigt puis l'élan est calculé par Veka ; chaque cran de molette
+  glisse en douceur, sur Windows comme sur macOS ; bords élastiques (`.scroll_bounce(ScrollBounce::Never)` les
+  coupe).
+- Barres fines qui apparaissent en défilant puis s'effacent, s'élargissent au survol, se glissent, et un clic à
+  côté du pouce avance d'une page. `.scroll_indicators(…)`, `.scroll_disabled(…)`.
+- `ScrollViewReader(|proxy| …)` et `proxy.scroll_to(id, ancre)`, animé dans `with_animation`. Le focus (Tab)
+  fait défiler jusqu'au champ. Page préc. / suiv., Origine et Fin.
+- `.on_scroll_offset_change(|décalage| …)` (Rust).
+- Piles et `Primitive` : `scroll`, `tick` (une vue qui bouge seule), `clips_hits`, `hits_before_children`.
+- `.vk` : `ScrollView(.horizontal) { … }`, `ScrollViewReader { proxy in … proxy.scrollTo(50, anchor: .center) }`,
+  `.scrollIndicators(.hidden)`, `.scrollDisabled(true)`, `.scrollBounceBehavior(.never)`.
+- C : `veka_scroll_view`, `veka_scroll_indicators`, `veka_scroll_disabled`, `veka_scroll_bounce`,
+  `veka_scroll_to` et `veka_scroll_to_named`.
+- Exemple `liste` en Rust, en `.vk` (même dessin, testé) et en C.
+
 ## Étape 9 — clavier, focus et saisie de texte
 
 ### Champs de texte (PR U)

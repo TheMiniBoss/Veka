@@ -750,7 +750,12 @@ fn builtin_entries() -> Vec<Entry> {
             params: const {
                 &[
                     p("axes", ValueType::Any, false, "axes qui défilent"),
-                    p("showsIndicators", ValueType::Bool, false, "barres de défilement (vrai par défaut)"),
+                    p(
+                        "showsIndicators",
+                        ValueType::Bool,
+                        false,
+                        "barres de défilement (vrai par défaut)",
+                    ),
                 ]
             },
             build: |p, c| {
@@ -765,7 +770,11 @@ fn builtin_entries() -> Vec<Entry> {
                 let content = if c.len() == 1 {
                     one(c)
                 } else {
-                    let axis = if axes.vertical { Axis::Vertical } else { Axis::Horizontal };
+                    let axis = if axes.vertical {
+                        Axis::Vertical
+                    } else {
+                        Axis::Horizontal
+                    };
                     Element::new(
                         Stack {
                             axis,
@@ -1221,7 +1230,14 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "barres des vues qui défilent : `.automatic`, `.visible` ou `.hidden`",
-            params: const { &[p("visibility", ValueType::Enum(SCROLL_INDICATORS), true, "visibilité")] },
+            params: const {
+                &[p(
+                    "visibility",
+                    ValueType::Enum(SCROLL_INDICATORS),
+                    true,
+                    "visibilité",
+                )]
+            },
             build: |p, c| {
                 let v = match p.enumeration("visibility") {
                     Some("visible") => views::ScrollIndicators::Visible,
@@ -1244,7 +1260,14 @@ fn builtin_entries() -> Vec<Entry> {
             kind: Modifier,
             children: One,
             doc: "bords élastiques : `.always` (par défaut), `.basedOnSize` ou `.never`",
-            params: const { &[p("behavior", ValueType::Enum(SCROLL_BOUNCES), true, "comportement")] },
+            params: const {
+                &[p(
+                    "behavior",
+                    ValueType::Enum(SCROLL_BOUNCES),
+                    true,
+                    "comportement",
+                )]
+            },
             build: |p, c| {
                 let v = match p.enumeration("behavior") {
                     Some("basedOnSize") => views::ScrollBounce::BasedOnSize,

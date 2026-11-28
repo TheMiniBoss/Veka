@@ -80,7 +80,10 @@ fn la_molette_glisse_en_douceur() {
     t.scroll(60.0, ScrollPhase::Wheel);
     t.run(1.0 / 60.0);
     let first = t.offset();
-    assert!(first > 0.0 && first < 60.0, "un cran glisse au lieu de sauter : {first}");
+    assert!(
+        first > 0.0 && first < 60.0,
+        "un cran glisse au lieu de sauter : {first}"
+    );
     t.run(0.3);
     assert!((t.offset() - 60.0).abs() < 0.5, "{}", t.offset());
     assert!(!t.s.is_animating() || t.s.needs_frame());
@@ -124,7 +127,11 @@ fn le_pave_suit_le_doigt_puis_l_elan_continue() {
         t.scroll(20.0, ScrollPhase::Changed);
         t.frame();
     }
-    assert!((t.offset() - 200.0).abs() < 0.5, "le contenu suit le doigt : {}", t.offset());
+    assert!(
+        (t.offset() - 200.0).abs() < 0.5,
+        "le contenu suit le doigt : {}",
+        t.offset()
+    );
     t.scroll(0.0, ScrollPhase::Ended);
     t.run(0.2);
     let mid = t.offset();
@@ -164,7 +171,10 @@ fn au_doigt_le_bord_est_elastique() {
         t.frame();
     }
     let pulled = t.offset();
-    assert!(pulled < 0.0 && pulled > -300.0, "le contenu dépasse de moins que le doigt : {pulled}");
+    assert!(
+        pulled < 0.0 && pulled > -300.0,
+        "le contenu dépasse de moins que le doigt : {pulled}"
+    );
     t.scroll(0.0, ScrollPhase::Ended);
     t.run(1.0);
     assert_eq!(t.offset(), 0.0, "le ressort le ramène");
@@ -172,7 +182,9 @@ fn au_doigt_le_bord_est_elastique() {
 
 #[test]
 fn sans_elastique_le_bord_est_net() {
-    let mut t = T::new(component(|| ScrollView![lignes(50)].scroll_bounce(ScrollBounce::Never)));
+    let mut t = T::new(component(|| {
+        ScrollView![lignes(50)].scroll_bounce(ScrollBounce::Never)
+    }));
     t.scroll(0.0, ScrollPhase::Began);
     t.t += 1.0 / 60.0;
     t.scroll(-50.0, ScrollPhase::Changed);
@@ -279,7 +291,10 @@ fn tab_fait_defiler_jusqu_au_champ() {
         t.run(0.6);
     }
     let field = t.s.rects_of("TextField")[1];
-    assert!(field.y() >= 0.0 && field.max_y() <= 200.0, "le champ du bas est visible : {field:?}");
+    assert!(
+        field.y() >= 0.0 && field.max_y() <= 200.0,
+        "le champ du bas est visible : {field:?}"
+    );
 }
 
 #[test]

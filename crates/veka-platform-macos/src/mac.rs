@@ -18,10 +18,10 @@ use objc2::{
 use objc2_app_kit::{
     NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
     NSApplicationActivationPolicy, NSApplicationDelegate, NSApplicationTerminateReply, NSBackingStoreType,
-    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventPhase, NSEventType, NSMenu, NSMenuItem, NSPasteboard,
-    NSPasteboardTypeString, NSResponder, NSRunningApplication, NSSystemColorsDidChangeNotification,
-    NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow, NSWindowButton,
-    NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
+    NSColor, NSColorSpace, NSEvent, NSEventModifierFlags, NSEventPhase, NSEventType, NSMenu, NSMenuItem,
+    NSPasteboard, NSPasteboardTypeString, NSResponder, NSRunningApplication,
+    NSSystemColorsDidChangeNotification, NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility, NSWorkspace,
     NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
 };
 use objc2_foundation::{
@@ -35,8 +35,8 @@ use raw_window_handle::{
 };
 use veka_platform::{
     Appearance, Chrome, Color, ColorScheme, Ime, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
-    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
-    ScrollPhase, Vector, WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result,
+    ScrollPhase, Size, Vector, WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 
 /// Une ligne de molette, en points.

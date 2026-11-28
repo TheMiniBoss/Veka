@@ -774,9 +774,7 @@ impl Cx {
                         && matches!(&callee.kind, ExprKind::Ident(n) if n == "ForEach")
                     {
                         self.for_each(e.span, args, trailing.as_ref(), out)?;
-                    } else if let ExprKind::Call {
-                        callee, trailing, ..
-                    } = &e.kind
+                    } else if let ExprKind::Call { callee, trailing, .. } = &e.kind
                         && matches!(&callee.kind, ExprKind::Ident(n) if n == "ScrollViewReader")
                     {
                         // `ScrollViewReader { proxy in … }` : le contenu, avec `proxy.scrollTo(…)`.
@@ -1399,7 +1397,9 @@ const SCROLL_PROXY: &str = "\u{0}ScrollViewProxy";
 /// `proxy.scrollTo(id, anchor: .top)`.
 fn scroll_to(method: &str, args: &[(Option<String>, Val)]) -> Result<(), String> {
     if method != "scrollTo" {
-        return Err(format!("`proxy.{method}` inconnu : `proxy.scrollTo(id, anchor: .top)`"));
+        return Err(format!(
+            "`proxy.{method}` inconnu : `proxy.scrollTo(id, anchor: .top)`"
+        ));
     }
     let id = args
         .iter()

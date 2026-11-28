@@ -24,6 +24,12 @@
 // ⌘ sur le Mac, Ctrl ailleurs : un seul raccourci pour les deux.
 #define VEKA_MODIFIER_COMMAND 16
 
+// Défile verticalement.
+#define VEKA_SCROLL_VERTICAL 1
+
+// Défile horizontalement.
+#define VEKA_SCROLL_HORIZONTAL 2
+
 // La forme d'une animation.
 typedef enum VekaCurve {
   VEKA_CURVE_LINEAR,
@@ -190,6 +196,25 @@ typedef enum VekaWindowControl {
   VEKA_WINDOW_CONTROL_MAXIMIZE,
   VEKA_WINDOW_CONTROL_FULLSCREEN,
 } VekaWindowControl;
+
+// Les barres de défilement.
+typedef enum VekaScrollIndicators {
+  // Pendant le défilement et au survol.
+  VEKA_SCROLL_INDICATORS_AUTOMATIC,
+  // Toujours, quand le contenu dépasse.
+  VEKA_SCROLL_INDICATORS_VISIBLE,
+  VEKA_SCROLL_INDICATORS_HIDDEN,
+} VekaScrollIndicators;
+
+// Les bords élastiques.
+typedef enum VekaScrollBounce {
+  // Toujours (par défaut).
+  VEKA_SCROLL_BOUNCE_ALWAYS,
+  // Seulement quand le contenu dépasse.
+  VEKA_SCROLL_BOUNCE_BASED_ON_SIZE,
+  // Jamais : le défilement s'arrête net aux bords.
+  VEKA_SCROLL_BOUNCE_NEVER,
+} VekaScrollBounce;
 
 // La nature d'une `VekaData`.
 typedef enum VekaDataKind {
@@ -949,6 +974,28 @@ struct VekaElement *veka_on_key_press(struct VekaElement *element,
 struct VekaElement *veka_keyboard_shortcut(struct VekaElement *element,
                                            const char *key,
                                            uint32_t modifiers);
+
+// Une vue qui défile : `axes` est `VEKA_SCROLL_VERTICAL`, `VEKA_SCROLL_HORIZONTAL` ou les deux.
+// `content` est consommé.
+struct VekaElement *veka_scroll_view(uint32_t axes, struct VekaElement *content);
+
+// Les barres des vues qui défilent dans le sous-arbre.
+struct VekaElement *veka_scroll_indicators(struct VekaElement *element,
+                                           enum VekaScrollIndicators visibility);
+
+// Les vues qui défilent dans le sous-arbre ne bougent plus (`true`).
+struct VekaElement *veka_scroll_disabled(struct VekaElement *element, bool disabled);
+
+// Les bords élastiques des vues qui défilent dans le sous-arbre.
+struct VekaElement *veka_scroll_bounce(struct VekaElement *element, enum VekaScrollBounce bounce);
+
+// Fait défiler jusqu'à la vue qui porte `veka_id(…, id)`, son point `anchor` aligné sur le même point
+// de la vue qui défile. Animé dans `veka_with_animation`. À appeler dans une action.
+void veka_scroll_to(int64_t id,
+                    struct VekaUnitPoint anchor);
+
+// Comme `veka_scroll_to`, avec un identifiant texte (`.id("haut")` en `.vk`).
+void veka_scroll_to_named(const char *id, struct VekaUnitPoint anchor);
 
 // Crée un état entier (la première fois) ou retrouve le même (les fois suivantes).
 struct VekaState *veka_state_new_int(struct VekaContext *_cx, int64_t initial);

@@ -1,6 +1,6 @@
 # Étape 10 : défilement (`ScrollView`) et texte sur plusieurs lignes
 
-Statut : **à valider** (le choix 2 est fait : option B).
+Statut : **validé** (choix 2 : option B ; les autres, recommandés) ; PR V faite.
 
 ## 1. Objectif
 
@@ -123,6 +123,16 @@ TextEditor(text: $notes)
 
 - **PR V, le défilement** : événements de la plateforme sur Windows et macOS, `ScrollView`, barres,
   `ScrollViewReader`, le focus qui fait défiler, `.vk`, C, exemple `liste` et tests.
+  - Fait. Écarts :
+    - une `ScrollView` imbriquée prend les gestes dans son axe ; elle ne passe pas le reste du geste à celle
+      du dessus en arrivant au bout (elle rebondit, comme sur macOS) ;
+    - `scroll_to` animé glisse en douceur, sans suivre la courbe exacte du `with_animation` ;
+    - Page préc. / suiv., Origine et Fin vont à la vue qui contient le focus, ou sans focus à la plus
+      profonde (pas encore celle sous le pointeur) ;
+    - `.on_scroll_offset_change` existe en Rust seulement, et l'exemple n'a pas de barre de titre qui
+      change en défilant ;
+    - tout le contenu est dessiné, même hors de la vue (le découpage suffit jusqu'à quelques milliers de
+      lignes ; `LazyVStack` viendra ensuite).
 - **PR W, `TextEditor`** : texte sur plusieurs lignes, en Rust, `.vk` et C, ajouté à l'exemple.
 
 ## 6. Choix à valider

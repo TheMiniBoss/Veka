@@ -517,7 +517,10 @@ fn liste_meme_dessin_que_rust() {
     }
     same(&vk, &rs);
     let apres = vk.rects_of("Circle")[0].y();
-    assert!((haut - apres - 180.0).abs() < 1.0, "trois crans de 60 : {haut} → {apres}");
+    assert!(
+        (haut - apres - 180.0).abs() < 1.0,
+        "trois crans de 60 : {haut} → {apres}"
+    );
     // « Ligne 50 » : sans animation, la ligne 50 au milieu tout de suite.
     for s in [&mut vk, &mut rs] {
         let b = s.rects_of("Button")[1].center();

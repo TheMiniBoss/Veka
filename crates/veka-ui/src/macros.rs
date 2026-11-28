@@ -66,15 +66,24 @@ macro_rules! ZStack {
 #[macro_export]
 macro_rules! ScrollView {
     (.horizontal; $child:expr $(,)?) => {
-        $crate::views::scroll_view($crate::views::ScrollAxes::HORIZONTAL, $crate::View::into_element($child))
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::HORIZONTAL,
+            $crate::View::into_element($child),
+        )
     };
     (.vertical; $child:expr $(,)?) => {
-        $crate::views::scroll_view($crate::views::ScrollAxes::VERTICAL, $crate::View::into_element($child))
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::VERTICAL,
+            $crate::View::into_element($child),
+        )
     };
     ($axes:expr; $child:expr $(,)?) => {
         $crate::views::scroll_view($axes, $crate::View::into_element($child))
     };
     ($child:expr $(,)?) => {
-        $crate::views::scroll_view($crate::views::ScrollAxes::VERTICAL, $crate::View::into_element($child))
+        $crate::views::scroll_view(
+            $crate::views::ScrollAxes::VERTICAL,
+            $crate::View::into_element($child),
+        )
     };
 }
