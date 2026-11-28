@@ -596,9 +596,8 @@ impl Primitive for CompositingGroup {
 }
 
 impl Element {
-    /// Mélange la vue avec ses frères dessinés derrière elle (`multiply`, `screen`…), d'un bloc : comme
-    /// SwiftUI, le sous-arbre est d'abord dessiné à part. Le conteneur des frères est isolé : le fond de
-    /// la fenêtre et ce qui est derrière le conteneur ne sont pas mélangés.
+    /// Mélange la vue avec ce qui est dessiné derrière elle (`multiply`, `screen`…), d'un bloc : comme
+    /// SwiftUI, le sous-arbre est d'abord dessiné à part.
     pub fn blend_mode(self, blend: BlendMode) -> Element {
         self.wrap(CompositingGroup { blend })
     }

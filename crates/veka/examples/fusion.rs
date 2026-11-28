@@ -17,8 +17,9 @@ pub fn case(mode: BlendMode, angle: f32) -> impl View {
                 .rotation_effect(angle)
                 .blend_mode(mode),
         ]
-        // Le mode ne mélange que les frères : le fond de la fenêtre n'est pas touché.
-        .frame(120, 96),
+        .frame(120, 96)
+        // Le mélange reste dans la case (les découpes ne percent pas la fenêtre).
+        .compositing_group(),
         Text(mode.name()).font(Font::Caption),
     ]
 }

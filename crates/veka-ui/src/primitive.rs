@@ -186,43 +186,14 @@ impl PaintCx<'_> {
 
     /// Dessine les enfants. Ceux qui entrent ou sortent (transition en cours) passent au-dessus de
     /// leurs frères : une ligne qui glisse ne disparaît pas sous ses voisines.
-    ///
-    /// Comme dans SwiftUI, un enfant en `.blend_mode` ne se mélange qu'avec ses frères : s'il y en a un,
-    /// les enfants sont dessinés dans un calque à part (transparent), composé ensuite normalement. Le
-    /// fond de la fenêtre et ce qui est derrière le conteneur ne sont donc pas mélangés.
     pub fn paint_children(&mut self) {
         let children = &self.tree.nodes[self.node].children;
-        let isolate = children.len() > 1 && children.iter().any(|c| self.blends(*c));
-        if isolate {
-            self.list.push(veka_graphics::DrawCommand::PushGroup {
-                blend: veka_graphics::BlendMode::Normal,
-                opacity: 1.0,
-            });
-        }
         let moving = |c: &NodeId| self.tree.anims.get(c).is_some_and(|a| a.in_transition());
         for child in children.iter().filter(|c| !moving(c)) {
             crate::tree::paint(self.tree, self.list, *child);
         }
         for child in children.iter().filter(|c| moving(c)) {
             crate::tree::paint(self.tree, self.list, *child);
-        }
-        if isolate {
-            self.list.push(veka_graphics::DrawCommand::PopGroup);
-        }
-    }
-
-    /// L'enfant (à travers ses modifiers) se mélange-t-il avec ce qui est derrière lui ?
-    fn blends(&self, mut id: NodeId) -> bool {
-        loop {
-            let node = &self.tree.nodes[id];
-            let prim = node.shown().as_ref() as &dyn Any;
-            if let Some(g) = prim.downcast_ref::<crate::views::CompositingGroup>() {
-                return g.blend != veka_graphics::BlendMode::Normal;
-            }
-            match node.children.as_slice() {
-                [only] => id = *only,
-                _ => return false,
-            }
         }
     }
 }

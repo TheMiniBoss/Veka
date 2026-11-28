@@ -276,10 +276,11 @@ fn l_exemple_fusion() {
 }
 
 /// La scène de référence (SwiftUI, `.blendMode(.multiply)`) : un rectangle dégradé bleu-cyan et un cercle
-/// dégradé rouge-jaune par-dessus, sur un fond de fenêtre sombre. Le cercle ne se mélange qu'avec ses
-/// frères : hors du rectangle, il garde ses couleurs ; sur le rectangle, il fonce (vert sombre).
+/// dégradé rouge-jaune par-dessus, sur le fond sombre de la fenêtre. Comme SwiftUI, le cercle se mélange
+/// avec ce que l'interface a dessiné, pas avec le fond de la fenêtre : hors du rectangle, il garde ses
+/// couleurs ; sur le rectangle, il fonce (vert sombre).
 #[test]
-fn multiply_ne_melange_qu_avec_les_freres() {
+fn multiply_ne_melange_pas_le_fond_de_la_fenetre() {
     use veka::prelude::*;
     let Some(gpu) = gpu() else { return };
     let vue = || {
@@ -303,10 +304,10 @@ fn multiply_ne_melange_qu_avec_les_freres() {
                 .blend_mode(BlendMode::Multiply),
         ]
         .frame(480, 300)
-        .background(Color::hex(0x252528))
     };
     let (w, h) = (480u32, 300u32);
     let mut surface = Surface::new(component(vue));
+    surface.set_system_appearance(ColorScheme::Dark, None);
     surface.resize(Size::new(w as f32, h as f32), 1.0);
     let list = surface.frame().clone();
     let (img, _) = render_to_rgba_with_stats(

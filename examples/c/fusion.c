@@ -47,8 +47,8 @@ static VekaElement *une_case(int mode, float angle) {
     VekaElement *cercles[] = {cercle("Pink", -14, -8), cercle("Indigo", 14, 8)};
     VekaElement *motif = veka_blend_mode(veka_rotation_effect(veka_zstack(cercles, 2), angle), (VekaBlendMode)mode);
     VekaElement *couches[] = {fond, motif};
-    /* Le mode ne mélange que les frères : le fond de la fenêtre n'est pas touché. */
-    VekaElement *carre = veka_frame(veka_zstack(couches, 2), 120, 96);
+    /* Le mélange reste dans la case (les découpes ne percent pas la fenêtre). */
+    VekaElement *carre = veka_compositing_group(veka_frame(veka_zstack(couches, 2), 120, 96));
     VekaElement *lignes[] = {carre, veka_font(veka_text(NOMS[mode]), VEKA_FONT_CAPTION)};
     return veka_vstack(6, lignes, 2);
 }
