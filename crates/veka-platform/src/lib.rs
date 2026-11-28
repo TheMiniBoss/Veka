@@ -10,8 +10,8 @@
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 pub use veka_foundation::{
-    Color, ColorScheme, Instant, Point, Rect, RegionKind, Size, WindowAction, WindowControl, WindowInfo,
-    WindowRegion,
+    Color, ColorScheme, Instant, Key, Modifiers, Point, Rect, RegionKind, Size, WindowAction, WindowControl,
+    WindowInfo, WindowRegion,
 };
 
 /// L'apparence choisie dans les réglages du système.
@@ -247,6 +247,20 @@ pub enum PlatformEvent {
     /// Le pointeur a quitté la fenêtre.
     PointerLeft {
         window: WindowId,
+    },
+    /// Une touche appuyée ou relâchée (étape 9). `repeat` : répétition d'une touche tenue.
+    Key {
+        window: WindowId,
+        key: Key,
+        modifiers: Modifiers,
+        pressed: bool,
+        repeat: bool,
+    },
+    /// Un caractère tapé, après les touches mortes (`^` puis `e` donne `ê`). Jamais un caractère de
+    /// contrôle : Entrée, Tab, Retour arrière… arrivent seulement en [`Key`](PlatformEvent::Key).
+    Char {
+        window: WindowId,
+        ch: char,
     },
     /// L'utilisateur a changé le mode clair / sombre ou la couleur d'accent du système.
     AppearanceChanged {

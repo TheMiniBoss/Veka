@@ -12,7 +12,9 @@
 - [ ] Étape 2 sur le Mac : `Hidden`, `Custom`, transparence, plein écran.
 - [x] Fenêtre transparente : laisser passer les clics là où Veka ne dessine rien (région de fenêtre sur Windows,
   `ignoresMouseEvents` suivi au pointeur sur macOS, à essayer sur le Mac).
-- [ ] Clavier et focus, saisie de texte (IME).
+- [x] Clavier et focus (étape 9, PR T).
+- [ ] Saisie de texte : `TextField`, `SecureField`, IME, presse-papiers (étape 9, PR U).
+- [ ] Touche physique (`code`) dans les événements clavier, si un jeu en a besoin.
 - [ ] Un seul GPU partagé entre les fenêtres.
 
 ## Étape 3 (Colora)

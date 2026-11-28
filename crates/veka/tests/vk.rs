@@ -367,3 +367,50 @@ fn fusion_meme_dessin_que_rust() {
     assert!(d.contains("group multiply"), "{d}");
     assert!(d.contains("group plusLighter"), "{d}");
 }
+
+const CLAVIER: &str = include_str!("../examples/vk/clavier.vk");
+
+#[path = "../examples/clavier.rs"]
+#[allow(dead_code)]
+mod clavier_rs;
+
+fn touche(s: &mut Surface, key: KeyEquivalent, modifiers: Modifiers) {
+    s.handle(InputEvent::Key {
+        key,
+        modifiers,
+        pressed: true,
+        repeat: false,
+    });
+    s.frame();
+}
+
+/// L'exemple `clavier` : le `.vk` dessine comme le Rust, au départ et après les mêmes touches (Tab,
+/// Entrée sur la case, ⌘R / Ctrl+R, Échap), et `$focus` suit le focus.
+#[test]
+fn clavier_meme_dessin_que_rust() {
+    let p = program(CLAVIER);
+    let mut vk = Surface::new(p.view("Clavier"));
+    let mut rs = Surface::new(component(clavier_rs::vue));
+    for s in [&mut vk, &mut rs] {
+        s.resize(Size::new(560.0, 360.0), 2.0);
+        s.frame();
+    }
+    same(&vk, &rs);
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Tab, Modifiers::NONE);
+        touche(s, KeyEquivalent::Tab, Modifiers::NONE);
+        touche(s, KeyEquivalent::Enter, Modifiers::NONE);
+        touche(s, KeyEquivalent::Character('r'), Modifiers::COMMAND);
+    }
+    same(&vk, &rs);
+    for s in [&vk, &rs] {
+        let t = s.texts();
+        assert!(t.contains(&"Focus : Vert".to_string()), "{t:?}");
+        assert!(t.contains(&"Compteur : 11".to_string()), "{t:?}");
+    }
+    for s in [&mut vk, &mut rs] {
+        touche(s, KeyEquivalent::Escape, Modifiers::NONE);
+    }
+    same(&vk, &rs);
+    assert!(vk.texts().contains(&"Compteur : 0".to_string()));
+}

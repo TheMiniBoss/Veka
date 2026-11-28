@@ -1,0 +1,57 @@
+// Clavier et focus (étape 9), en .vk : `cargo run --example vk -- clavier`
+// (même dessin que `clavier.rs`, testé).
+
+view Clavier {
+    @State var n = 0
+    @State var focus = ""
+
+    VStack(spacing: 16) {
+        Text("Tab : case suivante · Entrée : +10 · ⌘R / Ctrl+R : +1 · Échap : zéro")
+            .font(.caption)
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(12)
+                    .fill(.red)
+                    .frame(100, 70)
+                Text("Rouge")
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .focusable()
+            .focused($focus, equals: "Rouge")
+            .onKeyPress(.return) { n += 10 }
+            ZStack {
+                RoundedRectangle(12)
+                    .fill(.green)
+                    .frame(100, 70)
+                Text("Vert")
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .focusable()
+            .focused($focus, equals: "Vert")
+            .onKeyPress(.return) { n += 10 }
+            ZStack {
+                RoundedRectangle(12)
+                    .fill(.blue)
+                    .frame(100, 70)
+                Text("Bleu")
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .focusable()
+            .focused($focus, equals: "Bleu")
+            .onKeyPress(.return) { n += 10 }
+        }
+        Text("Focus : \(focus == "" ? "aucun" : focus)")
+        Text("Compteur : \(n)")
+            .font(.title)
+        HStack(spacing: 12) {
+            Button("Compter") { n += 1 }
+                .keyboardShortcut("r", modifiers: .command)
+            Button("Remettre à zéro") { n = 0 }
+                .keyboardShortcut(.cancelAction)
+        }
+    }
+    .padding(24)
+}

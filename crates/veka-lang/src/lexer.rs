@@ -7,6 +7,8 @@ pub(crate) enum Tok {
     Ident(String),
     /// `@State`, `@Param`… (sans le `@`).
     Attr(String),
+    /// `$nom` : un état passé à une vue qui le lit et l'écrit (sans le `$`).
+    Binding(String),
     Int(i64),
     Float(f64),
     /// Une chaîne : morceaux de texte et expressions `\( … )` (leur source et sa position).
@@ -146,6 +148,14 @@ impl Lexer<'_> {
                         self.error(start, "`@` doit être suivi d'un nom (`@State`…)");
                     }
                     self.push(Tok::Attr(name), start);
+                }
+                b'$' => {
+                    self.bump();
+                    let name = self.ident_text();
+                    if name.is_empty() {
+                        self.error(start, "`$` doit être suivi du nom d'un `@State` (`$nom`)");
+                    }
+                    self.push(Tok::Binding(name), start);
                 }
                 b'0'..=b'9' => self.number(start),
                 c if c == b'_' || c.is_ascii_alphabetic() || c >= 0x80 => {

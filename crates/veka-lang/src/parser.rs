@@ -56,6 +56,7 @@ fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(n) => format!("`{n}`"),
         Tok::Attr(n) => format!("`@{n}`"),
+        Tok::Binding(n) => format!("`${n}`"),
         Tok::Int(v) => format!("`{v}`"),
         Tok::Float(v) => format!("`{v}`"),
         Tok::Str(_) => "une chaîne".into(),
@@ -963,6 +964,10 @@ impl Parser {
                     }
                 }
                 ExprKind::Str(parts)
+            }
+            Tok::Binding(n) => {
+                self.bump();
+                ExprKind::Binding(n)
             }
             Tok::Ident(n) => {
                 self.bump();

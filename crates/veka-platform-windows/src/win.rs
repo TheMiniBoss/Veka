@@ -15,9 +15,9 @@ use raw_window_handle::{
     WindowHandle,
 };
 use veka_platform::{
-    Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
-    PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size, SystemBackdrop,
-    WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
+    Appearance, Chrome, Color, ColorScheme, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
+    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
+    SystemBackdrop, WindowAction, WindowControl, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 use windows::Win32::Foundation::{
     ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -41,7 +41,10 @@ use windows::Win32::UI::HiDpi::{
     GetSystemMetricsForDpi, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
+    GetKeyState, MAPVK_VK_TO_CHAR, MapVirtualKeyW, ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT,
+    TRACKMOUSEEVENT, TrackMouseEvent, VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
+    VK_ESCAPE, VK_F1, VK_F24, VK_HOME, VK_INSERT, VK_LEFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
+    VK_RIGHT, VK_RWIN, VK_SHIFT, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
@@ -53,11 +56,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
     TranslateMessage, WA_INACTIVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ACTIVATE, WM_APP, WM_CAPTURECHANGED,
-    WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE,
-    WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
-    WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WNDCLASSEXW,
-    WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
+    WM_CHAR, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN,
+    WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP,
+    WS_MAXIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -101,6 +105,8 @@ struct WinData {
     transparent: bool,
     /// Zones qui prennent les clics (pixels du client), dernière région envoyée au système.
     hit_area: RefCell<Option<Vec<[i32; 4]>>>,
+    /// Première moitié d'un caractère hors du plan de base (`WM_CHAR` arrive en UTF-16).
+    high_surrogate: Cell<u16>,
 }
 
 /// Une fenêtre Win32 ouverte par Veka.
@@ -284,6 +290,7 @@ impl PlatformContext for Ctx {
             scheme: Cell::new(None),
             transparent: desc.chrome.is_transparent(),
             hit_area: RefCell::new(None),
+            high_surrogate: Cell::new(0),
             custom,
             resizable: desc.resizable,
             resize_margin: desc.resize_margin,
@@ -725,6 +732,54 @@ fn button_of(msg: u32) -> Option<(MouseButton, bool)> {
     })
 }
 
+/// Les modificateurs tenus pendant le message en cours.
+fn modifiers() -> Modifiers {
+    // SAFETY : GetKeyState lit l'état du clavier du fil, sans pointeur.
+    let down = |vk: VIRTUAL_KEY| unsafe { GetKeyState(vk.0 as i32) } < 0;
+    let mut m = Modifiers::NONE;
+    if down(VK_SHIFT) {
+        m |= Modifiers::SHIFT;
+    }
+    if down(VK_CONTROL) {
+        m |= Modifiers::CONTROL;
+    }
+    if down(VK_MENU) {
+        m |= Modifiers::ALT;
+    }
+    if down(VK_LWIN) || down(VK_RWIN) {
+        m |= Modifiers::META;
+    }
+    m
+}
+
+/// La touche logique d'une touche virtuelle, selon la disposition du clavier.
+fn key_of(vk: VIRTUAL_KEY) -> Option<Key> {
+    Some(match vk {
+        VK_RETURN => Key::Enter,
+        VK_TAB => Key::Tab,
+        VK_ESCAPE => Key::Escape,
+        VK_BACK => Key::Backspace,
+        VK_DELETE => Key::Delete,
+        VK_INSERT => Key::Insert,
+        VK_LEFT => Key::ArrowLeft,
+        VK_RIGHT => Key::ArrowRight,
+        VK_UP => Key::ArrowUp,
+        VK_DOWN => Key::ArrowDown,
+        VK_HOME => Key::Home,
+        VK_END => Key::End,
+        VK_PRIOR => Key::PageUp,
+        VK_NEXT => Key::PageDown,
+        v if (VK_F1.0..=VK_F24.0).contains(&v.0) => Key::F((v.0 - VK_F1.0 + 1) as u8),
+        _ => {
+            // Le caractère de la touche sans Maj, dans la disposition active (bit 31 : touche morte).
+            // SAFETY : MapVirtualKeyW ne prend pas de pointeur.
+            let c = unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_CHAR) } & 0x7FFF_FFFF;
+            let c = char::from_u32(c).filter(|c| *c != '\0' && !c.is_control())?;
+            Key::Character(c.to_lowercase().next().unwrap_or(c))
+        }
+    })
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY (toute la fonction) : le système appelle avec un HWND valide et des paramètres
     // conformes à la documentation de chaque message.
@@ -900,6 +955,38 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 push(PlatformEvent::PointerLeft { window });
             }
             WM_CAPTURECHANGED => data.buttons.set(0),
+            WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
+                if let Some(key) = key_of(VIRTUAL_KEY(wparam.0 as u16)) {
+                    let pressed = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+                    push(PlatformEvent::Key {
+                        window,
+                        key,
+                        modifiers: modifiers(),
+                        pressed,
+                        // Bit 30 : la touche était déjà enfoncée.
+                        repeat: pressed && (lparam.0 >> 30) & 1 == 1,
+                    });
+                }
+                // Alt+F4, Alt+Espace… restent au système.
+                if msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP {
+                    return DefWindowProcW(hwnd, msg, wparam, lparam);
+                }
+            }
+            WM_CHAR => {
+                let unit = wparam.0 as u16;
+                let ch = if (0xD800..0xDC00).contains(&unit) {
+                    data.high_surrogate.set(unit);
+                    None
+                } else if (0xDC00..0xE000).contains(&unit) {
+                    let high = data.high_surrogate.replace(0);
+                    char::decode_utf16([high, unit]).next().and_then(|r| r.ok())
+                } else {
+                    char::from_u32(unit as u32)
+                };
+                if let Some(ch) = ch.filter(|c| !c.is_control()) {
+                    push(PlatformEvent::Char { window, ch });
+                }
+            }
             WM_CLOSE => push(PlatformEvent::CloseRequested { window }),
             WM_DESTROY => {
                 BY_HWND.with(|m| m.borrow_mut().remove(&(hwnd.0 as isize)));

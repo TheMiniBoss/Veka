@@ -88,7 +88,7 @@ fn is_const(module: &Module, e: &Expr) -> bool {
         | ExprKind::Float(_)
         | ExprKind::Color(_)
         | ExprKind::Symbol(_) => true,
-        ExprKind::Ident(_) => false,
+        ExprKind::Ident(_) | ExprKind::Binding(_) => false,
         ExprKind::Str(parts) => parts.iter().all(|p| match p {
             StrPart::Text(_) => true,
             StrPart::Expr(e) => k(e),
@@ -134,6 +134,8 @@ fn func_is_pure(module: &Module, f: &FuncDecl, depth: u32) -> bool {
         };
         match &e.kind {
             ExprKind::Ident(n) => n != "model",
+            // Une fonction ne reçoit pas d'état de vue.
+            ExprKind::Binding(_) => false,
             ExprKind::Bool(_)
             | ExprKind::Int(_)
             | ExprKind::Float(_)
@@ -406,6 +408,43 @@ impl Cx {
         }
     }
 
+    /// `$nom` : le `@State` lu et écrit par une vue, en valeurs simples du schéma.
+    fn binding(&self, name: &str, span: Span) -> R<Val> {
+        if !self.is_state(name) {
+            return Err(err(
+                span,
+                format!("`${name}` : `{name}` n'est pas un `@State` de cette vue"),
+            ));
+        }
+        let vars = self.vars.expect("is_state");
+        let (n1, n2): (Rc<str>, Rc<str>) = (Rc::from(name), Rc::from(name));
+        let get = move || {
+            if !vars.is_alive() {
+                return veka_ui::schema::Value::Bool(false);
+            }
+            vars.with(|m| m.get(&*n1).map(crate::value::to_simple))
+                .unwrap_or(veka_ui::schema::Value::Bool(false))
+        };
+        let set = move |v: veka_ui::schema::Value| {
+            if !vars.is_alive() {
+                return;
+            }
+            let Some(old) = vars.with(|m| m.get(&*n2).cloned()) else {
+                return;
+            };
+            let new = crate::value::from_simple(&v, &old);
+            if let Some(new) = new.filter(|n| *n != old) {
+                vars.update(|m| {
+                    m.insert(n2.to_string(), new);
+                });
+            }
+        };
+        Ok(Val::Binding(veka_ui::schema::Binding {
+            get: Rc::new(get),
+            set: Rc::new(set),
+        }))
+    }
+
     fn is_state(&self, name: &str) -> bool {
         self.vars.is_some_and(|s| s.with(|m| m.contains_key(name)))
             && !self.locals.iter().any(|(n, _)| &**n == name)
@@ -467,6 +506,7 @@ impl Cx {
                 args: None,
                 chain: Vec::new(),
             })),
+            ExprKind::Binding(n) => self.binding(n, span)?,
             ExprKind::Array(items) => {
                 Val::Array(Rc::new(items.iter().map(|i| self.eval(i)).collect::<R<_>>()?))
             }

@@ -193,6 +193,10 @@ impl Primitive for TapGesture {
         "onTapGesture"
     }
 
+    fn primary_action(&self) -> Option<Action> {
+        Some(self.action.clone())
+    }
+
     fn create_state(&self) -> Box<dyn std::any::Any> {
         Box::<TapState>::default()
     }

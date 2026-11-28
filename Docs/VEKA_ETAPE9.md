@@ -1,6 +1,6 @@
 # Étape 9 : clavier, focus et saisie de texte
 
-Statut : conception, à valider.
+Statut : **validé** (les 6 choix recommandés) ; PR T faite.
 
 ## 1. Objectif
 
@@ -111,6 +111,15 @@ TextField("Nom", text: $nom)
   - événements de touche et de texte sur Windows et macOS, et modificateurs ;
   - focus, Tab, `@FocusState` / `.focused`, `on_key_press` et `keyboard_shortcut` ;
   - Rust et `.vk`, avec tests.
+  - Fait, avec `.focusable()` (comme SwiftUI) pour essayer le focus avant les champs, `$nom` en `.vk` (un état
+    passé à une vue qui l'écrit) et l'exemple `clavier` en Rust et en `.vk`. Écarts :
+    - seule la touche logique est donnée : la touche physique (`code`) viendra si un jeu en a besoin ;
+    - Tab suit l'ordre de l'arbre, qui est l'ordre de lecture pour des piles ;
+    - sans focus, une touche est proposée à toutes les vues, des plus profondes aux plus hautes (SwiftUI exige
+      le focus : ici, un `.on_key_press` sur la racine marche tout de suite) ;
+    - en `.vk`, pas de mot `@FocusState` : un `@State` et `.focused($focus, equals: "nom")`. Sans focus,
+      l'état revient à `""` (ou `0`, `false`). `.onKeyPress(.return) { … }` prend toujours la touche ;
+    - les caractères tapés (`Char`) arrivent déjà de Windows et du Mac ; les champs les utiliseront (PR U).
 - **PR U, les champs de texte** :
   - `TextField` et `SecureField` avec le `PlainEditor` de parley ;
   - IME sur Windows (IMM32) et macOS (`NSTextInputClient`), et presse-papiers ;

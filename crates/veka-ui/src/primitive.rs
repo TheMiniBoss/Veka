@@ -89,6 +89,28 @@ pub trait Primitive: Any {
         None
     }
 
+    /// La vue peut prendre le focus du clavier (étape 9) : un clic dessus le lui donne, Tab y passe.
+    fn focusable(&self) -> bool {
+        false
+    }
+
+    /// Une touche appuyée (ou répétée). Appelé sur la vue qui a le focus puis sur ses parents, jusqu'à ce
+    /// qu'un primitive renvoie `handled`. Sans focus, sur toutes les vues, des plus profondes aux plus hautes.
+    fn key(&self, _cx: &mut EventCx<'_>, _event: &KeyEvent) -> EventResult {
+        EventResult::default()
+    }
+
+    /// Le raccourci clavier de ce primitive (`.keyboard_shortcut`) : il déclenche l'action principale de
+    /// son contenu, de n'importe où dans la fenêtre.
+    fn keyboard_shortcut(&self) -> Option<(veka_foundation::Key, veka_foundation::Modifiers)> {
+        None
+    }
+
+    /// L'action principale (celle d'un bouton), lancée par un raccourci clavier.
+    fn primary_action(&self) -> Option<Action> {
+        None
+    }
+
     /// Le mode clair ou sombre demandé pour toute la fenêtre (`.preferred_color_scheme`).
     fn preferred_color_scheme(&self) -> Option<veka_foundation::ColorScheme> {
         None
@@ -177,6 +199,11 @@ impl PaintCx<'_> {
         &self.tree.nodes[self.node].env
     }
 
+    /// Ce nœud a le focus du clavier.
+    pub fn is_focused(&self) -> bool {
+        self.tree.focused == Some(self.node)
+    }
+
     pub fn state<S: 'static>(&self) -> &S {
         self.tree.nodes[self.node]
             .state
@@ -216,6 +243,15 @@ pub enum PointerEvent {
     },
     /// Le pointeur a quitté la forme (ou la fenêtre).
     Leave,
+}
+
+/// Une touche reçue par un primitive (étape 9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyEvent {
+    pub key: veka_foundation::Key,
+    pub modifiers: veka_foundation::Modifiers,
+    /// Répétition d'une touche tenue.
+    pub repeat: bool,
 }
 
 /// Contexte d'un événement.

@@ -303,6 +303,10 @@ impl Printer {
             }
             ExprKind::Color(c) => self.out.push_str(&color_text(*c)),
             ExprKind::Ident(n) => self.out.push_str(n),
+            ExprKind::Binding(n) => {
+                self.out.push('$');
+                self.out.push_str(n);
+            }
             ExprKind::Symbol(n) => {
                 let _ = write!(self.out, ".{n}");
             }

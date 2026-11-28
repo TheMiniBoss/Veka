@@ -32,9 +32,9 @@ use raw_window_handle::{
     WindowHandle,
 };
 use veka_platform::{
-    Appearance, Chrome, Color, ColorScheme, Instant, MouseButton, Platform, PlatformApp, PlatformContext,
-    PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size, WindowAction,
-    WindowDesc, WindowId, WindowInfo, WindowRegion,
+    Appearance, Chrome, Color, ColorScheme, Instant, Key, Modifiers, MouseButton, Platform, PlatformApp,
+    PlatformContext, PlatformError, PlatformEvent, PlatformWindow, Point, Rect, RegionKind, Result, Size,
+    WindowAction, WindowDesc, WindowId, WindowInfo, WindowRegion,
 };
 
 /// La plateforme macOS. `MacPlatform::new().run(app)` ouvre la boucle (sur le fil principal).
@@ -98,6 +98,21 @@ define_class!(
         #[unsafe(method(acceptsFirstMouse:))]
         fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
             true
+        }
+
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            self.key(event, true);
+        }
+
+        #[unsafe(method(keyUp:))]
+        fn key_up(&self, event: &NSEvent) {
+            self.key(event, false);
         }
 
         #[unsafe(method(drawRect:))]
@@ -227,6 +242,75 @@ define_class!(
     }
 );
 
+/// Les modificateurs d'un événement.
+fn modifiers_of(event: &NSEvent) -> Modifiers {
+    let f = event.modifierFlags();
+    let mut m = Modifiers::NONE;
+    if f.contains(NSEventModifierFlags::Shift) {
+        m |= Modifiers::SHIFT;
+    }
+    if f.contains(NSEventModifierFlags::Control) {
+        m |= Modifiers::CONTROL;
+    }
+    if f.contains(NSEventModifierFlags::Option) {
+        m |= Modifiers::ALT;
+    }
+    if f.contains(NSEventModifierFlags::Command) {
+        m |= Modifiers::META;
+    }
+    m
+}
+
+/// La touche logique d'un événement : les touches nommées par leur code (kVK_*), les autres par leur
+/// caractère sans modificateur, dans la disposition active.
+fn key_of(event: &NSEvent) -> Option<Key> {
+    Some(match event.keyCode() {
+        36 | 76 => Key::Enter,
+        48 => Key::Tab,
+        53 => Key::Escape,
+        51 => Key::Backspace,
+        117 => Key::Delete,
+        114 => Key::Insert,
+        123 => Key::ArrowLeft,
+        124 => Key::ArrowRight,
+        125 => Key::ArrowDown,
+        126 => Key::ArrowUp,
+        115 => Key::Home,
+        119 => Key::End,
+        116 => Key::PageUp,
+        121 => Key::PageDown,
+        122 => Key::F(1),
+        120 => Key::F(2),
+        99 => Key::F(3),
+        118 => Key::F(4),
+        96 => Key::F(5),
+        97 => Key::F(6),
+        98 => Key::F(7),
+        100 => Key::F(8),
+        101 => Key::F(9),
+        109 => Key::F(10),
+        103 => Key::F(11),
+        111 => Key::F(12),
+        105 => Key::F(13),
+        107 => Key::F(14),
+        113 => Key::F(15),
+        106 => Key::F(16),
+        64 => Key::F(17),
+        79 => Key::F(18),
+        80 => Key::F(19),
+        90 => Key::F(20),
+        _ => {
+            let s = event.charactersIgnoringModifiers()?.to_string();
+            let c = s.chars().next().filter(|c| !c.is_control())?;
+            // Les touches de fonction d'AppKit (U+F700…) sans code connu sont ignorées.
+            if ('\u{F700}'..='\u{F8FF}').contains(&c) {
+                return None;
+            }
+            Key::Character(c.to_lowercase().next().unwrap_or(c))
+        }
+    })
+}
+
 fn other_button(event: &NSEvent) -> MouseButton {
     match event.buttonNumber() {
         2 => MouseButton::Middle,
@@ -266,6 +350,31 @@ impl VekaView {
 
     fn id(&self) -> WindowId {
         self.ivars().data.id
+    }
+
+    /// Une touche : l'événement `Key`, puis, à l'appui, le texte tapé (sans ⌘ ni Ctrl, qui font des
+    /// raccourcis). `characters` donne déjà le caractère composé après une touche morte.
+    fn key(&self, event: &NSEvent, pressed: bool) {
+        let window = self.id();
+        let modifiers = modifiers_of(event);
+        if let Some(key) = key_of(event) {
+            push(PlatformEvent::Key {
+                window,
+                key,
+                modifiers,
+                pressed,
+                repeat: pressed && event.isARepeat(),
+            });
+        }
+        if pressed && !modifiers.contains(Modifiers::META) && !modifiers.contains(Modifiers::CONTROL) {
+            let text = event.characters().map(|s| s.to_string()).unwrap_or_default();
+            for ch in text.chars() {
+                if !ch.is_control() && !('\u{F700}'..='\u{F8FF}').contains(&ch) {
+                    push(PlatformEvent::Char { window, ch });
+                }
+            }
+        }
+        pump();
     }
 
     /// Demande une image à la prochaine synchronisation verticale de l'écran de la fenêtre.
@@ -889,6 +998,8 @@ impl PlatformContext for Ctx {
         let delegate = WindowDelegate::new(mtm, data.clone());
         window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         window.center();
+        // La vue reçoit les touches.
+        window.makeFirstResponder(Some(&view));
         window.makeKeyAndOrderFront(None);
 
         self.windows.insert(
